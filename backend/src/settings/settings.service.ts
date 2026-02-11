@@ -125,6 +125,139 @@ export class SettingsService {
     }
   }
 
+  async testIntegrationKey(service: string): Promise<{ success: boolean; message: string }> {
+    try {
+      if (!fs.existsSync(DB_FILE)) {
+        return { success: false, message: 'No API keys saved yet' };
+      }
+
+      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const apiKeys = data.apiKeys || [];
+      
+      const keyEntry = apiKeys.find((k: any) => k.name === service);
+      if (!keyEntry) {
+        return { success: false, message: `${service} API key not found or not configured` };
+      }
+
+      const apiKey = this.decrypt(keyEntry.value);
+
+      // Test based on service type
+      switch (service.toLowerCase()) {
+        case 'openai':
+          return await this.testOpenAIKey(apiKey);
+        case 'openrouter':
+          return await this.testOpenRouterKey(apiKey);
+        case 'make':
+          return await this.testMakeKey(apiKey);
+        case 'zapier':
+          return await this.testZapierKey(apiKey);
+        default:
+          return { success: false, message: `Unknown service: ${service}` };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Test failed: ${message}` };
+    }
+  }
+
+  private async testOpenAIKey(apiKey: string): Promise<{ success: boolean; message: string; models?: string[] }> {
+    try {
+      const response = await axios.get('https://api.openai.com/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 5000,
+      });
+
+      const models = response.data.data?.map((m: any) => m.id) || [];
+      const modelCount = models.length;
+      
+      return { 
+        success: true, 
+        message: `OpenAI API key is valid! Found ${modelCount} available models.`,
+        models: models 
+      };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'OpenAI API key is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `OpenAI test failed: ${error.response?.status} - ${error.response?.statusText}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `OpenAI test failed: ${message}` };
+    }
+  }
+
+  private async testOpenRouterKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://openrouter.ai/api/v1/auth/key', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 5000,
+      });
+
+      const data = response.data.data || response.data;
+      const status = data.status || 'active';
+      return { success: true, message: `OpenRouter API key is valid! Status: ${status}` };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'OpenRouter API key is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `OpenRouter test failed: ${error.response?.status}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `OpenRouter test failed: ${message}` };
+    }
+  }
+
+  private async testMakeKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://www.make.com/api/v1/validate-token', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 5000,
+      });
+
+      return { success: true, message: `Make.com API key is valid!` };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'Make.com API key is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `Make.com test failed: ${error.response?.status}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Make.com test failed: ${message}` };
+    }
+  }
+
+  private async testZapierKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://zapier.com/api/v1/user', {
+        headers: {
+          'X-API-Key': apiKey,
+        },
+        timeout: 5000,
+      });
+
+      const data = response.data.data || response.data;
+      return { success: true, message: `Zapier API key is valid!` };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'Zapier API key is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `Zapier test failed: ${error.response?.status}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Zapier test failed: ${message}` };
+    }
+  }
+
   // Sync versions for use in other services
   loadSettingsSync(): any | null {
     try {

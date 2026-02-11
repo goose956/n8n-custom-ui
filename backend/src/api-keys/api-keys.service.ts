@@ -48,7 +48,7 @@ export class ApiKeysService {
         return { success: false, message: 'API key name and value are required' };
       }
 
-      let data = { n8nUrl: '', n8nApiKey: '', apiKeys: [] };
+      let data: any = { n8nUrl: '', n8nApiKey: '', apiKeys: [] as ApiKey[] };
       if (fs.existsSync(DB_FILE)) {
         data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
       }
@@ -58,14 +58,15 @@ export class ApiKeysService {
       }
 
       // Remove existing key with same name
-      data.apiKeys = data.apiKeys.filter((k: ApiKey) => k.name !== name);
+      data.apiKeys = (data.apiKeys as ApiKey[]).filter((k: ApiKey) => k.name !== name);
 
       // Add new key
-      data.apiKeys.push({
+      const newKey: ApiKey = {
         name,
         value: this.encrypt(value),
         createdAt: new Date().toISOString(),
-      });
+      };
+      (data.apiKeys as ApiKey[]).push(newKey);
 
       fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
       return { success: true, message: `API key "${name}" saved successfully` };

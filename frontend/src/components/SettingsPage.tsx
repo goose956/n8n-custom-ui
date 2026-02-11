@@ -8,7 +8,6 @@ import {
   Alert,
   Stack,
   Container,
-  Divider,
   Table,
   TableBody,
   TableCell,
@@ -21,6 +20,10 @@ import {
   DialogActions,
   Tabs,
   Tab,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import axios from 'axios';
 
@@ -35,12 +38,11 @@ interface ApiKey {
   lastUsed?: string;
 }
 
-interface Workflow {
-  id: string;
-  name: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
+interface IntegrationKeys {
+  openai: string;
+  openrouter: string;
+  make: string;
+  zapier: string;
 }
 
 const API_BASE_URL = 'http://localhost:3000/api/settings';
@@ -53,33 +55,69 @@ function SettingsPage() {
     n8nApiKey: '',
   });
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
-  const [workflowsLoading, setWorkflowsLoading] = useState(false);
-  const [triggeringId, setTriggeringId] = useState<string | null>(null);
   
   // API Key form state
   const [apiKeyDialog, setApiKeyDialog] = useState(false);
   const [apiKeyForm, setApiKeyForm] = useState({ name: '', value: '' });
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
 
-  // Workflow trigger dialog state
-  const [triggerDialog, setTriggerDialog] = useState(false);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
-  const [workflowInputData, setWorkflowInputData] = useState('{}');
+  // Integration keys state
+  const [integrationKeys, setIntegrationKeys] = useState<IntegrationKeys>({
+    openai: '',
+    openrouter: '',
+    make: '',
+    zapier: '',
+  });
+  const [integrationKeysLoading, setIntegrationKeysLoading] = useState<{ [key: string]: boolean }>({
+    openai: false,
+    openrouter: false,
+    make: false,
+    zapier: false,
+  });
+  const [integrationKeysTestLoading, setIntegrationKeysTestLoading] = useState<{ [key: string]: boolean }>({
+    openai: false,
+    openrouter: false,
+    make: false,
+    zapier: false,
+  });
+  
+  // OpenAI specific state
+  const [openaiModel, setOpenaiModel] = useState<string>('gpt-4');
+  const [availableOpenAIModels, setAvailableOpenAIModels] = useState<string[]>([]);
 
   useEffect(() => {
     loadSettings();
     loadApiKeys();
+    loadIntegrationKeys();
   }, []);
 
-  useEffect(() => {
-    if (currentTab === 2) {
-      loadWorkflows();
+  const loadIntegrationKeys = async () => {
+    try {
+      const response = await axios.get(API_KEYS_BASE_URL);
+      if (response.data.success) {
+        const keys = response.data.keys;
+        const integrations: IntegrationKeys = {
+          openai: '',
+          openrouter: '',
+          make: '',
+          zapier: '',
+        };
+        
+        keys.forEach((key: ApiKey) => {
+          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'make' || key.name === 'zapier') {
+            integrations[key.name as keyof IntegrationKeys] = '••••••••'; // Show masked placeholder
+          }
+        });
+        
+        setIntegrationKeys(integrations);
+      }
+    } catch (error) {
+      console.error('Failed to load integration keys', error);
     }
-  }, [currentTab]);
+  };
 
   const loadSettings = async () => {
     try {
@@ -198,59 +236,77 @@ function SettingsPage() {
     }
   };
 
-  const loadWorkflows = async () => {
+  const handleSaveIntegrationKey = async (keyName: keyof IntegrationKeys) => {
+    const value = integrationKeys[keyName];
+    
+    if (!value || value === '••••••••') {
+      setMessage({ type: 'error', text: 'Please enter a valid API key' });
+      return;
+    }
+
+    setIntegrationKeysLoading((prev) => ({ ...prev, [keyName]: true }));
     try {
-      setWorkflowsLoading(true);
-      setMessage(null);
-      const response = await axios.get('http://localhost:3000/api/workflows');
+      const response = await axios.post(API_KEYS_BASE_URL, {
+        name: keyName,
+        value: value,
+      });
       if (response.data.success) {
-        setWorkflows(response.data.workflows || []);
+        setMessage({ type: 'success', text: `${keyName.toUpperCase()} API key saved successfully` });
+        setIntegrationKeys((prev) => ({ ...prev, [keyName]: '••••••••' }));
       } else {
-        setMessage({ type: 'error', text: response.data.message || 'Failed to load workflows' });
+        setMessage({ type: 'error', text: response.data.message });
       }
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'An error occurred' });
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to save ${keyName} API key` });
     } finally {
-      setWorkflowsLoading(false);
+      setIntegrationKeysLoading((prev) => ({ ...prev, [keyName]: false }));
     }
   };
 
-  const handleTriggerClick = (workflow: Workflow) => {
-    setSelectedWorkflow(workflow);
-    setWorkflowInputData('{}');
-    setTriggerDialog(true);
-  };
-
-  const handleTriggerWorkflow = async () => {
-    if (!selectedWorkflow) return;
+  const handleDeleteIntegrationKey = async (keyName: keyof IntegrationKeys) => {
+    if (!window.confirm(`Delete ${keyName.toUpperCase()} API key?`)) return;
 
     try {
-      setTriggeringId(selectedWorkflow.id);
-      let data = {};
-      try {
-        data = JSON.parse(workflowInputData);
-      } catch {
-        setMessage({ type: 'error', text: 'Invalid JSON data' });
-        return;
-      }
-
-      const response = await axios.post(
-        `http://localhost:3000/api/workflows/${selectedWorkflow.id}/trigger`,
-        { data }
-      );
-
+      const response = await axios.delete(`${API_KEYS_BASE_URL}/${keyName}`);
       if (response.data.success) {
-        setMessage({ type: 'success', text: `Workflow triggered! Execution ID: ${response.data.executionId}` });
-        setTriggerDialog(false);
+        setMessage({ type: 'success', text: `${keyName.toUpperCase()} API key deleted` });
+        setIntegrationKeys((prev) => ({ ...prev, [keyName]: '' }));
+        loadIntegrationKeys();
       } else {
-        setMessage({ type: 'error', text: response.data.message || 'Failed to trigger workflow' });
+        setMessage({ type: 'error', text: response.data.message });
       }
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'An error occurred' });
-    } finally {
-      setTriggeringId(null);
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to delete ${keyName} API key` });
     }
   };
+
+  const handleTestIntegrationKey = async (keyName: keyof IntegrationKeys) => {
+    setIntegrationKeysTestLoading((prev) => ({ ...prev, [keyName]: true }));
+    try {
+      const response = await axios.post(`${API_BASE_URL}/test-integration`, {
+        service: keyName,
+      });
+      if (response.data.success) {
+        let messageText = `${keyName.toUpperCase()} API key is valid!`;
+        
+        // Handle OpenAI models
+        if (keyName === 'openai' && response.data.models && response.data.models.length > 0) {
+          setAvailableOpenAIModels(response.data.models);
+          messageText += ` Found ${response.data.models.length} available models.`;
+        }
+        
+        setMessage({ type: 'success', text: messageText });
+      } else {
+        setMessage({ type: 'error', text: `${keyName.toUpperCase()} test failed: ${response.data.message}` });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to test ${keyName} API key` });
+    } finally {
+      setIntegrationKeysTestLoading((prev) => ({ ...prev, [keyName]: false }));
+    }
+  };
+
+
 
   return (
     <Container maxWidth="md">
@@ -261,7 +317,7 @@ function SettingsPage() {
             <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
               <Tab label="n8n Connection" />
               <Tab label="Global API Keys" />
-              <Tab label="Workflows" />
+              <Tab label="Integration Keys" />
             </Tabs>
           </Box>
 
@@ -386,80 +442,280 @@ function SettingsPage() {
                     </Table>
                   </TableContainer>
                 )}
-              </>
+            </>
             )}
 
-            {/* Tab 3: Workflows */}
+            {/* Tab 2: Integration Keys */}
             {currentTab === 2 && (
-              <>
-                <Typography variant="h6" sx={{ marginBottom: 2, fontWeight: 'bold' }}>
-                  Workflows
+              <Stack spacing={3}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  Third-Party Integration Keys
                 </Typography>
 
-                <Box sx={{ marginBottom: 3 }}>
-                  <Button
-                    variant="outlined"
-                    onClick={loadWorkflows}
-                    disabled={workflowsLoading}
-                  >
-                    {workflowsLoading ? 'Loading...' : 'Refresh'}
-                  </Button>
-                </Box>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Store API keys for AI and automation integrations. All keys are encrypted and securely stored.
+                </Typography>
 
-                {workflows.length === 0 ? (
-                  <Typography color="textSecondary" sx={{ py: 2 }}>
-                    No workflows found. Create one in n8n to see it here.
-                  </Typography>
-                ) : (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                          <TableCell>Name</TableCell>
-                          <TableCell align="center">Status</TableCell>
-                          <TableCell align="right">Created</TableCell>
-                          <TableCell align="center">Actions</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {workflows.map((workflow) => (
-                          <TableRow key={workflow.id} hover>
-                            <TableCell>{workflow.name}</TableCell>
-                            <TableCell align="center">
-                              <span style={{ color: workflow.active ? 'green' : 'gray' }}>
-                                {workflow.active ? 'Active' : 'Inactive'}
-                              </span>
-                            </TableCell>
-                            <TableCell align="right">
-                              {new Date(workflow.createdAt).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell align="center">
-                              <Button
-                                size="small"
-                                variant="contained"
-                                color="success"
-                                onClick={() => handleTriggerClick(workflow)}
-                                disabled={triggeringId === workflow.id || !workflow.active}
-                                sx={{ mr: 1 }}
-                              >
-                                {triggeringId === workflow.id ? 'Triggering...' : 'Trigger'}
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => window.open(`http://localhost:5678/workflow/${workflow.id}`, '_blank')}
-                              >
-                                View
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                )}
-              </>
+                {/* OpenAI API Key */}
+                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        OpenAI API Key
+                      </Typography>
+                      {integrationKeys.openai && integrationKeys.openai !== '' && (
+                        <Typography variant="caption" sx={{ color: 'success.main' }}>
+                          ✓ Configured
+                        </Typography>
+                      )}
+                    </Box>
+                    <TextField
+                      fullWidth
+                      label="API Key"
+                      type="password"
+                      placeholder="sk-..."
+                      value={integrationKeys.openai}
+                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openai: e.target.value }))}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleSaveIntegrationKey('openai')}
+                        disabled={integrationKeysLoading.openai || !integrationKeys.openai}
+                        size="small"
+                      >
+                        {integrationKeysLoading.openai ? 'Saving...' : 'Save'}
+                      </Button>
+                      {integrationKeys.openai === '••••••••' && (
+                        <>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            onClick={() => handleTestIntegrationKey('openai')}
+                            disabled={integrationKeysTestLoading.openai}
+                            size="small"
+                          >
+                            {integrationKeysTestLoading.openai ? 'Testing...' : 'Test'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleDeleteIntegrationKey('openai')}
+                            size="small"
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                    
+                    {integrationKeys.openai === '••••••••' && (availableOpenAIModels.length > 0 || true) && (
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Model</InputLabel>
+                        <Select
+                          value={openaiModel}
+                          onChange={(e) => setOpenaiModel(e.target.value)}
+                          label="Model"
+                        >
+                          {availableOpenAIModels.length > 0 ? (
+                            availableOpenAIModels.map((model) => (
+                              <MenuItem key={model} value={model}>
+                                {model}
+                              </MenuItem>
+                            ))
+                          ) : (
+                            <>
+                              <MenuItem value="gpt-4">gpt-4</MenuItem>
+                              <MenuItem value="gpt-4-turbo">gpt-4-turbo</MenuItem>
+                              <MenuItem value="gpt-4-turbo-preview">gpt-4-turbo-preview</MenuItem>
+                              <MenuItem value="gpt-3.5-turbo">gpt-3.5-turbo</MenuItem>
+                            </>
+                          )}
+                        </Select>
+                      </FormControl>
+                    )}
+                  </Stack>
+                </Paper>
+
+                {/* OpenRouter API Key */}
+                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        OpenRouter API Key
+                      </Typography>
+                      {integrationKeys.openrouter && integrationKeys.openrouter !== '' && (
+                        <Typography variant="caption" sx={{ color: 'success.main' }}>
+                          ✓ Configured
+                        </Typography>
+                      )}
+                    </Box>
+                    <TextField
+                      fullWidth
+                      label="API Key"
+                      type="password"
+                      placeholder="sk-or-..."
+                      value={integrationKeys.openrouter}
+                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openrouter: e.target.value }))}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleSaveIntegrationKey('openrouter')}
+                        disabled={integrationKeysLoading.openrouter || !integrationKeys.openrouter}
+                        size="small"
+                      >
+                        {integrationKeysLoading.openrouter ? 'Saving...' : 'Save'}
+                      </Button>
+                      {integrationKeys.openrouter === '••••••••' && (
+                        <>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            onClick={() => handleTestIntegrationKey('openrouter')}
+                            disabled={integrationKeysTestLoading.openrouter}
+                            size="small"
+                          >
+                            {integrationKeysTestLoading.openrouter ? 'Testing...' : 'Test'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleDeleteIntegrationKey('openrouter')}
+                            size="small"
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </Stack>
+                </Paper>
+
+                {/* Make.com API Key */}
+                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        Make.com API Key
+                      </Typography>
+                      {integrationKeys.make && integrationKeys.make !== '' && (
+                        <Typography variant="caption" sx={{ color: 'success.main' }}>
+                          ✓ Configured
+                        </Typography>
+                      )}
+                    </Box>
+                    <TextField
+                      fullWidth
+                      label="API Key"
+                      type="password"
+                      placeholder="Your Make.com API key"
+                      value={integrationKeys.make}
+                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, make: e.target.value }))}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleSaveIntegrationKey('make')}
+                        disabled={integrationKeysLoading.make || !integrationKeys.make}
+                        size="small"
+                      >
+                        {integrationKeysLoading.make ? 'Saving...' : 'Save'}
+                      </Button>
+                      {integrationKeys.make === '••••••••' && (
+                        <>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            onClick={() => handleTestIntegrationKey('make')}
+                            disabled={integrationKeysTestLoading.make}
+                            size="small"
+                          >
+                            {integrationKeysTestLoading.make ? 'Testing...' : 'Test'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleDeleteIntegrationKey('make')}
+                            size="small"
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </Stack>
+                </Paper>
+
+                {/* Zapier API Key */}
+                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        Zapier API Key
+                      </Typography>
+                      {integrationKeys.zapier && integrationKeys.zapier !== '' && (
+                        <Typography variant="caption" sx={{ color: 'success.main' }}>
+                          ✓ Configured
+                        </Typography>
+                      )}
+                    </Box>
+                    <TextField
+                      fullWidth
+                      label="API Key"
+                      type="password"
+                      placeholder="Your Zapier API key"
+                      value={integrationKeys.zapier}
+                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, zapier: e.target.value }))}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleSaveIntegrationKey('zapier')}
+                        disabled={integrationKeysLoading.zapier || !integrationKeys.zapier}
+                        size="small"
+                      >
+                        {integrationKeysLoading.zapier ? 'Saving...' : 'Save'}
+                      </Button>
+                      {integrationKeys.zapier === '••••••••' && (
+                        <>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            onClick={() => handleTestIntegrationKey('zapier')}
+                            disabled={integrationKeysTestLoading.zapier}
+                            size="small"
+                          >
+                            {integrationKeysTestLoading.zapier ? 'Testing...' : 'Test'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleDeleteIntegrationKey('zapier')}
+                            size="small"
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </Stack>
+                </Paper>
+              </Stack>
             )}
+
           </Box>
         </Paper>
 
@@ -500,33 +756,7 @@ function SettingsPage() {
           </DialogActions>
         </Dialog>
 
-        {/* Trigger Workflow Dialog */}
-        <Dialog open={triggerDialog} onClose={() => setTriggerDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Trigger Workflow: {selectedWorkflow?.name}</DialogTitle>
-          <DialogContent sx={{ pt: 2 }}>
-            <TextField
-              fullWidth
-              multiline
-              rows={6}
-              label="Input Data (JSON)"
-              value={workflowInputData}
-              onChange={(e) => setWorkflowInputData(e.target.value)}
-              placeholder='{"key": "value"}'
-              variant="outlined"
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setTriggerDialog(false)}>Cancel</Button>
-            <Button
-              onClick={handleTriggerWorkflow}
-              variant="contained"
-              color="success"
-              disabled={triggeringId === selectedWorkflow?.id}
-            >
-              Trigger
-            </Button>
-          </DialogActions>
-        </Dialog>
+
       </Box>
     </Container>
   );

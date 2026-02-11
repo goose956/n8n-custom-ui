@@ -25,6 +25,11 @@ export class SettingsController {
     return this.settingsService.testN8nConnection();
   }
 
+  @Post('test-integration')
+  async testIntegration(@Body() body: { service: string }) {
+    return this.settingsService.testIntegrationKey(body.service);
+  }
+
   @Get('workflows')
   async getWorkflows() {
     return this.settingsService.getWorkflows();
