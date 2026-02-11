@@ -18,7 +18,20 @@ import {
   DialogActions,
   TextField,
   Stack,
+  Chip,
+  Avatar,
+  Tooltip,
+  IconButton,
 } from '@mui/material';
+import {
+  Refresh as RefreshIcon,
+  PlayArrow as PlayArrowIcon,
+  Edit as EditIcon,
+  OpenInNew as OpenInNewIcon,
+  CheckCircle as CheckCircleIcon,
+  Warning as WarningIcon,
+  AccountTree as WorkflowIcon,
+} from '@mui/icons-material';
 import axios from 'axios';
 import { nodeSchemas } from './nodeSchemas';
 
@@ -196,124 +209,177 @@ export function WorkflowsPage() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Workflows
-        </Typography>
-        <Typography variant="body1" color="textSecondary" paragraph>
-          Manage and test your n8n workflows.
-        </Typography>
+    <Container maxWidth="lg" sx={{ py: 5 }}>
+      {/* Page Header */}
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Box>
+            <Typography variant="h4" sx={{ color: '#1a1a2e', mb: 0.5 }}>
+              Workflows
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
+              Manage, test, and trigger your n8n workflows directly from the dashboard.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={loadWorkflows}
+            disabled={workflowsLoading}
+            sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea', bgcolor: '#f8f8ff' } }}
+          >
+            {workflowsLoading ? 'Loading...' : 'Refresh'}
+          </Button>
+        </Box>
       </Box>
 
       {message && (
-        <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
+        <Alert severity={message.type} sx={{ mb: 3 }} onClose={() => setMessage(null)}>
           {message.text}
         </Alert>
       )}
 
-      <Box sx={{ marginBottom: 3 }}>
-        <Button
-          variant="outlined"
-          onClick={loadWorkflows}
-          disabled={workflowsLoading}
-        >
-          {workflowsLoading ? 'Loading...' : 'Refresh'}
-        </Button>
-      </Box>
-
       {workflows.length === 0 ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="textSecondary">
-            No workflows found. Create one in n8n to see it here.
+        <Paper elevation={0} sx={{ p: 6, textAlign: 'center', border: '2px dashed #e0e0e0' }}>
+          <WorkflowIcon sx={{ fontSize: 56, color: '#ddd', mb: 2 }} />
+          <Typography variant="h6" sx={{ color: '#999', mb: 1 }}>
+            No workflows found
           </Typography>
+          <Typography variant="body2" sx={{ color: '#bbb', mb: 3, maxWidth: 400, mx: 'auto' }}>
+            Create a workflow in your n8n instance to see it here. Workflows will appear automatically once connected.
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() => window.open('http://localhost:5678', '_blank')}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
+          >
+            Open n8n
+          </Button>
         </Paper>
       ) : (
-        <TableContainer component={Paper}>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                <TableCell><strong>Name</strong></TableCell>
-                <TableCell align="center"><strong>Status</strong></TableCell>
-                <TableCell align="center"><strong>Validation</strong></TableCell>
-                <TableCell align="right"><strong>Created</strong></TableCell>
-                <TableCell align="center"><strong>Actions</strong></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {workflows.map((workflow) => (
-                <TableRow
-                  key={workflow.id}
-                  hover
-                  sx={{
-                    backgroundColor: workflow.validation && !workflow.validation.isValid ? '#fff3cd' : 'inherit',
-                  }}
-                >
-                  <TableCell>{workflow.name}</TableCell>
-                  <TableCell align="center">
-                    <span style={{ color: workflow.active ? 'green' : 'gray' }}>
-                      {workflow.active ? '✓ Active' : '○ Inactive'}
-                    </span>
-                  </TableCell>
-                  <TableCell align="center">
-                    {workflow.validation && workflow.validation.isValid ? (
-                      <span style={{ color: 'green' }}>✓ OK</span>
-                    ) : (
-                      <Button
-                        size="small"
-                        variant="text"
-                        sx={{ color: 'orange', textTransform: 'none' }}
-                        onClick={() => {
-                          setSelectedWorkflowForValidation(workflow);
-                          setValidationDialog(true);
-                        }}
-                      >
-                        ⚠ {workflow.validation?.issues.length || 0} Issues
-                      </Button>
-                    )}
-                  </TableCell>
-                  <TableCell align="right">
-                    {new Date(workflow.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell align="center">
-                    <Stack direction="row" spacing={1} justifyContent="center">
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleEditWorkflow(workflow)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="success"
-                        onClick={() => handleTriggerClick(workflow)}
-                        disabled={triggeringId === workflow.id || !workflow.active}
-                      >
-                        {triggeringId === workflow.id ? 'Triggering...' : 'Trigger'}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => window.open(`http://localhost:5678/workflow/${workflow.id}`, '_blank')}
-                      >
-                        View
-                      </Button>
-                    </Stack>
-                  </TableCell>
+        <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Workflow</TableCell>
+                  <TableCell align="center">Status</TableCell>
+                  <TableCell align="center">Validation</TableCell>
+                  <TableCell align="right">Created</TableCell>
+                  <TableCell align="center">Actions</TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              </TableHead>
+              <TableBody>
+                {workflows.map((workflow) => (
+                  <TableRow
+                    key={workflow.id}
+                    sx={{
+                      transition: 'background 0.15s',
+                      '&:hover': { bgcolor: '#fafbfc' },
+                    }}
+                  >
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Avatar sx={{ width: 34, height: 34, bgcolor: '#eef0ff', color: '#667eea' }}>
+                          <WorkflowIcon sx={{ fontSize: 18 }} />
+                        </Avatar>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
+                          {workflow.name}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip
+                        icon={workflow.active ? <CheckCircleIcon sx={{ fontSize: '14px !important' }} /> : undefined}
+                        label={workflow.active ? 'Active' : 'Inactive'}
+                        size="small"
+                        sx={{
+                          height: 24,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          bgcolor: workflow.active ? '#e8f5e9' : '#f5f5f5',
+                          color: workflow.active ? '#27ae60' : '#999',
+                          '& .MuiChip-icon': { color: '#27ae60' },
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell align="center">
+                      {workflow.validation && workflow.validation.isValid ? (
+                        <Chip
+                          icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />}
+                          label="OK"
+                          size="small"
+                          sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }}
+                        />
+                      ) : (
+                        <Chip
+                          icon={<WarningIcon sx={{ fontSize: '14px !important' }} />}
+                          label={`${workflow.validation?.issues.length || 0} Issues`}
+                          size="small"
+                          clickable
+                          onClick={() => {
+                            setSelectedWorkflowForValidation(workflow);
+                            setValidationDialog(true);
+                          }}
+                          sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#fff8e1', color: '#f39c12', '& .MuiChip-icon': { color: '#f39c12' } }}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" sx={{ color: '#aaa' }}>
+                        {new Date(workflow.createdAt).toLocaleDateString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Stack direction="row" spacing={0.5} justifyContent="center">
+                        <Tooltip title="Edit Configuration">
+                          <IconButton size="small" onClick={() => handleEditWorkflow(workflow)} sx={{ color: '#667eea', '&:hover': { bgcolor: '#f0f0ff' } }}>
+                            <EditIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Trigger Workflow">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleTriggerClick(workflow)}
+                              disabled={triggeringId === workflow.id || !workflow.active}
+                              sx={{ color: '#27ae60', '&:hover': { bgcolor: '#e8f5e9' }, '&.Mui-disabled': { color: '#ccc' } }}
+                            >
+                              <PlayArrowIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Open in n8n">
+                          <IconButton
+                            size="small"
+                            onClick={() => window.open(`http://localhost:5678/workflow/${workflow.id}`, '_blank')}
+                            sx={{ color: '#888', '&:hover': { bgcolor: '#f5f5f5' } }}
+                          >
+                            <OpenInNewIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       )}
 
       {/* Trigger Workflow Dialog */}
       <Dialog open={triggerDialog} onClose={() => setTriggerDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Trigger Workflow: {selectedWorkflow?.name}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>
+          Trigger Workflow
+        </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" sx={{ color: '#888', mb: 2 }}>
+            Sending data to <strong>{selectedWorkflow?.name}</strong>
+          </Typography>
           <TextField
             fullWidth
             multiline
@@ -323,15 +389,19 @@ export function WorkflowsPage() {
             onChange={(e) => setWorkflowInputData(e.target.value)}
             placeholder='{"key": "value"}'
             variant="outlined"
+            sx={{ fontFamily: 'monospace' }}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTriggerDialog(false)}>Cancel</Button>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setTriggerDialog(false)} sx={{ color: '#888' }}>Cancel</Button>
           <Button
             onClick={handleTriggerWorkflow}
             variant="contained"
-            color="success"
             disabled={triggeringId === selectedWorkflow?.id}
+            sx={{
+              background: 'linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #219a52 0%, #27ae60 100%)' },
+            }}
           >
             Trigger
           </Button>
@@ -340,8 +410,13 @@ export function WorkflowsPage() {
 
       {/* Validation Issues Dialog */}
       <Dialog open={validationDialog} onClose={() => setValidationDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Workflow Issues: {selectedWorkflowForValidation?.name}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>
+          Workflow Issues
+        </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" sx={{ color: '#888', mb: 2 }}>
+            Issues found in <strong>{selectedWorkflowForValidation?.name}</strong>
+          </Typography>
           {selectedWorkflowForValidation?.validation && selectedWorkflowForValidation.validation.issues.length > 0 ? (
             <Stack spacing={2}>
               {selectedWorkflowForValidation.validation.issues.map((issue, idx) => (
@@ -349,19 +424,19 @@ export function WorkflowsPage() {
                   key={idx}
                   severity={issue.type === 'missing_api_key' ? 'error' : issue.type === 'missing_field' ? 'warning' : 'info'}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                    {issue.type === 'missing_api_key' && '🔑 Missing API Key'}
-                    {issue.type === 'missing_field' && '📝 Missing Field'}
-                    {issue.type === 'warning' && '⚠️ Warning'}
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    {issue.type === 'missing_api_key' && 'Missing API Key'}
+                    {issue.type === 'missing_field' && 'Missing Field'}
+                    {issue.type === 'warning' && 'Warning'}
                   </Typography>
                   <Typography variant="body2">{issue.message}</Typography>
                   {issue.apiKeyName && (
-                    <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'inherit', opacity: 0.8 }}>
-                      <strong>Required API Key:</strong> Add "{issue.apiKeyName}" in the API Keys section
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
+                      <strong>Required API Key:</strong> Add "{issue.apiKeyName}" in Settings
                     </Typography>
                   )}
                   {issue.field && (
-                    <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'inherit', opacity: 0.8 }}>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
                       <strong>Field:</strong> {issue.field}
                     </Typography>
                   )}
@@ -369,10 +444,10 @@ export function WorkflowsPage() {
               ))}
             </Stack>
           ) : (
-            <Typography color="textSecondary">No issues found. This workflow is properly configured.</Typography>
+            <Typography variant="body2" sx={{ color: '#999' }}>No issues found.</Typography>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 2.5 }}>
           <Button
             onClick={() => {
               setValidationDialog(false);
@@ -381,18 +456,26 @@ export function WorkflowsPage() {
               }
             }}
             variant="contained"
-            color="primary"
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
           >
             Open in n8n
           </Button>
-          <Button onClick={() => setValidationDialog(false)}>Close</Button>
+          <Button onClick={() => setValidationDialog(false)} sx={{ color: '#888' }}>Close</Button>
         </DialogActions>
       </Dialog>
 
       {/* Edit Workflow Fields Dialog */}
       <Dialog open={editDialog} onClose={() => setEditDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Edit Workflow: {selectedWorkflowForEdit?.name}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>
+          Configure Workflow
+        </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" sx={{ color: '#888', mb: 2 }}>
+            Editing <strong>{selectedWorkflowForEdit?.name}</strong>
+          </Typography>
           {(() => {
             const issueFields = (selectedWorkflowForEdit?.validation?.issues || [])
               .filter((issue) => issue.type === 'missing_field' || issue.type === 'missing_api_key')
@@ -445,8 +528,8 @@ export function WorkflowsPage() {
 
             return (
               <Stack spacing={2}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                  Edit Configuration:
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
+                  Edit Configuration
                 </Typography>
                 {allFields.map((field, idx) => (
                   <TextField
@@ -468,13 +551,16 @@ export function WorkflowsPage() {
             );
           })()}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialog(false)}>Cancel</Button>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setEditDialog(false)} sx={{ color: '#888' }}>Cancel</Button>
           <Button
             onClick={handleSaveWorkflowConfig}
             variant="contained"
-            color="primary"
             disabled={editLoading}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
           >
             {editLoading ? 'Saving...' : 'Save'}
           </Button>

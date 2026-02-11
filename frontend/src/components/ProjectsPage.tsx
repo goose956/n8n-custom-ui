@@ -2,12 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   Container,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Button,
   CircularProgress,
   Alert,
@@ -20,7 +14,18 @@ import {
   TextField,
   Stack,
   Chip,
+  Avatar,
+  Grid,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Folder as FolderIcon,
+  CalendarToday as CalendarIcon,
+} from '@mui/icons-material';
 import axios from 'axios';
 
 interface App {
@@ -195,113 +200,149 @@ export function ProjectsPage() {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ py: 6 }}>
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
+          <CircularProgress sx={{ color: '#667eea' }} />
         </Box>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Projects
-        </Typography>
-        <Typography variant="body1" color="textSecondary" paragraph>
-          Manage your SaaS applications and create new projects.
-        </Typography>
+    <Container maxWidth="lg" sx={{ py: 5 }}>
+      {/* Page Header */}
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Box>
+            <Typography variant="h4" sx={{ color: '#1a1a2e', mb: 0.5 }}>
+              Projects
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
+              Create and manage your SaaS applications. Each project can have its own pages, workflows, and settings.
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              px: 3,
+              py: 1.2,
+              fontSize: '0.9rem',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
+          >
+            New Project
+          </Button>
+        </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-
-      <Box sx={{ mb: 3 }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => handleOpenDialog()}
-        >
-          + New Project
-        </Button>
-      </Box>
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
 
       {apps.length === 0 ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="textSecondary">
-            No projects yet. Create one to get started.
+        <Paper elevation={0} sx={{ p: 6, textAlign: 'center', border: '2px dashed #e0e0e0' }}>
+          <FolderIcon sx={{ fontSize: 56, color: '#ddd', mb: 2 }} />
+          <Typography variant="h6" sx={{ color: '#999', mb: 1 }}>
+            No projects yet
           </Typography>
+          <Typography variant="body2" sx={{ color: '#bbb', mb: 3 }}>
+            Create your first project to start building your SaaS application.
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
+          >
+            Create First Project
+          </Button>
         </Paper>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
-              <TableRow>
-                <TableCell><strong>Name</strong></TableCell>
-                <TableCell><strong>Slug</strong></TableCell>
-                <TableCell><strong>Description</strong></TableCell>
-                <TableCell><strong>Created</strong></TableCell>
-                <TableCell align="right"><strong>Actions</strong></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {apps.map((app) => (
-                <TableRow key={app.id} hover>
-                  <TableCell>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      {app.primary_color && (
-                        <Box
-                          sx={{
-                            width: 24,
-                            height: 24,
-                            backgroundColor: app.primary_color,
-                            borderRadius: '4px',
-                            border: '1px solid #ddd',
-                          }}
-                        />
-                      )}
-                      {app.name}
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={app.slug} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{app.description || '—'}</TableCell>
-                  <TableCell>{formatDate(app.created_at)}</TableCell>
-                  <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleOpenDialog(app)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        onClick={() => handleDeleteClick(app)}
-                      >
-                        Delete
-                      </Button>
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Grid container spacing={3}>
+          {apps.map((app) => (
+            <Grid item xs={12} sm={6} md={4} key={app.id}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 3,
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  transition: 'all 0.25s ease',
+                  cursor: 'pointer',
+                  '&:hover': {
+                    boxShadow: '0 12px 36px rgba(0,0,0,0.08)',
+                    borderColor: 'transparent',
+                    transform: 'translateY(-4px)',
+                  },
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                  <Avatar
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      bgcolor: app.primary_color || '#667eea',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {app.name.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    <Tooltip title="Edit">
+                      <IconButton size="small" onClick={() => handleOpenDialog(app)} sx={{ color: '#aaa', '&:hover': { color: '#667eea', bgcolor: '#f0f0ff' } }}>
+                        <EditIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <IconButton size="small" onClick={() => handleDeleteClick(app)} sx={{ color: '#aaa', '&:hover': { color: '#e74c3c', bgcolor: '#fff0f0' } }}>
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5, lineHeight: 1.3 }}>
+                  {app.name}
+                </Typography>
+                <Chip
+                  label={app.slug}
+                  size="small"
+                  sx={{
+                    mb: 1.5,
+                    height: 22,
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    bgcolor: '#f0f0ff',
+                    color: '#667eea',
+                    fontFamily: 'monospace',
+                  }}
+                />
+                <Typography variant="body2" sx={{ color: '#999', mb: 2, lineHeight: 1.5, minHeight: 40 }}>
+                  {app.description || 'No description provided'}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                  <CalendarIcon sx={{ fontSize: 14, color: '#ccc' }} />
+                  <Typography variant="caption" sx={{ color: '#bbb' }}>
+                    Created {formatDate(app.created_at)}
+                  </Typography>
+                </Box>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
       )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>
           {editingApp ? 'Edit Project' : 'Create New Project'}
         </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Stack spacing={2}>
+        <DialogContent sx={{ pt: 3 }}>
+          <Stack spacing={2.5}>
             <TextField
               label="Project Name"
               fullWidth
@@ -329,37 +370,42 @@ export function ProjectsPage() {
               placeholder="Optional description of your project"
             />
             <Box>
-              <Typography variant="caption" display="block" sx={{ mb: 1 }}>
-                Primary Color
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#555' }}>
+                Brand Colour
               </Typography>
               <Box display="flex" alignItems="center" gap={2}>
                 <Box
                   sx={{
-                    width: 50,
-                    height: 50,
+                    width: 44,
+                    height: 44,
                     backgroundColor: formData.primary_color,
-                    borderRadius: '4px',
-                    border: '1px solid #ddd',
+                    borderRadius: 2,
+                    border: '2px solid #eee',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                   }}
                 />
                 <TextField
-                  label="Hex Color"
+                  label="Hex Colour"
                   value={formData.primary_color}
                   onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                  placeholder="#1976d2"
+                  placeholder="#667eea"
                   size="small"
+                  sx={{ width: 140 }}
                 />
               </Box>
             </Box>
           </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={handleCloseDialog} sx={{ color: '#888' }}>Cancel</Button>
           <Button
             onClick={handleSaveApp}
             variant="contained"
-            color="primary"
             disabled={formLoading}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
           >
             {formLoading ? <CircularProgress size={24} /> : (editingApp ? 'Update' : 'Create')}
           </Button>
@@ -367,25 +413,21 @@ export function ProjectsPage() {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteConfirmDialog}
-        onClose={() => setDeleteConfirmDialog(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Delete Project</DialogTitle>
+      <Dialog open={deleteConfirmDialog} onClose={() => setDeleteConfirmDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, pt: 3 }}>Delete Project</DialogTitle>
         <DialogContent>
-          <Typography>
+          <Typography variant="body2" sx={{ color: '#666' }}>
             Are you sure you want to delete <strong>{appToDelete?.name}</strong>? This action cannot be undone.
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmDialog(false)}>Cancel</Button>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setDeleteConfirmDialog(false)} sx={{ color: '#888' }}>Cancel</Button>
           <Button
             onClick={handleConfirmDelete}
             variant="contained"
             color="error"
             disabled={formLoading}
+            sx={{ borderRadius: 2 }}
           >
             {formLoading ? <CircularProgress size={24} /> : 'Delete'}
           </Button>

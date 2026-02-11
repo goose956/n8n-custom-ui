@@ -44,7 +44,10 @@ import {
   Security as ShieldIcon,
   TrendingUp as TrendingUpIcon,
   Check as CheckIcon,
+  Article as ArticleIcon,
 } from '@mui/icons-material';
+import Chip from '@mui/material/Chip';
+import Tooltip from '@mui/material/Tooltip';
 import axios from 'axios';
 import PageTracker from '../utils/pageTracker';
 
@@ -613,23 +616,23 @@ export const PagesPage: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 5 }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ mb: 1, fontWeight: 'bold' }}>
-          Pages Manager
+      <Box sx={{ mb: 5 }}>
+        <Typography variant="h4" sx={{ color: '#1a1a2e', mb: 0.5 }}>
+          Pages
         </Typography>
-        <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
+        <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
           View and manage all pages across your projects.
         </Typography>
       </Box>
 
       {/* Alerts */}
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
       {/* Project Selector */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid rgba(0,0,0,0.06)' }}>
         <FormControl fullWidth>
           <InputLabel id="project-select-label">Select Project</InputLabel>
           <Select
@@ -657,10 +660,10 @@ export const PagesPage: React.FC = () => {
 
       {/* Pages Table */}
       {selectedProjectId && (
-        <Paper sx={{ mb: 3 }}>
-          <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Pages {loading && <CircularProgress size={20} sx={{ ml: 2 }} />}
+        <Paper elevation={0} sx={{ mb: 3, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+          <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '1.1rem' }}>
+              Pages {loading && <CircularProgress size={18} sx={{ ml: 1.5 }} />}
             </Typography>
             <Button
               variant="outlined"
@@ -668,16 +671,17 @@ export const PagesPage: React.FC = () => {
               startIcon={<RefreshIcon />}
               onClick={loadPages}
               disabled={loading}
+              sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea', bgcolor: '#f8f8ff' } }}
             >
               Refresh
             </Button>
           </Box>
 
           {pages.length === 0 && !loading && (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body2" sx={{ color: '#999' }}>
-                No pages found for this project
-              </Typography>
+            <Box sx={{ p: 5, textAlign: 'center' }}>
+              <ArticleIcon sx={{ fontSize: 48, color: '#ddd', mb: 1.5 }} />
+              <Typography variant="body1" sx={{ color: '#999', mb: 0.5 }}>No pages found</Typography>
+              <Typography variant="body2" sx={{ color: '#bbb' }}>Pages will appear here once templates are applied</Typography>
             </Box>
           )}
 
@@ -685,75 +689,53 @@ export const PagesPage: React.FC = () => {
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Title</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Updated</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                      Actions
-                    </TableCell>
+                  <TableRow>
+                    <TableCell>Title</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Created</TableCell>
+                    <TableCell>Updated</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {pages.map((page) => (
-                    <TableRow key={page.id} hover>
-                      <TableCell>{page.title}</TableCell>
+                    <TableRow key={page.id} sx={{ '&:hover': { bgcolor: '#fafbfc' } }}>
                       <TableCell>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            display: 'inline-block',
-                            px: 1.5,
-                            py: 0.5,
-                            backgroundColor: '#e3f2fd',
-                            borderRadius: 1,
-                            color: '#1976d2',
-                            fontWeight: 500,
-                          }}
-                        >
-                          {page.page_type}
-                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{page.title}</Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ color: '#666' }}>
+                        <Chip
+                          label={page.page_type}
+                          size="small"
+                          sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#eef0ff', color: '#667eea' }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: '#aaa' }}>
                           {page.created_at ? new Date(page.created_at).toLocaleDateString() : '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ color: '#666' }}>
+                        <Typography variant="body2" sx={{ color: '#aaa' }}>
                           {page.updated_at ? new Date(page.updated_at).toLocaleDateString() : '—'}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          startIcon={<CodeIcon />}
-                          onClick={() => handleOpenContentEditor(page)}
-                          disabled={loading}
-                          sx={{ mr: 1 }}
-                          variant="outlined"
-                        >
-                          Content
-                        </Button>
-                        <Button
-                          size="small"
-                          startIcon={<EditIcon />}
-                          onClick={() => handleOpenEditDialog(page)}
-                          disabled={loading}
-                          sx={{ mr: 1 }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          startIcon={<DeleteIcon />}
-                          onClick={() => handleDeletePage(page.id)}
-                          disabled={loading}
-                        >
-                          Delete
-                        </Button>
+                        <Tooltip title="Edit Content">
+                          <IconButton size="small" onClick={() => handleOpenContentEditor(page)} disabled={loading} sx={{ color: '#667eea', '&:hover': { bgcolor: '#f0f0ff' } }}>
+                            <CodeIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Edit Title">
+                          <IconButton size="small" onClick={() => handleOpenEditDialog(page)} disabled={loading} sx={{ color: '#888', '&:hover': { bgcolor: '#f5f5f5' } }}>
+                            <EditIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton size="small" onClick={() => handleDeletePage(page.id)} disabled={loading} sx={{ color: '#e74c3c', '&:hover': { bgcolor: '#fef0ef' } }}>
+                            <DeleteIcon sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -766,10 +748,10 @@ export const PagesPage: React.FC = () => {
 
       {/* Edit Dialog */}
       <Dialog open={editDialog.open} onClose={handleCloseEditDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Edit Page Title</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>Edit Page Title</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
-          <Typography variant="body2" sx={{ mb: 2, color: '#666' }}>
-            Page Type: <strong>{editDialog.page?.page_type}</strong>
+          <Typography variant="body2" sx={{ mb: 2, color: '#888' }}>
+            Page Type: <Chip label={editDialog.page?.page_type} size="small" sx={{ height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: '#eef0ff', color: '#667eea', ml: 0.5 }} />
           </Typography>
           <TextField
             fullWidth
@@ -779,9 +761,9 @@ export const PagesPage: React.FC = () => {
             placeholder="Enter page title"
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEditDialog}>Cancel</Button>
-          <Button variant="contained" onClick={handleSavePageTitle} disabled={loading || !editTitle.trim()}>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={handleCloseEditDialog} sx={{ color: '#888' }}>Cancel</Button>
+          <Button variant="contained" onClick={handleSavePageTitle} disabled={loading || !editTitle.trim()} sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
             Save
           </Button>
         </DialogActions>
@@ -789,21 +771,21 @@ export const PagesPage: React.FC = () => {
 
       {/* Content Editor Dialog */}
       <Dialog open={contentEditorOpen} onClose={handleCloseContentEditor} maxWidth="md" fullWidth PaperProps={{ sx: { maxHeight: '90vh' } }}>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 1 }}>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 1, pt: 3 }}>
           <Box>
-            <Typography variant="h6">Edit Page Content</Typography>
-            <Typography variant="caption" sx={{ color: '#666' }}>
-              {contentPage?.title} ({contentPage?.page_type})
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Edit Page Content</Typography>
+            <Typography variant="caption" sx={{ color: '#888' }}>
+              {contentPage?.title} <Chip label={contentPage?.page_type} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#eef0ff', color: '#667eea', ml: 0.5 }} />
             </Typography>
           </Box>
-          <IconButton size="small" onClick={handleCloseContentEditor}>
+          <IconButton size="small" onClick={handleCloseContentEditor} sx={{ color: '#888' }}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
         <Divider />
 
         {/* Editor Tabs */}
-        <Tabs value={editorTabIndex} onChange={(_e, newValue) => setEditorTabIndex(newValue)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={editorTabIndex} onChange={(_e, newValue) => setEditorTabIndex(newValue)} sx={{ px: 2, '& .MuiTab-root': { fontWeight: 600, fontSize: '0.875rem', textTransform: 'none', color: '#888' }, '& .Mui-selected': { color: '#667eea !important' }, '& .MuiTabs-indicator': { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', height: 3, borderRadius: '3px 3px 0 0' } }}>
           <Tab label="JSON Editor" />
           <Tab label="Preview" />
           <Tab label="Chat Assistant" />
@@ -1137,7 +1119,7 @@ export const PagesPage: React.FC = () => {
                 variant="contained"
                 onClick={handleSendChatMessage}
                 disabled={chatLoading || !chatInput.trim() || availableApis.length === 0}
-                sx={{ whiteSpace: 'nowrap' }}
+                sx={{ whiteSpace: 'nowrap', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}
               >
                 Send
               </Button>
@@ -1145,9 +1127,9 @@ export const PagesPage: React.FC = () => {
           </DialogContent>
         )}
 
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={handleCloseContentEditor}>Cancel</Button>
-          <Button variant="contained" color="primary" onClick={handleSaveContent} disabled={loading}>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={handleCloseContentEditor} sx={{ color: '#888' }}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveContent} disabled={loading} sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
             Save Content
           </Button>
         </DialogActions>

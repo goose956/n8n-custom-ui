@@ -24,7 +24,18 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Chip,
+  IconButton,
+  Tooltip,
+  Avatar,
 } from '@mui/material';
+import LinkIcon from '@mui/icons-material/Link';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import ExtensionIcon from '@mui/icons-material/Extension';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import AddIcon from '@mui/icons-material/Add';
+import SecurityIcon from '@mui/icons-material/Security';
 import axios from 'axios';
 
 interface Settings {
@@ -309,455 +320,383 @@ function SettingsPage() {
 
 
   return (
-    <Container maxWidth="md">
-      <Box sx={{ py: 4 }}>
-        <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-          {/* Tabs Navigation */}
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
-              <Tab label="n8n Connection" />
-              <Tab label="Global API Keys" />
-              <Tab label="Integration Keys" />
-            </Tabs>
+    <Container maxWidth="lg" sx={{ py: 5 }}>
+      {/* Page Header */}
+      <Box sx={{ mb: 5 }}>
+        <Typography variant="h4" sx={{ color: '#1a1a2e', mb: 0.5 }}>
+          Settings
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
+          Configure your n8n connection, manage API keys, and set up third-party integrations.
+        </Typography>
+      </Box>
+
+      {message && (
+        <Alert severity={message.type} sx={{ mb: 3 }} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
+
+      {/* Tabs Navigation */}
+      <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', mb: 3, overflow: 'hidden' }}>
+        <Tabs
+          value={currentTab}
+          onChange={(_, newValue) => setCurrentTab(newValue)}
+          sx={{
+            px: 2,
+            '& .MuiTab-root': { fontWeight: 600, fontSize: '0.875rem', textTransform: 'none', minHeight: 52, color: '#888' },
+            '& .Mui-selected': { color: '#667eea !important' },
+            '& .MuiTabs-indicator': { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', height: 3, borderRadius: '3px 3px 0 0' },
+          }}
+        >
+          <Tab icon={<LinkIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="n8n Connection" />
+          <Tab icon={<VpnKeyIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Global API Keys" />
+          <Tab icon={<ExtensionIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Integration Keys" />
+        </Tabs>
+      </Paper>
+
+      {/* Tab 1: n8n Settings */}
+      {currentTab === 0 && (
+        <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', p: 4 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+            <Avatar sx={{ width: 40, height: 40, bgcolor: '#eef0ff', color: '#667eea' }}>
+              <LinkIcon sx={{ fontSize: 20 }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '1.1rem' }}>
+                n8n Connection Settings
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999' }}>
+                Connect to your n8n instance to manage workflows
+              </Typography>
+            </Box>
           </Box>
 
-          <Box sx={{ p: 4 }}>
-            {message && (
-              <Alert severity={message.type} sx={{ marginBottom: 2 }} onClose={() => setMessage(null)}>
-                {message.text}
-              </Alert>
-            )}
+          <Stack spacing={3}>
+            <TextField
+              fullWidth
+              label="n8n Instance URL"
+              name="n8nUrl"
+              value={settings.n8nUrl}
+              onChange={handleInputChange}
+              placeholder="https://your-instance.app.n8n.cloud"
+              variant="outlined"
+              type="url"
+            />
 
-            {/* Tab 1: n8n Settings */}
-            {currentTab === 0 && (
-              <Stack spacing={3}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  n8n Connection Settings
-                </Typography>
+            <TextField
+              fullWidth
+              label="n8n API Key"
+              name="n8nApiKey"
+              value={settings.n8nApiKey}
+              onChange={handleInputChange}
+              placeholder="Enter your API key"
+              variant="outlined"
+              type="password"
+            />
 
-                <TextField
-                  fullWidth
-                  label="n8n Instance URL"
-                  name="n8nUrl"
-                  value={settings.n8nUrl}
-                  onChange={handleInputChange}
-                  placeholder="https://your-instance.app.n8n.cloud"
-                  variant="outlined"
-                  type="url"
-                />
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                onClick={handleSaveSettings}
+                disabled={loading}
+                sx={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+                  px: 4,
+                }}
+              >
+                {loading ? 'Saving...' : 'Save Settings'}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleTestConnection}
+                disabled={testLoading}
+                sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea', bgcolor: '#f8f8ff' }, px: 4 }}
+              >
+                {testLoading ? 'Testing...' : 'Test Connection'}
+              </Button>
+            </Box>
 
-                <TextField
-                  fullWidth
-                  label="n8n API Key"
-                  name="n8nApiKey"
-                  value={settings.n8nApiKey}
-                  onChange={handleInputChange}
-                  placeholder="Enter your API key"
-                  variant="outlined"
-                  type="password"
-                />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pt: 1 }}>
+              <SecurityIcon sx={{ fontSize: 16, color: '#aaa' }} />
+              <Typography variant="caption" sx={{ color: '#aaa' }}>
+                Your API key is encrypted and never exposed. It's securely stored on the backend.
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
+      )}
 
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    color="primary"
-                    onClick={handleSaveSettings}
-                    disabled={loading}
-                  >
-                    {loading ? 'Saving...' : 'Save Settings'}
-                  </Button>
-
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    color="primary"
-                    onClick={handleTestConnection}
-                    disabled={testLoading}
-                  >
-                    {testLoading ? 'Testing...' : 'Test Connection'}
-                  </Button>
-                </Box>
-
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', pt: 2 }}>
-                  Your API key is encrypted and never exposed. It's securely stored on the backend.
-                </Typography>
-              </Stack>
-            )}
-
-            {/* Tab 2: API Keys */}
-            {currentTab === 1 && (
-              <>
-                <Typography variant="h6" sx={{ marginBottom: 2, fontWeight: 'bold' }}>
+      {/* Tab 2: API Keys */}
+      {currentTab === 1 && (
+        <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Avatar sx={{ width: 40, height: 40, bgcolor: '#eef0ff', color: '#667eea' }}>
+                <VpnKeyIcon sx={{ fontSize: 20 }} />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '1.1rem' }}>
                   Global API Keys
                 </Typography>
-
-                <Typography variant="body2" sx={{ marginBottom: 3, color: 'text.secondary' }}>
-                  Store API keys that can be used across your workflows. All keys are encrypted and secure.
+                <Typography variant="body2" sx={{ color: '#999' }}>
+                  Store API keys that can be used across your workflows. All keys are encrypted.
                 </Typography>
-
-                <Box sx={{ marginBottom: 3 }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    onClick={() => setApiKeyDialog(true)}
-                  >
-                    Add New API Key
-                  </Button>
-                </Box>
-
-                {apiKeys.length === 0 ? (
-                  <Typography color="textSecondary" sx={{ py: 2 }}>
-                    No API keys saved yet. Click "Add New API Key" to get started.
-                  </Typography>
-                ) : (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                          <TableCell>Name</TableCell>
-                          <TableCell align="right">Created</TableCell>
-                          <TableCell align="center">Actions</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {apiKeys.map((key) => (
-                          <TableRow key={key.name} hover>
-                            <TableCell>{key.name}</TableCell>
-                            <TableCell align="right">
-                              {new Date(key.createdAt).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell align="center">
-                              <Button
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteApiKey(key.name)}
-                              >
-                                Delete
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                )}
-            </>
-            )}
-
-            {/* Tab 2: Integration Keys */}
-            {currentTab === 2 && (
-              <Stack spacing={3}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Third-Party Integration Keys
-                </Typography>
-
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  Store API keys for AI and automation integrations. All keys are encrypted and securely stored.
-                </Typography>
-
-                {/* OpenAI API Key */}
-                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
-                  <Stack spacing={2}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        OpenAI API Key
-                      </Typography>
-                      {integrationKeys.openai && integrationKeys.openai !== '' && (
-                        <Typography variant="caption" sx={{ color: 'success.main' }}>
-                          ✓ Configured
-                        </Typography>
-                      )}
-                    </Box>
-                    <TextField
-                      fullWidth
-                      label="API Key"
-                      type="password"
-                      placeholder="sk-..."
-                      value={integrationKeys.openai}
-                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openai: e.target.value }))}
-                      variant="outlined"
-                      size="small"
-                    />
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleSaveIntegrationKey('openai')}
-                        disabled={integrationKeysLoading.openai || !integrationKeys.openai}
-                        size="small"
-                      >
-                        {integrationKeysLoading.openai ? 'Saving...' : 'Save'}
-                      </Button>
-                      {integrationKeys.openai === '••••••••' && (
-                        <>
-                          <Button
-                            variant="outlined"
-                            color="info"
-                            onClick={() => handleTestIntegrationKey('openai')}
-                            disabled={integrationKeysTestLoading.openai}
-                            size="small"
-                          >
-                            {integrationKeysTestLoading.openai ? 'Testing...' : 'Test'}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => handleDeleteIntegrationKey('openai')}
-                            size="small"
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </Box>
-                    
-                    {integrationKeys.openai === '••••••••' && (availableOpenAIModels.length > 0 || true) && (
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Model</InputLabel>
-                        <Select
-                          value={openaiModel}
-                          onChange={(e) => setOpenaiModel(e.target.value)}
-                          label="Model"
-                        >
-                          {availableOpenAIModels.length > 0 ? (
-                            availableOpenAIModels.map((model) => (
-                              <MenuItem key={model} value={model}>
-                                {model}
-                              </MenuItem>
-                            ))
-                          ) : (
-                            <>
-                              <MenuItem value="gpt-4">gpt-4</MenuItem>
-                              <MenuItem value="gpt-4-turbo">gpt-4-turbo</MenuItem>
-                              <MenuItem value="gpt-4-turbo-preview">gpt-4-turbo-preview</MenuItem>
-                              <MenuItem value="gpt-3.5-turbo">gpt-3.5-turbo</MenuItem>
-                            </>
-                          )}
-                        </Select>
-                      </FormControl>
-                    )}
-                  </Stack>
-                </Paper>
-
-                {/* OpenRouter API Key */}
-                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
-                  <Stack spacing={2}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        OpenRouter API Key
-                      </Typography>
-                      {integrationKeys.openrouter && integrationKeys.openrouter !== '' && (
-                        <Typography variant="caption" sx={{ color: 'success.main' }}>
-                          ✓ Configured
-                        </Typography>
-                      )}
-                    </Box>
-                    <TextField
-                      fullWidth
-                      label="API Key"
-                      type="password"
-                      placeholder="sk-or-..."
-                      value={integrationKeys.openrouter}
-                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openrouter: e.target.value }))}
-                      variant="outlined"
-                      size="small"
-                    />
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleSaveIntegrationKey('openrouter')}
-                        disabled={integrationKeysLoading.openrouter || !integrationKeys.openrouter}
-                        size="small"
-                      >
-                        {integrationKeysLoading.openrouter ? 'Saving...' : 'Save'}
-                      </Button>
-                      {integrationKeys.openrouter === '••••••••' && (
-                        <>
-                          <Button
-                            variant="outlined"
-                            color="info"
-                            onClick={() => handleTestIntegrationKey('openrouter')}
-                            disabled={integrationKeysTestLoading.openrouter}
-                            size="small"
-                          >
-                            {integrationKeysTestLoading.openrouter ? 'Testing...' : 'Test'}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => handleDeleteIntegrationKey('openrouter')}
-                            size="small"
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </Box>
-                  </Stack>
-                </Paper>
-
-                {/* Make.com API Key */}
-                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
-                  <Stack spacing={2}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        Make.com API Key
-                      </Typography>
-                      {integrationKeys.make && integrationKeys.make !== '' && (
-                        <Typography variant="caption" sx={{ color: 'success.main' }}>
-                          ✓ Configured
-                        </Typography>
-                      )}
-                    </Box>
-                    <TextField
-                      fullWidth
-                      label="API Key"
-                      type="password"
-                      placeholder="Your Make.com API key"
-                      value={integrationKeys.make}
-                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, make: e.target.value }))}
-                      variant="outlined"
-                      size="small"
-                    />
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleSaveIntegrationKey('make')}
-                        disabled={integrationKeysLoading.make || !integrationKeys.make}
-                        size="small"
-                      >
-                        {integrationKeysLoading.make ? 'Saving...' : 'Save'}
-                      </Button>
-                      {integrationKeys.make === '••••••••' && (
-                        <>
-                          <Button
-                            variant="outlined"
-                            color="info"
-                            onClick={() => handleTestIntegrationKey('make')}
-                            disabled={integrationKeysTestLoading.make}
-                            size="small"
-                          >
-                            {integrationKeysTestLoading.make ? 'Testing...' : 'Test'}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => handleDeleteIntegrationKey('make')}
-                            size="small"
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </Box>
-                  </Stack>
-                </Paper>
-
-                {/* Zapier API Key */}
-                <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
-                  <Stack spacing={2}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        Zapier API Key
-                      </Typography>
-                      {integrationKeys.zapier && integrationKeys.zapier !== '' && (
-                        <Typography variant="caption" sx={{ color: 'success.main' }}>
-                          ✓ Configured
-                        </Typography>
-                      )}
-                    </Box>
-                    <TextField
-                      fullWidth
-                      label="API Key"
-                      type="password"
-                      placeholder="Your Zapier API key"
-                      value={integrationKeys.zapier}
-                      onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, zapier: e.target.value }))}
-                      variant="outlined"
-                      size="small"
-                    />
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleSaveIntegrationKey('zapier')}
-                        disabled={integrationKeysLoading.zapier || !integrationKeys.zapier}
-                        size="small"
-                      >
-                        {integrationKeysLoading.zapier ? 'Saving...' : 'Save'}
-                      </Button>
-                      {integrationKeys.zapier === '••••••••' && (
-                        <>
-                          <Button
-                            variant="outlined"
-                            color="info"
-                            onClick={() => handleTestIntegrationKey('zapier')}
-                            disabled={integrationKeysTestLoading.zapier}
-                            size="small"
-                          >
-                            {integrationKeysTestLoading.zapier ? 'Testing...' : 'Test'}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => handleDeleteIntegrationKey('zapier')}
-                            size="small"
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </Box>
-                  </Stack>
-                </Paper>
-              </Stack>
-            )}
-
-          </Box>
-        </Paper>
-
-        {/* Add API Key Dialog */}
-        <Dialog open={apiKeyDialog} onClose={() => setApiKeyDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Add New API Key</DialogTitle>
-          <DialogContent sx={{ pt: 2 }}>
-            <Stack spacing={2}>
-              <TextField
-                fullWidth
-                label="API Key Name"
-                placeholder="e.g., Stripe API, OpenAI API"
-                value={apiKeyForm.name}
-                onChange={(e) => setApiKeyForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-              <TextField
-                fullWidth
-                label="API Key Value"
-                type="password"
-                placeholder="Paste your API key here"
-                value={apiKeyForm.value}
-                onChange={(e) => setApiKeyForm((prev) => ({ ...prev, value: e.target.value }))}
-                multiline
-                rows={3}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setApiKeyDialog(false)}>Cancel</Button>
+              </Box>
+            </Box>
             <Button
-              onClick={handleSaveApiKey}
               variant="contained"
-              color="primary"
-              disabled={apiKeyLoading}
+              startIcon={<AddIcon />}
+              onClick={() => setApiKeyDialog(true)}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+              }}
             >
-              {apiKeyLoading ? 'Saving...' : 'Save'}
+              Add Key
             </Button>
-          </DialogActions>
-        </Dialog>
+          </Box>
 
+          {apiKeys.length === 0 ? (
+            <Box sx={{ p: 5, textAlign: 'center', border: '2px dashed #e0e0e0', borderRadius: 3 }}>
+              <VpnKeyIcon sx={{ fontSize: 48, color: '#ddd', mb: 1.5 }} />
+              <Typography variant="body1" sx={{ color: '#999', mb: 0.5 }}>No API keys saved yet</Typography>
+              <Typography variant="body2" sx={{ color: '#bbb' }}>Click "Add Key" to get started</Typography>
+            </Box>
+          ) : (
+            <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell align="right">Created</TableCell>
+                      <TableCell align="center">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {apiKeys.map((key) => (
+                      <TableRow key={key.name} sx={{ '&:hover': { bgcolor: '#fafbfc' } }}>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <VpnKeyIcon sx={{ fontSize: 16, color: '#667eea' }} />
+                            <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{key.name}</Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" sx={{ color: '#aaa' }}>
+                            {new Date(key.createdAt).toLocaleDateString()}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Tooltip title="Delete">
+                            <IconButton size="small" onClick={() => handleDeleteApiKey(key.name)} sx={{ color: '#e74c3c', '&:hover': { bgcolor: '#fef0ef' } }}>
+                              <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+        </Paper>
+      )}
 
-      </Box>
+      {/* Tab 3: Integration Keys */}
+      {currentTab === 2 && (
+        <Stack spacing={3}>
+          <Paper elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.06)', p: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+              <Avatar sx={{ width: 40, height: 40, bgcolor: '#eef0ff', color: '#667eea' }}>
+                <ExtensionIcon sx={{ fontSize: 20 }} />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '1.1rem' }}>
+                  Third-Party Integrations
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#999' }}>
+                  Store API keys for AI and automation services. All keys are encrypted.
+                </Typography>
+              </Box>
+            </Box>
+
+            <Stack spacing={2.5}>
+              {/* OpenAI */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>OpenAI</Typography>
+                    {integrationKeys.openai && integrationKeys.openai !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="sk-..." value={integrationKeys.openai} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openai: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('openai')} disabled={integrationKeysLoading.openai || !integrationKeys.openai} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.openai ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.openai === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('openai')} disabled={integrationKeysTestLoading.openai} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.openai ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('openai')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                  {integrationKeys.openai === '••••••••' && (
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Model</InputLabel>
+                      <Select value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} label="Model">
+                        {availableOpenAIModels.length > 0 ? (
+                          availableOpenAIModels.map((model) => (<MenuItem key={model} value={model}>{model}</MenuItem>))
+                        ) : (
+                          <>
+                            <MenuItem value="gpt-4">gpt-4</MenuItem>
+                            <MenuItem value="gpt-4-turbo">gpt-4-turbo</MenuItem>
+                            <MenuItem value="gpt-4-turbo-preview">gpt-4-turbo-preview</MenuItem>
+                            <MenuItem value="gpt-3.5-turbo">gpt-3.5-turbo</MenuItem>
+                          </>
+                        )}
+                      </Select>
+                    </FormControl>
+                  )}
+                </Stack>
+              </Paper>
+
+              {/* OpenRouter */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>OpenRouter</Typography>
+                    {integrationKeys.openrouter && integrationKeys.openrouter !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="sk-or-..." value={integrationKeys.openrouter} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openrouter: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('openrouter')} disabled={integrationKeysLoading.openrouter || !integrationKeys.openrouter} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.openrouter ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.openrouter === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('openrouter')} disabled={integrationKeysTestLoading.openrouter} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.openrouter ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('openrouter')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Make.com */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Make.com</Typography>
+                    {integrationKeys.make && integrationKeys.make !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="Your Make.com API key" value={integrationKeys.make} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, make: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('make')} disabled={integrationKeysLoading.make || !integrationKeys.make} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.make ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.make === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('make')} disabled={integrationKeysTestLoading.make} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.make ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('make')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Zapier */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Zapier</Typography>
+                    {integrationKeys.zapier && integrationKeys.zapier !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="Your Zapier API key" value={integrationKeys.zapier} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, zapier: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('zapier')} disabled={integrationKeysLoading.zapier || !integrationKeys.zapier} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.zapier ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.zapier === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('zapier')} disabled={integrationKeysTestLoading.zapier} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.zapier ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('zapier')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+            </Stack>
+          </Paper>
+        </Stack>
+      )}
+
+      {/* Add API Key Dialog */}
+      <Dialog open={apiKeyDialog} onClose={() => setApiKeyDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0, pt: 3 }}>Add New API Key</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <TextField
+              fullWidth
+              label="API Key Name"
+              placeholder="e.g., Stripe API, OpenAI API"
+              value={apiKeyForm.name}
+              onChange={(e) => setApiKeyForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+            <TextField
+              fullWidth
+              label="API Key Value"
+              type="password"
+              placeholder="Paste your API key here"
+              value={apiKeyForm.value}
+              onChange={(e) => setApiKeyForm((prev) => ({ ...prev, value: e.target.value }))}
+              multiline
+              rows={3}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setApiKeyDialog(false)} sx={{ color: '#888' }}>Cancel</Button>
+          <Button
+            onClick={handleSaveApiKey}
+            variant="contained"
+            disabled={apiKeyLoading}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+            }}
+          >
+            {apiKeyLoading ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }
