@@ -46,11 +46,35 @@ import {
   RocketLaunch as RocketIcon,
   Speed as SpeedIcon,
   Brush as BrushIcon,
-
   ArrowForward as ArrowForwardIcon,
   Bolt as BoltIcon,
   AutoAwesome as AutoAwesomeIcon,
+  Lock as LockIcon,
+  PlayArrow as PlayArrowIcon,
+  TrendingUp as TrendingUpIcon,
+  People as PeopleIcon,
+  AttachMoney as AttachMoneyIcon,
+  BarChart as BarChartIcon,
+  Notifications as NotificationsIcon,
+  Email as EmailIcon,
+  Support as SupportIcon,
+  Verified as VerifiedIcon,
+  Schedule as ScheduleIcon,
+  Settings as SettingsIcon,
+  CloudDone as CloudDoneIcon,
+  Dashboard as DashboardIcon,
+  EmojiEvents as EmojiEventsIcon,
+  FavoriteBorder as FavoriteIcon,
+  Share as ShareIcon,
+  MoreVert as MoreVertIcon,
+  Circle as CircleIcon,
+  Article as ArticleIcon,
+  VideoLibrary as VideoLibraryIcon,
+  School as SchoolIcon,
+  CreditCard as CreditCardIcon,
+  Shield as ShieldIcon,
 } from '@mui/icons-material';
+import { LinearProgress, Divider, IconButton, Badge, Tab, Tabs, Switch, FormControlLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip } from '@mui/material';
 import axios from 'axios';
 
 interface Template {
@@ -242,208 +266,677 @@ const PreviewContent: React.FC<{ template: Template }> = ({ template }) => {
   switch (template.type) {
     case 'index':
       return (
-        <Box sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="h4" sx={{ mb: 2, fontWeight: 'bold' }}>
-            Welcome to Our Platform
-          </Typography>
-          <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
-            Build amazing applications with our intuitive interface. Get started in minutes, not days.
-          </Typography>
-          <Button variant="contained" sx={{ mb: 2, mr: 1 }}>
-            Get Started
-          </Button>
-          <Button variant="outlined">Learn More</Button>
-          <Box sx={{ mt: 4, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 2 }}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6">Fast</Typography>
-              <Typography variant="body2">Lightning quick</Typography>
-            </Paper>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6">Secure</Typography>
-              <Typography variant="body2">Bank-grade security</Typography>
-            </Paper>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6">Simple</Typography>
-              <Typography variant="body2">Easy to use</Typography>
-            </Paper>
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* ── Navigation Bar ── */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              px: 3,
+              py: 1.5,
+              borderBottom: '1px solid #f0f0f0',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 24, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>
+                Acme SaaS
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {['Features', 'Pricing', 'About', 'Blog'].map((item) => (
+                <Typography key={item} variant="body2" sx={{ color: '#666', cursor: 'pointer', fontWeight: 500, '&:hover': { color: '#667eea' } }}>
+                  {item}
+                </Typography>
+              ))}
+              <Button variant="contained" size="small" sx={{ borderRadius: 2, background: 'linear-gradient(135deg, #667eea, #764ba2)', textTransform: 'none', fontWeight: 600 }}>
+                Get Started
+              </Button>
+            </Box>
+          </Box>
+
+          {/* ── Hero Section ── */}
+          <Box
+            sx={{
+              background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
+              color: 'white',
+              py: 8,
+              px: 4,
+              textAlign: 'center',
+              position: 'relative',
+              overflow: 'hidden',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: '-30%',
+                right: '-10%',
+                width: 300,
+                height: 300,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(102,126,234,0.4), transparent 70%)',
+              },
+            }}
+          >
+            <Chip label="🚀 Now in Public Beta" sx={{ mb: 3, bgcolor: 'rgba(255,255,255,0.12)', color: 'white', fontWeight: 600, border: '1px solid rgba(255,255,255,0.15)' }} />
+            <Typography variant="h3" sx={{ fontWeight: 800, mb: 2, lineHeight: 1.2, fontSize: { xs: '1.8rem', sm: '2.4rem' } }}>
+              Build, Ship & Scale<br />
+              <Box component="span" sx={{ background: 'linear-gradient(90deg, #667eea, #f093fb)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Your Dream Product
+              </Box>
+            </Typography>
+            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.7)', mb: 4, maxWidth: 540, mx: 'auto', lineHeight: 1.7 }}>
+              The all-in-one platform that helps startups and solopreneurs launch production-ready SaaS applications in record time. No complex infrastructure needed.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button variant="contained" size="large" endIcon={<ArrowForwardIcon />} sx={{ borderRadius: 3, px: 4, py: 1.5, background: 'linear-gradient(135deg, #667eea, #764ba2)', fontWeight: 700, textTransform: 'none', fontSize: '1rem', boxShadow: '0 8px 30px rgba(102,126,234,0.4)' }}>
+                Start Building Free
+              </Button>
+              <Button variant="outlined" size="large" startIcon={<PlayArrowIcon />} sx={{ borderRadius: 3, px: 4, py: 1.5, color: 'white', borderColor: 'rgba(255,255,255,0.3)', textTransform: 'none', fontWeight: 600, fontSize: '1rem' }}>
+                Watch Demo
+              </Button>
+            </Box>
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              <AvatarGroup max={4} sx={{ '& .MuiAvatar-root': { width: 28, height: 28, border: '2px solid #302b63', fontSize: '0.7rem' } }}>
+                <Avatar src="https://i.pravatar.cc/30?img=10" />
+                <Avatar src="https://i.pravatar.cc/30?img=11" />
+                <Avatar src="https://i.pravatar.cc/30?img=12" />
+                <Avatar src="https://i.pravatar.cc/30?img=13" />
+              </AvatarGroup>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)' }}>2,400+ builders already onboard</Typography>
+            </Box>
+          </Box>
+
+          {/* ── Trusted By ── */}
+          <Box sx={{ py: 4, px: 3, textAlign: 'center', bgcolor: '#fafbfc', borderTop: '1px solid #f0f0f0' }}>
+            <Typography variant="overline" sx={{ color: '#aaa', letterSpacing: 2, fontWeight: 600 }}>Trusted by teams at</Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 5, mt: 2, flexWrap: 'wrap', alignItems: 'center', opacity: 0.45 }}>
+              {['Stripe', 'Vercel', 'Notion', 'Linear', 'Figma'].map((brand) => (
+                <Typography key={brand} variant="h6" sx={{ fontWeight: 800, color: '#333', fontSize: '1.1rem' }}>{brand}</Typography>
+              ))}
+            </Box>
+          </Box>
+
+          {/* ── Feature Cards ── */}
+          <Box sx={{ py: 6, px: 3 }}>
+            <Typography variant="h5" sx={{ textAlign: 'center', fontWeight: 800, mb: 1, color: '#1a1a2e' }}>Everything You Need to Launch</Typography>
+            <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 5, maxWidth: 500, mx: 'auto' }}>
+              From authentication to analytics, every feature is built-in so you can focus on what makes your product unique.
+            </Typography>
+            <Grid container spacing={2.5}>
+              {[
+                { icon: <BoltIcon />, title: 'Lightning Fast', desc: 'Sub-100ms response times with global edge caching and optimised queries.', color: '#667eea', bg: '#eef0ff' },
+                { icon: <LockIcon />, title: 'Enterprise Security', desc: 'SOC 2 compliant with end-to-end encryption and role-based access controls.', color: '#27ae60', bg: '#e8f5e9' },
+                { icon: <TrendingUpIcon />, title: 'Built-in Analytics', desc: 'Real-time dashboards tracking MRR, churn, LTV and user engagement metrics.', color: '#f39c12', bg: '#fff8e1' },
+                { icon: <PeopleIcon />, title: 'Team Collaboration', desc: 'Invite unlimited team members with granular permissions and activity logs.', color: '#e74c3c', bg: '#fce4ec' },
+                { icon: <SpeedIcon />, title: 'Auto-Scaling', desc: 'Seamlessly handles 10 to 10 million users without any configuration changes.', color: '#9b59b6', bg: '#f3e5f5' },
+                { icon: <SupportIcon />, title: '24/7 Support', desc: 'Dedicated support team with <2 hour response times and onboarding assistance.', color: '#00bcd4', bg: '#e0f7fa' },
+              ].map((feature, i) => (
+                <Grid item xs={12} sm={6} key={i}>
+                  <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #f0f0f0', height: '100%', transition: 'all 0.25s', '&:hover': { boxShadow: '0 8px 24px rgba(0,0,0,0.06)', borderColor: 'transparent' } }}>
+                    <Avatar sx={{ bgcolor: feature.bg, color: feature.color, mb: 2, width: 44, height: 44 }}>
+                      {feature.icon}
+                    </Avatar>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5 }}>{feature.title}</Typography>
+                    <Typography variant="body2" sx={{ color: '#777', lineHeight: 1.6 }}>{feature.desc}</Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          {/* ── Social Proof Stats ── */}
+          <Box sx={{ py: 5, px: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+            <Grid container spacing={3} textAlign="center">
+              {[
+                { value: '10K+', label: 'Active Users' },
+                { value: '99.9%', label: 'Uptime SLA' },
+                { value: '4.9★', label: 'Average Rating' },
+                { value: '$2.4M', label: 'Revenue Generated' },
+              ].map((s, i) => (
+                <Grid item xs={6} sm={3} key={i}>
+                  <Typography variant="h4" sx={{ fontWeight: 800 }}>{s.value}</Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.8 }}>{s.label}</Typography>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          {/* ── CTA Footer ── */}
+          <Box sx={{ py: 6, textAlign: 'center', px: 3 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, mb: 2, color: '#1a1a2e' }}>Ready to Get Started?</Typography>
+            <Typography variant="body1" sx={{ color: '#888', mb: 4, maxWidth: 460, mx: 'auto' }}>
+              Join thousands of founders who launched their SaaS with our platform. Free tier available — no credit card required.
+            </Typography>
+            <Button variant="contained" size="large" sx={{ borderRadius: 3, px: 5, py: 1.5, background: 'linear-gradient(135deg, #667eea, #764ba2)', textTransform: 'none', fontWeight: 700, fontSize: '1rem' }}>
+              Create Your Free Account
+            </Button>
           </Box>
         </Box>
       );
+
     case 'thanks':
       return (
-        <Box sx={{ p: 3, textAlign: 'center' }}>
-          <Box sx={{ mb: 3 }}>
-            <CheckCircleIcon sx={{ fontSize: 60, color: '#27ae60' }} />
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* ── Minimal Nav ── */}
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 22, color: '#27ae60' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
           </Box>
-          <Typography variant="h5" sx={{ mb: 1, fontWeight: 'bold' }}>
-            Thank You!
-          </Typography>
-          <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
-            Your submission has been received. We'll be in touch shortly.
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 3, p: 2, backgroundColor: '#f0f0f0', borderRadius: 1 }}>
-            Confirmation email sent to: user@example.com
-          </Typography>
-          <Button variant="contained" sx={{ mr: 1 }}>
-            Back Home
-          </Button>
-          <Button variant="outlined">View Dashboard</Button>
+
+          {/* ── Success Hero ── */}
+          <Box sx={{ textAlign: 'center', pt: 6, pb: 5, px: 3, background: 'linear-gradient(180deg, #e8f5e9 0%, #ffffff 100%)' }}>
+            <Box sx={{
+              width: 80, height: 80, borderRadius: '50%', mx: 'auto', mb: 3,
+              background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 12px 40px rgba(39, 174, 96, 0.3)',
+              animation: 'none',
+            }}>
+              <CheckCircleIcon sx={{ fontSize: 44, color: 'white' }} />
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>
+              You're All Set! 🎉
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#666', maxWidth: 500, mx: 'auto', lineHeight: 1.7 }}>
+              Thank you for signing up. Your account has been created successfully and you're ready to start building amazing things.
+            </Typography>
+          </Box>
+
+          {/* ── Confirmation Details ── */}
+          <Box sx={{ px: 3, pb: 4, maxWidth: 520, mx: 'auto' }}>
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #e8e8e8', mb: 3, bgcolor: '#fafbfc' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 2 }}>Order Confirmation</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2" sx={{ color: '#888' }}>Plan</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>Professional</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2" sx={{ color: '#888' }}>Billing</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>Monthly</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2" sx={{ color: '#888' }}>Amount</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: '#27ae60' }}>$29.00/mo</Typography>
+              </Box>
+              <Divider sx={{ my: 2 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" sx={{ color: '#888' }}>Confirmation #</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>ACM-2026-8847</Typography>
+              </Box>
+            </Paper>
+
+            {/* ── Email Notification ── */}
+            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e3f2fd', bgcolor: '#f5f9ff', display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+              <Avatar sx={{ bgcolor: '#e3f2fd', color: '#1976d2', width: 40, height: 40 }}>
+                <EmailIcon sx={{ fontSize: 20 }} />
+              </Avatar>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>Confirmation email sent</Typography>
+                <Typography variant="caption" sx={{ color: '#888' }}>Check your inbox at j.smith@example.com</Typography>
+              </Box>
+            </Paper>
+
+            {/* ── Next Steps ── */}
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>What's Next?</Typography>
+            <Stack spacing={1.5} sx={{ mb: 4 }}>
+              {[
+                { step: '1', title: 'Complete your profile', desc: 'Add your company details and logo', icon: <PeopleIcon sx={{ fontSize: 18 }} /> },
+                { step: '2', title: 'Create your first project', desc: 'Use a template or start from scratch', icon: <RocketIcon sx={{ fontSize: 18 }} /> },
+                { step: '3', title: 'Invite your team', desc: 'Collaborate with up to 10 team members', icon: <GroupIcon sx={{ fontSize: 18 }} /> },
+              ].map((item) => (
+                <Paper key={item.step} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 2, transition: 'all 0.2s', '&:hover': { borderColor: '#667eea', bgcolor: '#fafafe' } }}>
+                  <Avatar sx={{ bgcolor: '#eef0ff', color: '#667eea', width: 36, height: 36, fontSize: '0.85rem', fontWeight: 700 }}>
+                    {item.icon}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{item.title}</Typography>
+                    <Typography variant="caption" sx={{ color: '#999' }}>{item.desc}</Typography>
+                  </Box>
+                </Paper>
+              ))}
+            </Stack>
+
+            <Stack direction="row" spacing={2} justifyContent="center">
+              <Button variant="contained" size="large" endIcon={<ArrowForwardIcon />} sx={{ borderRadius: 3, px: 4, background: 'linear-gradient(135deg, #667eea, #764ba2)', textTransform: 'none', fontWeight: 700, flex: 1 }}>
+                Go to Dashboard
+              </Button>
+              <Button variant="outlined" size="large" sx={{ borderRadius: 3, px: 3, textTransform: 'none', fontWeight: 600, borderColor: '#ddd', color: '#666' }}>
+                Back to Home
+              </Button>
+            </Stack>
+          </Box>
         </Box>
       );
+
     case 'members':
       return (
-        <Box sx={{ p: 3 }}>
-          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-              Welcome Back, Member!
-            </Typography>
-            <Avatar sx={{ bgcolor: '#9b59b6' }}>JD</Avatar>
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* ── Members Nav ── */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0', bgcolor: 'white' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 22, color: '#9b59b6' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Tooltip title="Notifications">
+                <IconButton size="small">
+                  <Badge badgeContent={3} color="error" sx={{ '& .MuiBadge-badge': { fontSize: 10, height: 16, minWidth: 16 } }}>
+                    <NotificationsIcon sx={{ fontSize: 20, color: '#666' }} />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Settings">
+                <IconButton size="small"><SettingsIcon sx={{ fontSize: 20, color: '#666' }} /></IconButton>
+              </Tooltip>
+              <Avatar src="https://i.pravatar.cc/36?img=32" sx={{ width: 34, height: 34, border: '2px solid #e0e0e0' }} />
+            </Box>
           </Box>
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={12} sm={6}>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="body2" sx={{ color: '#666' }}>
-                  Your Plan
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Premium
-                </Typography>
-              </Paper>
+
+          {/* ── Welcome Banner ── */}
+          <Box sx={{ background: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', color: 'white', px: 3, py: 4, position: 'relative', overflow: 'hidden' }}>
+            <Box sx={{ position: 'relative', zIndex: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>Welcome back, Jessica 👋</Typography>
+              <Typography variant="body2" sx={{ opacity: 0.85 }}>You have 3 new lessons available and your streak is on fire — 14 days!</Typography>
+            </Box>
+          </Box>
+
+          {/* ── Quick Stats ── */}
+          <Box sx={{ px: 3, mt: -2, position: 'relative', zIndex: 2 }}>
+            <Grid container spacing={2}>
+              {[
+                { label: 'Current Plan', value: 'Premium', sub: 'Renews Mar 15, 2026', icon: <EmojiEventsIcon sx={{ color: '#f39c12' }} />, color: '#fff8e1' },
+                { label: 'Courses Completed', value: '12 / 24', sub: '50% complete', icon: <SchoolIcon sx={{ color: '#667eea' }} />, color: '#eef0ff' },
+                { label: 'Streak', value: '14 Days', sub: 'Personal best!', icon: <BoltIcon sx={{ color: '#e74c3c' }} />, color: '#fce4ec' },
+              ].map((stat, i) => (
+                <Grid item xs={12} sm={4} key={i}>
+                  <Paper elevation={2} sx={{ p: 2.5, borderRadius: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Avatar sx={{ bgcolor: stat.color, width: 44, height: 44 }}>{stat.icon}</Avatar>
+                    <Box>
+                      <Typography variant="caption" sx={{ color: '#999', fontWeight: 500 }}>{stat.label}</Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e', lineHeight: 1.2 }}>{stat.value}</Typography>
+                      <Typography variant="caption" sx={{ color: '#aaa' }}>{stat.sub}</Typography>
+                    </Box>
+                  </Paper>
+                </Grid>
+              ))}
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="body2" sx={{ color: '#666' }}>
-                  Subscription Expires
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  March 15, 2026
-                </Typography>
-              </Paper>
-            </Grid>
-          </Grid>
-          <List>
-            <ListItem>
-              <ListItemIcon>
-                <StarIcon sx={{ color: '#f39c12' }} />
-              </ListItemIcon>
-              <ListItemText
-                primary="Exclusive Content"
-                secondary="Access all premium resources and tutorials"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemIcon>
-                <CheckCircleIcon sx={{ color: '#27ae60' }} />
-              </ListItemIcon>
-              <ListItemText primary="Priority Support" secondary="Get answers from our expert team" />
-            </ListItem>
-          </List>
+          </Box>
+
+          {/* ── Content Library ── */}
+          <Box sx={{ px: 3, py: 4 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Continue Learning</Typography>
+              <Button size="small" sx={{ textTransform: 'none', fontWeight: 600, color: '#667eea' }}>View All →</Button>
+            </Box>
+            <Stack spacing={2}>
+              {[
+                { title: 'Building Your First Workflow', progress: 75, lessons: '6/8 lessons', image: 'https://picsum.photos/seed/course1/80/80', tag: 'In Progress' },
+                { title: 'Advanced Automation Patterns', progress: 30, lessons: '3/10 lessons', image: 'https://picsum.photos/seed/course2/80/80', tag: 'In Progress' },
+                { title: 'Scaling to 10K Users', progress: 0, lessons: '0/12 lessons', image: 'https://picsum.photos/seed/course3/80/80', tag: 'New' },
+              ].map((course, i) => (
+                <Paper key={i} elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #f0f0f0', display: 'flex', gap: 2, alignItems: 'center', transition: 'all 0.2s', '&:hover': { boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderColor: 'transparent' } }}>
+                  <Box
+                    component="img"
+                    src={course.image}
+                    alt={course.title}
+                    sx={{ width: 64, height: 64, borderRadius: 2, objectFit: 'cover', flexShrink: 0 }}
+                    onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{course.title}</Typography>
+                      <Chip label={course.tag} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: course.tag === 'New' ? '#e3f2fd' : '#f3e5f5', color: course.tag === 'New' ? '#1976d2' : '#9b59b6' }} />
+                    </Box>
+                    <Typography variant="caption" sx={{ color: '#999' }}>{course.lessons}</Typography>
+                    <LinearProgress variant="determinate" value={course.progress} sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#f0f0f0', '& .MuiLinearProgress-bar': { borderRadius: 3, background: 'linear-gradient(90deg, #667eea, #764ba2)' } }} />
+                  </Box>
+                  <Button size="small" variant="outlined" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, minWidth: 'auto', px: 2, borderColor: '#e0e0e0', color: '#667eea' }}>
+                    {course.progress > 0 ? 'Resume' : 'Start'}
+                  </Button>
+                </Paper>
+              ))}
+            </Stack>
+          </Box>
+
+          {/* ── Quick Actions ── */}
+          <Box sx={{ px: 3, pb: 3, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+            {[
+              { label: 'My Profile', icon: <PeopleIcon sx={{ fontSize: 16 }} /> },
+              { label: 'Billing', icon: <CreditCardIcon sx={{ fontSize: 16 }} /> },
+              { label: 'Support', icon: <SupportIcon sx={{ fontSize: 16 }} /> },
+              { label: 'Community', icon: <GroupIcon sx={{ fontSize: 16 }} /> },
+            ].map((a, i) => (
+              <Chip key={i} icon={a.icon} label={a.label} variant="outlined" clickable sx={{ borderColor: '#e8e8e8', fontWeight: 500, '&:hover': { borderColor: '#667eea', bgcolor: '#fafafe' } }} />
+            ))}
+          </Box>
         </Box>
       );
+
     case 'checkout':
       return (
-        <Box sx={{ p: 3 }}>
-          <Typography variant="h5" sx={{ mb: 3, fontWeight: 'bold', textAlign: 'center' }}>
-            Upgrade Your Plan
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={12} sm={6}>
-              <Paper sx={{ p: 2, backgroundColor: '#f9f9f9' }}>
-                <Typography variant="h6" sx={{ mb: 2 }}>
-                  Current Plan
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  Free
-                </Typography>
-                <Chip label="$0/month" color="default" />
-              </Paper>
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* ── Checkout Nav ── */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 22, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LockIcon sx={{ fontSize: 14, color: '#27ae60' }} />
+              <Typography variant="caption" sx={{ color: '#27ae60', fontWeight: 600 }}>Secure Checkout</Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ px: 3, py: 4 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', color: '#1a1a2e', mb: 1 }}>Choose Your Plan</Typography>
+            <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 4 }}>All plans include a 14-day free trial. No credit card required to start.</Typography>
+
+            {/* ── Pricing Cards ── */}
+            <Grid container spacing={2.5} sx={{ mb: 4 }}>
+              {[
+                {
+                  name: 'Starter',
+                  price: '$0',
+                  period: '/month',
+                  desc: 'Perfect for individuals getting started',
+                  features: ['1 Project', '1,000 API calls/mo', 'Community support', 'Basic analytics'],
+                  cta: 'Current Plan',
+                  popular: false,
+                  gradient: '',
+                  disabled: true,
+                },
+                {
+                  name: 'Professional',
+                  price: '$29',
+                  period: '/month',
+                  desc: 'For growing teams and startups',
+                  features: ['Unlimited projects', '100K API calls/mo', 'Priority support', 'Advanced analytics', 'Custom domains', 'Team collaboration'],
+                  cta: 'Upgrade Now',
+                  popular: true,
+                  gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  disabled: false,
+                },
+                {
+                  name: 'Enterprise',
+                  price: '$99',
+                  period: '/month',
+                  desc: 'For large organisations needing scale',
+                  features: ['Everything in Pro', 'Unlimited API calls', 'Dedicated support', 'SLA guarantee', 'SSO & SAML', 'Custom integrations'],
+                  cta: 'Contact Sales',
+                  popular: false,
+                  gradient: '',
+                  disabled: false,
+                },
+              ].map((plan, i) => (
+                <Grid item xs={12} sm={4} key={i}>
+                  <Paper
+                    elevation={plan.popular ? 8 : 0}
+                    sx={{
+                      p: 3, borderRadius: 3, height: '100%', position: 'relative',
+                      border: plan.popular ? '2px solid #667eea' : '1px solid #e8e8e8',
+                      bgcolor: plan.popular ? '#fafafe' : 'white',
+                      transition: 'all 0.2s',
+                      '&:hover': { boxShadow: '0 8px 30px rgba(0,0,0,0.08)' },
+                    }}
+                  >
+                    {plan.popular && (
+                      <Chip label="Most Popular" size="small" sx={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', fontWeight: 700, fontSize: '0.7rem' }} />
+                    )}
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#667eea', mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 1 }}>{plan.name}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 1 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e' }}>{plan.price}</Typography>
+                      <Typography variant="body2" sx={{ color: '#999', ml: 0.5 }}>{plan.period}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 2 }}>{plan.desc}</Typography>
+                    <Divider sx={{ mb: 2 }} />
+                    <Stack spacing={1} sx={{ mb: 3 }}>
+                      {plan.features.map((f, fi) => (
+                        <Box key={fi} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <CheckCircleIcon sx={{ fontSize: 16, color: '#27ae60' }} />
+                          <Typography variant="body2" sx={{ color: '#555', fontSize: '0.82rem' }}>{f}</Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                    <Button
+                      variant={plan.popular ? 'contained' : 'outlined'}
+                      fullWidth
+                      disabled={plan.disabled}
+                      sx={{
+                        borderRadius: 2.5, py: 1.2, textTransform: 'none', fontWeight: 700, fontSize: '0.9rem',
+                        ...(plan.popular ? { background: plan.gradient, boxShadow: '0 4px 16px rgba(102,126,234,0.3)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6, #6a3f96)' } } : { borderColor: '#ddd', color: '#666' }),
+                      }}
+                    >
+                      {plan.cta}
+                    </Button>
+                  </Paper>
+                </Grid>
+              ))}
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <Paper sx={{ p: 2, backgroundColor: '#e8f5e9', border: '2px solid #27ae60' }}>
-                <Typography variant="h6" sx={{ mb: 2, color: '#27ae60' }}>
-                  Pro Plan
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  All features included
-                </Typography>
-                <Chip label="$29/month" color="success" />
-              </Paper>
-            </Grid>
-          </Grid>
-          <TextField fullWidth label="Card Number" placeholder="1234 5678 9012 3456" sx={{ mb: 2 }} />
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={6}>
-              <TextField fullWidth label="MM/YY" placeholder="12/25" />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth label="CVC" placeholder="123" />
-            </Grid>
-          </Grid>
-          <Button variant="contained" fullWidth size="large" sx={{ backgroundColor: '#e74c3c' }}>
-            Upgrade Now - $29/month
-          </Button>
-          <Typography variant="caption" sx={{ display: 'block', mt: 2, textAlign: 'center', color: '#666' }}>
-            Secure payment processing. Cancel anytime.
-          </Typography>
+
+            {/* ── Payment Form ── */}
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #e8e8e8', maxWidth: 480, mx: 'auto', mb: 3 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2.5, color: '#1a1a2e' }}>Payment Details</Typography>
+              <TextField fullWidth label="Cardholder Name" placeholder="Jessica Smith" size="small" sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+              <TextField fullWidth label="Card Number" placeholder="4242 4242 4242 4242" size="small" sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                InputProps={{ endAdornment: <CreditCardIcon sx={{ color: '#ccc' }} /> }}
+              />
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="Expiry" placeholder="MM / YY" size="small" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField fullWidth label="CVC" placeholder="123" size="small" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    InputProps={{ endAdornment: <LockIcon sx={{ color: '#ccc', fontSize: 18 }} /> }}
+                  />
+                </Grid>
+              </Grid>
+              <Button variant="contained" fullWidth size="large" sx={{ borderRadius: 3, py: 1.5, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', textTransform: 'none', fontWeight: 700, fontSize: '1rem', boxShadow: '0 6px 24px rgba(102,126,234,0.35)' }}>
+                Start 14-Day Free Trial
+              </Button>
+            </Paper>
+
+            {/* ── Trust Badges ── */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap', mb: 2 }}>
+              {[
+                { icon: <ShieldIcon sx={{ fontSize: 16 }} />, label: '256-bit SSL' },
+                { icon: <VerifiedIcon sx={{ fontSize: 16 }} />, label: 'SOC 2 Certified' },
+                { icon: <LockIcon sx={{ fontSize: 16 }} />, label: 'PCI Compliant' },
+              ].map((badge, i) => (
+                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ color: '#aaa' }}>{badge.icon}</Box>
+                  <Typography variant="caption" sx={{ color: '#aaa', fontWeight: 500 }}>{badge.label}</Typography>
+                </Box>
+              ))}
+            </Box>
+            <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: '#bbb' }}>
+              30-day money-back guarantee · Cancel anytime · No hidden fees
+            </Typography>
+          </Box>
         </Box>
       );
+
     case 'admin':
       return (
-        <Box sx={{ p: 3 }}>
-          <Box sx={{ mb: 3, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 2 }}>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h6">1,234</Typography>
-              <Typography variant="body2" sx={{ color: '#666' }}>
-                Users
-              </Typography>
-            </Paper>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h6" sx={{ color: '#27ae60' }}>
-                $12.5K
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#666' }}>
-                Revenue
-              </Typography>
-            </Paper>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h6" sx={{ color: '#e74c3c' }}>
-                24
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#666' }}>
-                Issues
-              </Typography>
-            </Paper>
+        <Box sx={{ overflow: 'hidden', bgcolor: '#f5f6fa' }}>
+          {/* ── Admin Top Bar ── */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, bgcolor: '#1a1a2e', color: 'white' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <DashboardIcon sx={{ fontSize: 22, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Admin Panel</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Tooltip title="Notifications">
+                <IconButton size="small">
+                  <Badge badgeContent={7} color="error" sx={{ '& .MuiBadge-badge': { fontSize: 10, height: 16, minWidth: 16 } }}>
+                    <NotificationsIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+              <Avatar src="https://i.pravatar.cc/32?img=15" sx={{ width: 30, height: 30, border: '2px solid rgba(255,255,255,0.2)' }} />
+            </Box>
           </Box>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Recent Activity
-            </Typography>
-            <List dense>
-              <ListItem>
-                <ListItemText
-                  primary="New subscription from John Doe"
-                  secondary="2 hours ago"
-                  primaryTypographyProps={{ variant: 'body2' }}
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemText
-                  primary="System alert: CPU usage at 75%"
-                  secondary="1 hour ago"
-                  primaryTypographyProps={{ variant: 'body2', sx: { color: '#e74c3c' } }}
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemText
-                  primary="Backup completed successfully"
-                  secondary="30 minutes ago"
-                  primaryTypographyProps={{ variant: 'body2', sx: { color: '#27ae60' } }}
-                />
-              </ListItem>
-            </List>
-          </Paper>
+
+          <Box sx={{ p: 3 }}>
+            {/* ── Date & Title ── */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Dashboard Overview</Typography>
+                <Typography variant="caption" sx={{ color: '#999' }}>Last updated: Feb 11, 2026 at 09:42 AM</Typography>
+              </Box>
+              <Button variant="outlined" size="small" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, borderColor: '#ddd', color: '#666' }}>
+                Download Report
+              </Button>
+            </Box>
+
+            {/* ── KPI Cards ── */}
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              {[
+                { label: 'Total Revenue', value: '$48,295', change: '+12.5%', up: true, icon: <AttachMoneyIcon />, color: '#27ae60', bg: '#e8f5e9' },
+                { label: 'Active Users', value: '3,847', change: '+8.2%', up: true, icon: <PeopleIcon />, color: '#667eea', bg: '#eef0ff' },
+                { label: 'New Signups', value: '284', change: '+23.1%', up: true, icon: <TrendingUpIcon />, color: '#f39c12', bg: '#fff8e1' },
+                { label: 'Churn Rate', value: '2.4%', change: '-0.3%', up: false, icon: <BarChartIcon />, color: '#e74c3c', bg: '#fce4ec' },
+              ].map((kpi, i) => (
+                <Grid item xs={6} sm={3} key={i}>
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee', bgcolor: 'white' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                      <Avatar sx={{ bgcolor: kpi.bg, color: kpi.color, width: 38, height: 38 }}>{kpi.icon}</Avatar>
+                      <Chip label={kpi.change} size="small" sx={{ height: 22, fontSize: '0.7rem', fontWeight: 700, bgcolor: kpi.up ? '#e8f5e9' : '#fce4ec', color: kpi.up ? '#27ae60' : '#e74c3c' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#1a1a2e', lineHeight: 1.2 }}>{kpi.value}</Typography>
+                    <Typography variant="caption" sx={{ color: '#999' }}>{kpi.label}</Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+
+            {/* ── Revenue Chart Placeholder ── */}
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee', bgcolor: 'white', mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Revenue Overview</Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {['7D', '30D', '90D', '1Y'].map((period) => (
+                    <Chip key={period} label={period} size="small" clickable sx={{ height: 26, fontSize: '0.7rem', fontWeight: 600, bgcolor: period === '30D' ? '#667eea' : '#f5f5f5', color: period === '30D' ? 'white' : '#888' }} />
+                  ))}
+                </Box>
+              </Box>
+              {/* Simulated chart bars */}
+              <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 120, px: 1 }}>
+                {[45, 62, 58, 75, 88, 72, 95, 80, 68, 92, 78, 85].map((h, i) => (
+                  <Box key={i} sx={{ flex: 1, height: `${h}%`, borderRadius: '4px 4px 0 0', background: i === 6 ? 'linear-gradient(180deg, #667eea, #764ba2)' : 'linear-gradient(180deg, #e8eaf6, #c5cae9)', transition: 'all 0.2s', '&:hover': { background: 'linear-gradient(180deg, #667eea, #764ba2)', transform: 'scaleY(1.05)' } }} />
+                ))}
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, px: 0.5 }}>
+                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m) => (
+                  <Typography key={m} variant="caption" sx={{ color: '#ccc', fontSize: '0.6rem', flex: 1, textAlign: 'center' }}>{m}</Typography>
+                ))}
+              </Box>
+            </Paper>
+
+            {/* ── Recent Users Table ── */}
+            <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #eee', bgcolor: 'white', overflow: 'hidden', mb: 3 }}>
+              <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Recent Users</Typography>
+                <Button size="small" sx={{ textTransform: 'none', fontWeight: 600, color: '#667eea' }}>View All →</Button>
+              </Box>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#fafbfc' }}>
+                      <TableCell sx={{ fontWeight: 600, color: '#888', borderBottom: '1px solid #f0f0f0' }}>User</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#888', borderBottom: '1px solid #f0f0f0' }}>Plan</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#888', borderBottom: '1px solid #f0f0f0' }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#888', borderBottom: '1px solid #f0f0f0' }}>MRR</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {[
+                      { name: 'Sarah Chen', email: 's.chen@startup.io', plan: 'Enterprise', status: 'Active', mrr: '$99', avatar: 'https://i.pravatar.cc/28?img=47' },
+                      { name: 'Marcus Johnson', email: 'm.johnson@scale.co', plan: 'Professional', status: 'Active', mrr: '$29', avatar: 'https://i.pravatar.cc/28?img=68' },
+                      { name: 'Emily Rodriguez', email: 'e.rod@dev.studio', plan: 'Professional', status: 'Trial', mrr: '$0', avatar: 'https://i.pravatar.cc/28?img=45' },
+                      { name: 'David Park', email: 'd.park@cloud.io', plan: 'Starter', status: 'Churned', mrr: '$0', avatar: 'https://i.pravatar.cc/28?img=60' },
+                    ].map((user, i) => (
+                      <TableRow key={i} sx={{ '&:hover': { bgcolor: '#fafbfc' }, '& td': { borderBottom: '1px solid #f5f5f5' } }}>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Avatar src={user.avatar} sx={{ width: 28, height: 28 }} />
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e', lineHeight: 1.2 }}>{user.name}</Typography>
+                              <Typography variant="caption" sx={{ color: '#bbb' }}>{user.email}</Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
+                        <TableCell><Typography variant="body2" sx={{ color: '#555' }}>{user.plan}</Typography></TableCell>
+                        <TableCell>
+                          <Chip
+                            label={user.status}
+                            size="small"
+                            sx={{
+                              height: 22, fontSize: '0.7rem', fontWeight: 600,
+                              bgcolor: user.status === 'Active' ? '#e8f5e9' : user.status === 'Trial' ? '#e3f2fd' : '#fce4ec',
+                              color: user.status === 'Active' ? '#27ae60' : user.status === 'Trial' ? '#1976d2' : '#e74c3c',
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell><Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{user.mrr}</Typography></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+
+            {/* ── System Health ── */}
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee', bgcolor: 'white' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>System Health</Typography>
+                  {[
+                    { label: 'API Server', status: 'Operational', color: '#27ae60' },
+                    { label: 'Database', status: 'Operational', color: '#27ae60' },
+                    { label: 'CDN', status: 'Operational', color: '#27ae60' },
+                    { label: 'Email Service', status: 'Degraded', color: '#f39c12' },
+                  ].map((sys, i) => (
+                    <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CircleIcon sx={{ fontSize: 8, color: sys.color }} />
+                        <Typography variant="body2" sx={{ color: '#555' }}>{sys.label}</Typography>
+                      </Box>
+                      <Typography variant="caption" sx={{ color: sys.color, fontWeight: 600 }}>{sys.status}</Typography>
+                    </Box>
+                  ))}
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee', bgcolor: 'white' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>Recent Activity</Typography>
+                  <Stack spacing={1.5}>
+                    {[
+                      { text: 'New enterprise signup: Acme Corp', time: '2 min ago', color: '#27ae60', icon: <VerifiedIcon sx={{ fontSize: 14 }} /> },
+                      { text: 'Payment received: $99.00', time: '15 min ago', color: '#667eea', icon: <AttachMoneyIcon sx={{ fontSize: 14 }} /> },
+                      { text: 'Support ticket #482 resolved', time: '1 hr ago', color: '#f39c12', icon: <SupportIcon sx={{ fontSize: 14 }} /> },
+                      { text: 'Database backup completed', time: '3 hrs ago', color: '#27ae60', icon: <CloudDoneIcon sx={{ fontSize: 14 }} /> },
+                    ].map((activity, i) => (
+                      <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                        <Avatar sx={{ width: 28, height: 28, bgcolor: `${activity.color}15`, color: activity.color }}>{activity.icon}</Avatar>
+                        <Box>
+                          <Typography variant="body2" sx={{ color: '#444', fontSize: '0.82rem', lineHeight: 1.3 }}>{activity.text}</Typography>
+                          <Typography variant="caption" sx={{ color: '#bbb' }}>{activity.time}</Typography>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Box>
         </Box>
       );
+
     default:
       return null;
   }
