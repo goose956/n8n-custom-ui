@@ -45,7 +45,15 @@ export class SettingsService {
   async saveSettings(settings: SettingsDto): Promise<{ success: boolean; message: string }> {
     try {
       const encryptedApiKey = this.encrypt(settings.n8nApiKey);
+
+      // Read existing data first to preserve apps, pages, etc.
+      let existingData: any = {};
+      if (fs.existsSync(DB_FILE)) {
+        existingData = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      }
+
       const data = {
+        ...existingData,
         n8nUrl: settings.n8nUrl,
         n8nApiKey: encryptedApiKey,
         lastUpdated: new Date().toISOString(),
