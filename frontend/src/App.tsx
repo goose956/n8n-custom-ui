@@ -5,6 +5,7 @@ import { WorkflowsPage } from './components/WorkflowsPage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { TemplatesPage } from './components/TemplatesPage';
 import { PagesPage } from './components/PagesPage';
+import AnalyticsPage from './components/AnalyticsPage';
 
 const theme = createTheme({
   palette: {
@@ -72,6 +73,15 @@ function Navigation() {
         >
           Pages
         </Button>
+        <Button
+          color="inherit"
+          component={Link}
+          to="/analytics"
+          variant={location.pathname === '/analytics' ? 'outlined' : 'text'}
+          sx={{ ml: 2 }}
+        >
+          📊 Analytics
+        </Button>
       </Toolbar>
     </AppBar>
   );
@@ -89,6 +99,7 @@ function App() {
           <Route path="/workflows" element={<WorkflowsPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/pages" element={<PagesPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/" element={<ProjectsPage />} />
         </Routes>
       </ThemeProvider>

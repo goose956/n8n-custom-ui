@@ -46,6 +46,7 @@ import {
   Check as CheckIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import PageTracker from '../utils/pageTracker';
 
 interface App {
   id: number;
@@ -124,6 +125,18 @@ export const PagesPage: React.FC = () => {
       setTimeout(() => setError(null), 3000);
     }
   };
+
+  // Track page view when editing/previewing a page
+  useEffect(() => {
+    if (contentEditorOpen && contentPage && selectedProjectId) {
+      const tracker = new PageTracker();
+      tracker.trackPageView(
+        parseInt(selectedProjectId),
+        contentPage.title,
+        `pages/${contentPage.id}/preview`
+      );
+    }
+  }, [contentEditorOpen, contentPage, selectedProjectId]);
 
   // Load pages when project is selected
   useEffect(() => {

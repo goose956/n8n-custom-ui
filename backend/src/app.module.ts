@@ -6,9 +6,10 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { AppsModule } from './apps/apps.module';
 import { PagesModule } from './pages/pages.module';
 import { ChatModule } from './chat/chat.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
-  imports: [HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule],
+  imports: [HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule],
   controllers: [],
   providers: [],
 })
