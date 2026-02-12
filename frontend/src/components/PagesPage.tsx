@@ -41,10 +41,6 @@ import {
   Code as CodeIcon,
   Link as LinkIcon,
   Close as CloseIcon,
-  Bolt as ZapIcon,
-  Security as ShieldIcon,
-  TrendingUp as TrendingUpIcon,
-  Check as CheckIcon,
   Article as ArticleIcon,
   Send as SendIcon,
   Visibility as VisibilityIcon,
@@ -58,6 +54,7 @@ import {
 import LinearProgress from '@mui/material/LinearProgress';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
+import { RenderPage } from './AppPreviewPage';
 import axios from 'axios';
 import PageTracker from '../utils/pageTracker';
 
@@ -66,6 +63,7 @@ interface App {
   name: string;
   slug: string;
   description?: string;
+  primary_color?: string;
 }
 
 interface Page {
@@ -117,26 +115,20 @@ export const PagesPage: React.FC = () => {
     loadAvailableApis();
   }, []);
 
-  // Helper function to check if content is valid JSON
-  const isValidJson = (str: string): boolean => {
-    try {
-      JSON.parse(str);
-      return true;
-    } catch {
-      return false;
+  // Deep merge: patch only the keys the AI returned into the existing content
+  const deepMerge = (target: any, patch: any): any => {
+    const result = { ...target };
+    for (const key of Object.keys(patch)) {
+      if (
+        patch[key] && typeof patch[key] === 'object' && !Array.isArray(patch[key]) &&
+        result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])
+      ) {
+        result[key] = deepMerge(result[key], patch[key]);
+      } else {
+        result[key] = patch[key];
+      }
     }
-  };
-
-  // Apply AI suggestion to editor and update preview live
-  const handleApplySuggestion = (content: string) => {
-    if (isValidJson(content)) {
-      setEditorContent(JSON.stringify(JSON.parse(content), null, 2));
-      setSuccess('Preview updated with AI suggestion');
-      setTimeout(() => setSuccess(null), 3000);
-    } else {
-      setError('AI response is not valid JSON format');
-      setTimeout(() => setError(null), 3000);
-    }
+    return result;
   };
 
   // State for chat panel toggle on preview
@@ -301,10 +293,21 @@ export const PagesPage: React.FC = () => {
       });
 
       if (response.data.success) {
+        const aiContent = response.data.message;
+        // Auto-apply the AI patch to the preview immediately
+        try {
+          const patch = JSON.parse(aiContent);
+          const existing = JSON.parse(editorContent);
+          const merged = deepMerge(existing, patch);
+          setEditorContent(JSON.stringify(merged, null, 2));
+        } catch {
+          // If not valid JSON, just show as chat message
+        }
+        const changedKeys = (() => { try { return Object.keys(JSON.parse(aiContent)).join(', '); } catch { return ''; } })();
         const assistantMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: response.data.message,
+          content: changedKeys ? `Updated: ${changedKeys}` : aiContent,
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, assistantMessage]);
@@ -464,257 +467,15 @@ export const PagesPage: React.FC = () => {
     }, 0);
   };
 
-  // Render page content as visual preview
+  // Render page content as visual preview using template-aware renderers
   const renderPagePreview = (content: string) => {
     try {
       const data = JSON.parse(content);
-
-      const getIcon = (iconName: string) => {
-        const iconProps = { sx: { fontSize: 32, color: '#1976d2' } };
-        switch (iconName?.toLowerCase()) {
-          case 'zap':
-            return <ZapIcon {...iconProps} />;
-          case 'shield':
-            return <ShieldIcon {...iconProps} />;
-          case 'trending-up':
-          case 'trending_up':
-            return <TrendingUpIcon {...iconProps} />;
-          default:
-            return null;
-        }
-      };
-
-      return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-          {/* HERO SECTION */}
-          {data.hero && (
-            <Box
-              sx={{
-                background: data.hero.backgroundImage || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                p: 4,
-                mb: 3,
-                borderRadius: 1,
-              }}
-            >
-              <Typography variant="h3" sx={{ fontWeight: 'bold', mb: 1 }}>
-                {data.hero.headline}
-              </Typography>
-              <Typography variant="h6" sx={{ mb: 3, opacity: 0.95 }}>
-                {data.hero.subheading}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button variant="contained" sx={{ bgcolor: '#fff', color: '#667eea', fontWeight: 'bold' }}>
-                  {data.hero.primaryCta || 'Get Started'}
-                </Button>
-                <Button variant="outlined" sx={{ borderColor: '#fff', color: '#fff' }}>
-                  {data.hero.secondaryCta || 'Learn More'}
-                </Button>
-              </Box>
-            </Box>
-          )}
-
-          {/* HOOK SECTION */}
-          {data.hook && (
-            <Box sx={{ textAlign: 'center', my: 3, py: 2 }}>
-              <Typography
-                variant="h5"
-                sx={{
-                  fontWeight: 'bold',
-                  color: '#1565c0',
-                  fontSize: '24px',
-                  borderBottom: '3px solid #1976d2',
-                  pb: 2,
-                  display: 'inline-block',
-                }}
-              >
-                {data.hook}
-              </Typography>
-            </Box>
-          )}
-
-          {/* FEATURES/SECTIONS - 3 Column Grid */}
-          {Array.isArray(data.sections) && data.sections.length > 0 && (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2, my: 3 }}>
-              {data.sections.map((section: any, idx: number) => (
-                <Paper
-                  key={idx}
-                  sx={{
-                    p: 3,
-                    textAlign: 'center',
-                    backgroundColor: '#fafafa',
-                    border: '1px solid #e0e0e0',
-                    transition: 'transform 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: 3,
-                    },
-                  }}
-                >
-                  {section.icon && (
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center' }}>
-                      {getIcon(section.icon)}
-                    </Box>
-                  )}
-                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, color: '#333' }}>
-                    {section.title}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.7 }}>
-                    {section.description}
-                  </Typography>
-                </Paper>
-              ))}
-            </Box>
-          )}
-
-          {/* TESTIMONIALS */}
-          {Array.isArray(data.testimonials) && data.testimonials.length > 0 && (
-            <Box sx={{ my: 4 }}>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 3, color: '#333' }}>
-                Loved by Teams Worldwide
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 2 }}>
-                {data.testimonials.map((testimonial: any, idx: number) => (
-                  <Paper key={idx} sx={{ p: 2.5, backgroundColor: '#f9f9f9', borderLeft: '4px solid #1976d2' }}>
-                    <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic', color: '#555', lineHeight: 1.7 }}>
-                      "{testimonial.quote}"
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box sx={{ fontSize: '24px' }}>{testimonial.avatar}</Box>
-                      <Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#333' }}>
-                          {testimonial.author}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#999' }}>
-                          {testimonial.title}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Paper>
-                ))}
-              </Box>
-            </Box>
-          )}
-
-          {/* PRICING */}
-          {data.pricing && (
-            <Box sx={{ my: 4 }}>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1, color: '#333' }}>
-                {data.pricing.title}
-              </Typography>
-              <Typography variant="body2" sx={{ textAlign: 'center', color: '#666', mb: 3 }}>
-                {data.pricing.subtitle}
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
-                {data.pricing.plans?.map((plan: any, idx: number) => (
-                  <Paper
-                    key={idx}
-                    sx={{
-                      p: 2.5,
-                      backgroundColor: plan.badge ? '#e3f2fd' : '#fff',
-                      border: plan.badge ? '2px solid #1976d2' : '1px solid #e0e0e0',
-                      position: 'relative',
-                    }}
-                  >
-                    {plan.badge && (
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: -12,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          backgroundColor: '#1976d2',
-                          color: '#fff',
-                          px: 2,
-                          py: 0.5,
-                          borderRadius: 10,
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        {plan.badge}
-                      </Box>
-                    )}
-                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, color: '#333' }}>
-                      {plan.name}
-                    </Typography>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
-                        {plan.price}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#999' }}>
-                        {plan.period}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ mb: 2 }}>
-                      {plan.features?.map((feature: string, fIdx: number) => (
-                        <Box key={fIdx} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'flex-start' }}>
-                          <CheckIcon sx={{ fontSize: 18, color: '#4caf50', mt: 0.25 }} />
-                          <Typography variant="body2" sx={{ color: '#555' }}>
-                            {feature}
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Box>
-                    <Button variant={plan.badge ? 'contained' : 'outlined'} fullWidth sx={{ mt: 2 }}>
-                      Choose Plan
-                    </Button>
-                  </Paper>
-                ))}
-              </Box>
-            </Box>
-          )}
-
-          {/* FINAL CTA */}
-          {data.cta && (
-            <Box sx={{ p: 3, backgroundColor: '#1976d2', color: '#fff', borderRadius: 1, textAlign: 'center', mt: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
-                {data.cta}
-              </Typography>
-              <Button variant="contained" sx={{ backgroundColor: '#fff', color: '#1976d2', fontWeight: 'bold' }}>
-                {data.ctaButton || 'Get Started'}
-              </Button>
-            </Box>
-          )}
-
-          {/* FALLBACK - Generic content rendering */}
-          {!data.hero && !data.hook && !data.sections && !data.pricing && (
-            <>
-              {/* Title */}
-              {data.title && (
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 1 }}>
-                    {data.title}
-                  </Typography>
-                </Box>
-              )}
-
-              {/* Heading */}
-              {data.heading && (
-                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#333', mb: 1 }}>
-                  {data.heading}
-                </Typography>
-              )}
-
-              {/* Description */}
-              {data.description && (
-                <Typography variant="body1" sx={{ color: '#555', lineHeight: 1.6, mb: 2 }}>
-                  {data.description}
-                </Typography>
-              )}
-
-              {/* Message */}
-              {data.message && (
-                <Paper sx={{ p: 2, backgroundColor: '#f0f4ff', borderLeft: '4px solid #1976d2' }}>
-                  <Typography variant="body1" sx={{ color: '#333', lineHeight: 1.6 }}>
-                    {data.message}
-                  </Typography>
-                </Paper>
-              )}
-            </>
-          )}
-        </Box>
-      );
+      const selectedApp = apps.find(a => String(a.id) === selectedProjectId);
+      const primaryColor = selectedApp?.primary_color || '#667eea';
+      // Attach page_type so RenderPage can route to the correct renderer
+      const pageData = { ...data, page_type: contentPage?.page_type };
+      return <RenderPage data={pageData} primaryColor={primaryColor} />;
     } catch (error) {
       return (
         <Typography variant="body2" sx={{ color: '#d32f2f' }}>
@@ -1068,53 +829,31 @@ export const PagesPage: React.FC = () => {
                           <SmartToyIcon sx={{ fontSize: 40, color: '#ddd', mb: 1 }} />
                           <Typography variant="body2" sx={{ color: '#999', mb: 0.5 }}>Chat about this page</Typography>
                           <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5 }}>
-                            Ask the AI to change headlines, add sections, update pricing, or restyle the page. Changes appear in the preview instantly.
+                            Ask the AI to change headlines, add sections, update pricing, etc. Changes update in the preview instantly. Cancel to discard.
                           </Typography>
                         </Box>
                       ) : (
-                        chatMessages.map((msg) => {
-                          const isJson = msg.role === 'assistant' && isValidJson(msg.content);
-                          return (
-                            <Box
-                              key={msg.id}
-                              sx={{
-                                p: 1.5,
-                                backgroundColor: msg.role === 'user' ? '#e8f0fe' : '#fff',
-                                border: msg.role === 'user' ? '1px solid #d0ddf7' : '1px solid #e8e8e8',
-                                borderRadius: 2,
-                              }}
-                            >
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  {msg.role === 'assistant' && <AutoFixHighIcon sx={{ fontSize: 14, color: '#667eea' }} />}
-                                  <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#5a7bbf' : '#667eea' }}>
-                                    {msg.role === 'user' ? 'You' : 'AI Assistant'}
-                                  </Typography>
-                                </Box>
-                                {isJson && (
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    startIcon={<AutoFixHighIcon sx={{ fontSize: 14 }} />}
-                                    onClick={() => handleApplySuggestion(msg.content)}
-                                    sx={{
-                                      fontSize: '0.7rem',
-                                      py: 0.25,
-                                      px: 1.5,
-                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                      '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
-                                    }}
-                                  >
-                                    Apply to Preview
-                                  </Button>
-                                )}
-                              </Box>
-                              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.82rem', lineHeight: 1.6, color: '#333' }}>
-                                {isJson ? 'New page content ready — click "Apply to Preview" to see changes.' : msg.content}
+                        chatMessages.map((msg) => (
+                          <Box
+                            key={msg.id}
+                            sx={{
+                              p: 1.5,
+                              backgroundColor: msg.role === 'user' ? '#e8f0fe' : '#f0faf0',
+                              border: msg.role === 'user' ? '1px solid #d0ddf7' : '1px solid #c8e6c9',
+                              borderRadius: 2,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                              {msg.role === 'assistant' && <AutoFixHighIcon sx={{ fontSize: 14, color: '#4caf50' }} />}
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#5a7bbf' : '#4caf50' }}>
+                                {msg.role === 'user' ? 'You' : 'AI'}
                               </Typography>
                             </Box>
-                          );
-                        })
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.82rem', lineHeight: 1.6, color: '#333' }}>
+                              {msg.content}
+                            </Typography>
+                          </Box>
+                        ))
                       )}
                       {chatLoading && (
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#f5f0ff', borderRadius: 2, border: '1px solid #e8dff5' }}>

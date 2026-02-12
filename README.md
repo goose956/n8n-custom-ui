@@ -5,13 +5,16 @@ A multi-tenant SaaS management platform for creating, managing, and exporting st
 ## Features
 
 - **Multi-App Management** — Create, edit, clone, and delete SaaS applications with auto-generated pages and pricing plans
-- **Page Builder** — Visual page editor with JSON editing, live preview, and AI chat assistant
+- **Page Builder** — Visual page editor with JSON editing, live preview, and AI chat assistant (partial-patch updates)
+- **App Preview** — Full browser simulation to test apps page-by-page with navigation, history, and address bar
+- **Programmer Agent** — AI code generation with orchestrator + sub-agent model routing for cost optimization
+- **Social Monitor** — Reddit monitoring via Apify, keyword tracking, relevance scoring, and AI draft replies
 - **n8n Workflow Integration** — View, validate, configure, and trigger n8n workflows
 - **AI Workflow Builder** — Chat-based n8n workflow JSON generation with validation and node reference
 - **Blog Manager** — AI-powered blog post generation with OpenAI integration
 - **Research Tool** — Web research via Brave Search + Claude analysis with PDF export
 - **App Planner** — AI-assisted feature planning and roadmap generation
-- **Analytics Dashboard** — Per-app usage tracking and statistics
+- **Analytics Dashboard** — Per-app usage tracking and error logging
 - **API Key Vault** — Centralized encrypted credential storage (AES-256-CBC)
 - **Health Monitoring** — Live service status indicator
 
@@ -37,20 +40,22 @@ n8n surface/
 │       ├── workflows/               # n8n workflow management & validation
 │       ├── settings/                # Platform configuration
 │       ├── api-keys/                # Encrypted API key storage
-│       ├── chat/                    # AI chat (page agent)
+│       ├── chat/                    # AI chat (page agent, partial-patch mode)
 │       ├── page-agent/              # Page content generation
 │       ├── n8n-builder/             # AI workflow builder
 │       ├── blog/                    # Blog post management
 │       ├── research/                # Brave Search + Claude research
 │       ├── app-planner/             # AI app planning
-│       ├── analytics/               # Usage analytics
+│       ├── programmer-agent/        # AI code gen (orchestrator + sub-agent)
+│       ├── social-monitor/          # Reddit monitoring + AI replies
+│       ├── analytics/               # Usage analytics + error logging
 │       ├── health/                  # Health check endpoint
 │       ├── migrations/              # Database migration tools
 │       └── types/                   # Shared TypeScript types
 ├── frontend/                        # React + Vite SPA (:5173)
 │   └── src/
 │       ├── config/api.ts            # Centralized API URL config
-│       ├── components/              # All page components
+│       ├── components/              # All page components (13 pages)
 │       └── utils/                   # Utilities
 ├── database/schema.sql              # SQL schema reference
 ├── docs/                            # Architecture docs
@@ -128,13 +133,35 @@ Services:
 | POST | `/api/blog/generate` | AI-generate blog post |
 | GET | `/api/research/projects` | List research projects |
 | POST | `/api/research/run/:id` | Run research (Brave + Claude) |
-| POST | `/api/chat/message` | Send chat message |
+| POST | `/api/chat/message` | Send chat message (partial-patch mode) |
 | GET | `/api/analytics/stats` | Get analytics |
 | GET | `/api/health` | Health check |
 
+### Programmer Agent
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/programmer-agent/generate` | AI code generation with plan |
+| POST | `/api/programmer-agent/refine` | Refine a generated file |
+| POST | `/api/programmer-agent/sub-task` | Run sub-agent task (types, styles, etc.) |
+| POST | `/api/programmer-agent/save` | Save generated files to project |
+| GET | `/api/programmer-agent/models` | Get available models |
+| GET | `/api/programmer-agent/stats` | Get usage statistics |
+
+### Social Monitor
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/social-monitor/keywords` | List monitor keywords |
+| POST | `/api/social-monitor/keywords` | Add keyword |
+| DELETE | `/api/social-monitor/keywords/:id` | Delete keyword |
+| POST | `/api/social-monitor/keywords/:id/toggle` | Toggle keyword |
+| GET | `/api/social-monitor/posts` | List monitored posts (filterable) |
+| POST | `/api/social-monitor/scan` | Scan Reddit via Apify |
+| POST | `/api/social-monitor/posts/:id/generate-reply` | AI-generate draft reply |
+| GET | `/api/social-monitor/stats` | Get monitor statistics |
+
 ## Architecture
 
-### Backend Modules (15)
+### Backend Modules (18)
 
 All services share a global `SharedModule` providing:
 - **CryptoService** — Single AES-256-CBC encrypt/decrypt implementation

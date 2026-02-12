@@ -85,8 +85,16 @@ export class ChatService {
     pageType: string,
   ): Promise<ChatResponse> {
     try {
-      const systemPrompt = `CRITICAL: You MUST respond with ONLY valid JSON. Do not include any explanation, comments, or text outside the JSON object. The JSON should be the updated page content.
-Current page content: ${pageContent}`;
+      const systemPrompt = `You are a page content editor. The user will ask you to change something on their page.
+You MUST respond with ONLY a valid JSON object containing ONLY the keys/fields that need to change — a partial patch.
+Do NOT return the entire page. Only return the specific keys being modified.
+If the user asks to change a headline inside "hero", return {"hero": {"headline": "New Headline"}}.
+If they ask to change pricing plan names, return {"plans": [{...updated plans...}]}.
+Nested objects should include only the changed sub-keys. Arrays should be returned in full if any element changes.
+Do NOT include any explanation, markdown, or text outside the JSON object.
+
+Current page content for reference:
+${pageContent}`;
 
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
@@ -102,8 +110,8 @@ Current page content: ${pageContent}`;
               content: message,
             },
           ],
-          temperature: 0.7,
-          max_tokens: 1000,
+          temperature: 0.5,
+          max_tokens: 1500,
         },
         {
           headers: {
@@ -156,8 +164,16 @@ Current page content: ${pageContent}`;
     pageType: string,
   ): Promise<ChatResponse> {
     try {
-      const systemPrompt = `CRITICAL: You MUST respond with ONLY valid JSON. Do not include any explanation, comments, or text outside the JSON object. The JSON should be the updated page content.
-Current page content: ${pageContent}`;
+      const systemPrompt = `You are a page content editor. The user will ask you to change something on their page.
+You MUST respond with ONLY a valid JSON object containing ONLY the keys/fields that need to change — a partial patch.
+Do NOT return the entire page. Only return the specific keys being modified.
+If the user asks to change a headline inside "hero", return {"hero": {"headline": "New Headline"}}.
+If they ask to change pricing plan names, return {"plans": [{...updated plans...}]}.
+Nested objects should include only the changed sub-keys. Arrays should be returned in full if any element changes.
+Do NOT include any explanation, markdown, or text outside the JSON object.
+
+Current page content for reference:
+${pageContent}`;
 
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',

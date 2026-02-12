@@ -13,9 +13,11 @@ import { N8nBuilderModule } from './n8n-builder/n8n-builder.module';
 import { AppPlannerModule } from './app-planner/app-planner.module';
 import { BlogModule } from './blog/blog.module';
 import { ResearchModule } from './research/research.module';
+import { ProgrammerAgentModule } from './programmer-agent/programmer-agent.module';
+import { SocialMonitorModule } from './social-monitor/social-monitor.module';
 
 @Module({
-  imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule],
+  imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule],
   controllers: [],
   providers: [],
 })

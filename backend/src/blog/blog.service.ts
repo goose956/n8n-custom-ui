@@ -28,6 +28,12 @@ export interface BlogPost {
   tags: string[];
   metaDescription: string;
   error?: string;
+  // LLM optimization fields
+  structuredData?: object;          // JSON-LD schema.org data
+  faqSchema?: { q: string; a: string }[];  // FAQ structured data
+  tldr?: string;                     // Quick summary for AI citation
+  keyTakeaways?: string[];           // Bullet-point facts for AI extraction
+  citations?: string[];              // Source references
 }
 
 export interface BlogSettings {
@@ -88,15 +94,76 @@ export class BlogService {
     this.writeDb(data);
   }
 
-  private getOpenAiKey(): string | null {
+  private getAIProvider(): { provider: string; key: string; url: string; model: string } | null {
     try {
       const data = this.readDb();
       const apiKeys = data.apiKeys || [];
-      const openaiKey = apiKeys.find((k: any) => k.name.toLowerCase() === 'openai');
-      if (!openaiKey) return null;
-      return this.cryptoService.decrypt(openaiKey.value);
+
+      // Try providers in order: OpenRouter > OpenAI > Claude
+      const providers = [
+        { name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'anthropic/claude-sonnet-4' },
+        { name: 'openai', url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
+        { name: 'claude', url: 'https://api.anthropic.com/v1/messages', model: 'claude-sonnet-4-20250514' },
+      ];
+
+      for (const p of providers) {
+        const entry = apiKeys.find((k: any) => k.name.toLowerCase() === p.name);
+        if (entry) {
+          try {
+            const key = this.cryptoService.decrypt(entry.value);
+            if (key) return { provider: p.name, key, url: p.url, model: p.model };
+          } catch { /* skip */ }
+        }
+      }
+      return null;
     } catch {
       return null;
+    }
+  }
+
+  private async callAI(provider: { provider: string; key: string; url: string; model: string }, systemPrompt: string, userPrompt: string): Promise<string> {
+    if (provider.provider === 'claude') {
+      const response = await axios.post(
+        provider.url,
+        {
+          model: provider.model,
+          max_tokens: 8000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        },
+        {
+          headers: {
+            'x-api-key': provider.key,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+          timeout: 180000,
+        },
+      );
+      return response.data.content[0].text;
+    } else {
+      const headers: any = {
+        Authorization: `Bearer ${provider.key}`,
+        'Content-Type': 'application/json',
+      };
+      if (provider.provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'http://localhost:3000';
+      }
+      const response = await axios.post(
+        provider.url,
+        {
+          model: provider.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 8000,
+          response_format: { type: 'json_object' },
+        },
+        { headers, timeout: 180000 },
+      );
+      return response.data.choices[0].message.content;
     }
   }
 
@@ -254,12 +321,75 @@ export class BlogService {
     return { success: true, data: newPosts, message: `${newPosts.length} keyword(s) queued` };
   }
 
+  // ─── Keyword Optimization & Suggestions ──────────────────────────────────────
+
+  async suggestKeywords(seed: string): Promise<{ success: boolean; data?: { original: string; suggestions: { keyword: string; type: string; score: number; reason: string }[] }; message: string }> {
+    const aiProvider = this.getAIProvider();
+    if (!aiProvider) {
+      return { success: false, message: 'No AI API key found. Add an OpenRouter, OpenAI, or Claude key in Settings > Integration Keys.' };
+    }
+
+    const systemPrompt = `You are an expert in LLM/AI search optimization (AIO) and content strategy.
+
+Your task: Given a seed topic or keyword, generate optimized keyword variations that are most likely to be surfaced and cited by Large Language Models (ChatGPT, Claude, Perplexity, Google AI Overviews).
+
+LLMs HEAVILY favor content that answers these keyword patterns:
+1. **Question keywords** (highest priority): "What is X?", "How to X?", "Why does X?", "When should you X?"
+2. **Comparison keywords**: "X vs Y", "X compared to Y", "X or Y which is better"
+3. **Definition keywords**: "X meaning", "X explained", "X definition"
+4. **List/Ranking keywords**: "Best X for Y", "Top 10 X", "X alternatives"
+5. **How-to/Process keywords**: "How to X step by step", "Guide to X", "X tutorial"
+6. **Problem/Solution keywords**: "X not working", "How to fix X", "X troubleshooting"
+7. **Specificity keywords**: Add year, numbers, context to make it citable (e.g. "best X in 2026", "X for beginners")
+
+Return valid JSON with this structure:
+{
+  "suggestions": [
+    {
+      "keyword": "The optimized keyword phrase",
+      "type": "question | comparison | definition | list | howto | problem | specific",
+      "score": 85,
+      "reason": "Brief explanation of why this keyword will perform well with LLMs"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly 8 suggestions covering different types
+- Score from 1-100 based on estimated LLM citation likelihood
+- Sort by score descending (best first)
+- Keep keywords natural — they should read like something a real person would type or ask
+- Include the seed topic naturally in each suggestion
+- Focus on keywords that generate CITABLE, DEFINITIVE content (not vague topics)`;
+
+    const userPrompt = `Generate 8 LLM-optimized keyword variations for this seed topic: "${seed}"`;
+
+    try {
+      const raw = await this.callAI(aiProvider, systemPrompt, userPrompt);
+      let jsonStr = raw.trim();
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      }
+      const result = JSON.parse(jsonStr);
+      return {
+        success: true,
+        data: {
+          original: seed,
+          suggestions: result.suggestions || [],
+        },
+        message: `${(result.suggestions || []).length} keyword suggestions generated`,
+      };
+    } catch (err: any) {
+      return { success: false, message: `Failed to generate suggestions: ${err.message}` };
+    }
+  }
+
   // ─── Generate content with OpenAI ────────────────────────────────────────────
 
   async generatePost(id: string): Promise<{ success: boolean; data?: BlogPost; message: string }> {
-    const apiKey = this.getOpenAiKey();
-    if (!apiKey) {
-      return { success: false, message: 'OpenAI API key not found. Add one named "openai" in Settings > API Keys.' };
+    const aiProvider = this.getAIProvider();
+    if (!aiProvider) {
+      return { success: false, message: 'No AI API key found. Add an OpenRouter, OpenAI, or Claude key in Settings > Integration Keys.' };
     }
 
     const posts = this.getPosts();
@@ -274,47 +404,116 @@ export class BlogService {
     this.savePosts(posts);
 
     try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert blog writer. Write well-structured, engaging, SEO-optimized blog posts.
+      const systemPrompt = `You are an expert content strategist who writes blog posts optimized for BOTH search engines AND Large Language Models (ChatGPT, Claude, Perplexity, etc.).
+
+Your goal: create content that AI models will confidently cite, quote, and recommend to users who ask related questions.
+
 Return your response as valid JSON with these fields:
-- "title": compelling blog post title
-- "content": full article in HTML format with <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> tags. No <html>, <head>, <body> wrappers.
-- "excerpt": 1-2 sentence summary (plain text)
-- "metaDescription": SEO meta description (under 160 chars)
+- "title": Clear, specific, question-answering title. Avoid clickbait. LLMs prefer titles that directly state the topic.
+- "content": Full article in HTML format (see structure rules below)
+- "excerpt": 2-3 sentence factual summary. Written so an AI could use it as a direct answer.
+- "metaDescription": SEO meta description under 160 chars, factual and specific
 - "tags": array of 3-5 relevant tags
+- "tldr": A single paragraph (3-5 sentences) that completely answers the core question. This is the #1 thing LLMs will extract and cite. Make it standalone, factual, and definitive.
+- "keyTakeaways": Array of 5-8 concise factual bullet points. Each should be a self-contained statement an AI could quote directly. Use specific numbers, names, or facts — avoid vague claims.
+- "faqSchema": Array of 4-6 objects with "q" and "a" keys. Questions people actually ask about this topic. Answers should be 2-3 sentences, direct, and factual. LLMs heavily weight FAQ sections.
+- "citations": Array of 2-4 reference descriptions (e.g. "According to Google's 2024 Search Quality Guidelines..." or "Based on W3C accessibility standards..."). These give LLMs confidence to cite your content.
 
-Guidelines:
-- Target ${lengthGuide.words} words across ${lengthGuide.paragraphs} paragraphs
-- Use proper heading hierarchy (h2 for sections, h3 for subsections)
-- Include an engaging introduction and conclusion
-- Make it informative, practical, and reader-friendly
-- Naturally incorporate the keyword without overstuffing`,
-            },
-            {
-              role: 'user',
-              content: `Write a ${post.length} blog post about: "${post.keyword}"`,
-            },
-          ],
-          temperature: 0.7,
-          response_format: { type: 'json_object' },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 120000,
-        },
-      );
+HTML CONTENT STRUCTURE RULES (critical for LLM parsing):
+1. Start with a <p> that directly defines/answers the topic in the first 2 sentences (LLMs weight the opening heavily)
+2. Use <h2> for major sections, <h3> for subsections — these become the "table of contents" LLMs use to find specific answers
+3. Write EACH <h2> as a question or clear topic label (e.g. "What is X?", "How to do Y", "X vs Y: Key Differences")
+4. After each heading, the first paragraph must directly answer that heading's question — don't bury answers
+5. Use definition patterns: "<p><strong>Term:</strong> definition...</p>" — LLMs love extracting these
+6. Use comparison tables with <table><thead><tr><th>...</th></tr></thead><tbody>... when comparing options
+7. Use <ol> for step-by-step processes, <ul> for feature/benefit lists
+8. Include specific numbers, dates, percentages, and named sources — vague content gets ignored by LLMs
+9. End with a "Summary" or "Conclusion" <h2> that restates key facts in 2-3 sentences
+10. Add a "Frequently Asked Questions" <h2> section at the end with the FAQ items as <h3> sub-questions and <p> answers
 
-      const result = JSON.parse(response.data.choices[0].message.content);
+DATA VISUALIZATION & IMAGES (critical for LLM + reader engagement):
+11. Include at least ONE inline SVG chart or graph in the content. Use simple bar charts, pie charts, or comparison charts with <svg> elements. IMPORTANT: embed all data labels as <text> elements inside the SVG — LLMs can read SVG text nodes even though they can't see the visual. Example:
+<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Description of chart data">
+  <text x="10" y="20" font-size="14" font-weight="bold">Chart Title</text>
+  <rect x="50" y="40" width="120" height="30" fill="#667eea"/><text x="55" y="60" fill="white" font-size="12">Label A: 60%</text>
+  <rect x="50" y="80" width="80" height="30" fill="#764ba2"/><text x="55" y="100" fill="white" font-size="12">Label B: 40%</text>
+</svg>
+12. Include at least ONE data table (<table>) with real statistics, comparisons, or benchmarks relevant to the topic. Use <thead> and <tbody>. Add a <caption> describing the data — LLMs read captions.
+13. For any concept that benefits from a visual, add a <figure> with a descriptive placeholder and rich alt text + figcaption:
+<figure>
+  <div style="background:#f0f2ff;border:1px solid #ddd;border-radius:8px;padding:40px;text-align:center;color:#667eea;">
+    <strong>[Suggested Image: detailed description of what image should show]</strong>
+  </div>
+  <figcaption>Detailed caption that fully describes what this image shows, including all key data points. LLMs read figcaption as a primary content source.</figcaption>
+</figure>
+The alt text and figcaption should be so descriptive that someone (or an LLM) could understand the full image content without seeing it.
+14. Where relevant, include a "Key Statistics" or "By the Numbers" callout box:
+<div style="background:#f8f9ff;border-left:4px solid #667eea;padding:16px;margin:16px 0;border-radius:0 8px 8px 0;">
+  <strong>Key Data Points:</strong>
+  <ul><li>Stat 1: specific number</li><li>Stat 2: specific percentage</li></ul>
+</div>
+
+WHAT MAKES LLMs CITE YOUR CONTENT:
+- Authoritative, definitive statements ("X is...", "The best approach is...")
+- Specific data points and comparisons
+- Data tables with real numbers (LLMs extract tabular data with high confidence)
+- SVG charts with embedded text labels (machine-readable data visualization)
+- Rich alt text and figcaptions (LLMs use these as primary content signals)
+- Clear definitions that answer "What is X?"
+- Step-by-step instructions ("How to X")
+- Direct answers in the first sentence after a heading
+- Structured, parseable HTML (not walls of text)
+
+WHAT LLMs IGNORE:
+- Fluffy intros ("In today's digital landscape...")
+- Vague claims without specifics
+- Pure opinion without supporting facts
+- Content that takes 3 paragraphs to get to the point
+- Marketing/sales language
+- Images without alt text or captions (invisible to LLMs)
+
+Target ${lengthGuide.words} words across ${lengthGuide.paragraphs} paragraphs.`;
+
+      const userPrompt = `Write a ${post.length} blog post about: "${post.keyword}"
+
+Remember: every heading should be answerable, every paragraph should lead with its key point, and the content should be structured so an AI model reading it can extract clear, citable facts. Include at least one SVG data chart with text labels, one comparison/data table, and image suggestions with rich alt text.`;
+
+      const raw = await this.callAI(aiProvider, systemPrompt, userPrompt);
+
+      // Parse JSON — handle markdown code fences from Claude
+      let jsonStr = raw.trim();
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+      }
+      const result = JSON.parse(jsonStr);
+
       const settings = this.getSettings();
+
+      // Build JSON-LD structured data
+      const structuredData = {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: result.title,
+        description: result.metaDescription || result.excerpt,
+        datePublished: new Date().toISOString(),
+        dateModified: new Date().toISOString(),
+        author: { '@type': 'Organization', name: 'SaaS Factory' },
+        keywords: (result.tags || []).join(', '),
+      };
+
+      // Build FAQ structured data if available
+      let faqStructuredData = null;
+      if (result.faqSchema && result.faqSchema.length > 0) {
+        faqStructuredData = {
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: result.faqSchema.map((faq: any) => ({
+            '@type': 'Question',
+            name: faq.q,
+            acceptedAnswer: { '@type': 'Answer', text: faq.a },
+          })),
+        };
+      }
 
       const updatedPost: BlogPost = {
         ...posts[postIndex],
@@ -328,17 +527,24 @@ Guidelines:
         status: settings.defaultStatus === 'published' ? 'published' : 'draft',
         publishedAt: settings.defaultStatus === 'published' ? new Date().toISOString() : null,
         updatedAt: new Date().toISOString(),
+        // LLM optimization fields
+        tldr: result.tldr || '',
+        keyTakeaways: result.keyTakeaways || [],
+        faqSchema: result.faqSchema || [],
+        citations: result.citations || [],
+        structuredData: faqStructuredData
+          ? [structuredData, faqStructuredData]
+          : structuredData,
       };
 
       posts[postIndex] = updatedPost;
       this.savePosts(posts);
 
-      // Regenerate sitemap if published
       if (updatedPost.status === 'published') {
         this.generateSitemap();
       }
 
-      return { success: true, data: updatedPost, message: 'Post generated successfully' };
+      return { success: true, data: updatedPost, message: 'LLM-optimized post generated successfully' };
     } catch (error: any) {
       const errorMsg = error.response?.data?.error?.message || error.message || 'Generation failed';
       posts[postIndex] = { ...posts[postIndex], status: 'failed', error: errorMsg, updatedAt: new Date().toISOString() };

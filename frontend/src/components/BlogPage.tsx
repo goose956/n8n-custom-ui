@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API as API_ENDPOINTS } from '../config/api';
 import DOMPurify from 'dompurify';
 import {
@@ -54,6 +54,10 @@ import {
   Article as ArticleIcon,
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
+  TipsAndUpdates as TipsIcon,
+  AutoFixHigh as OptimizeIcon,
+  CheckCircleOutline as CheckIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -155,6 +159,11 @@ export function BlogPage() {
   // Keyword input
   const [keywordInput, setKeywordInput] = useState('');
   const [keywordLength, setKeywordLength] = useState<'short' | 'medium' | 'long'>('medium');
+
+  // Keyword suggestions
+  const [suggestions, setSuggestions] = useState<{ keyword: string; type: string; score: number; reason: string }[]>([]);
+  const [suggestingKeywords, setSuggestingKeywords] = useState(false);
+  const [showTips, setShowTips] = useState(false);
 
   // Search / filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -292,6 +301,49 @@ export function BlogPage() {
       setSnackbar({ open: true, message: 'Failed to add keywords', severity: 'error' });
     }
   }, [keywordInput, keywordLength, selectedProject, fetchPosts, fetchStats, fetchProjectIndex]);
+
+  // --- Suggest optimized keywords ---
+
+  const handleSuggestKeywords = useCallback(async () => {
+    const seed = keywordInput.trim();
+    if (!seed) return;
+    setSuggestingKeywords(true);
+    setSuggestions([]);
+    try {
+      const res = await fetch(`${BLOG_API}/suggest-keywords`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.suggestions) {
+        setSuggestions(data.data.suggestions);
+      } else {
+        setSnackbar({ open: true, message: data.message || 'Failed to suggest keywords', severity: 'error' });
+      }
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to suggest keywords', severity: 'error' });
+    } finally {
+      setSuggestingKeywords(false);
+    }
+  }, [keywordInput]);
+
+  const handleAddSuggestion = useCallback((keyword: string) => {
+    setKeywordInput((prev) => {
+      const existing = prev.split(/[,\n]+/).map((k) => k.trim()).filter(Boolean);
+      if (existing.includes(keyword)) return prev;
+      return prev ? `${prev}, ${keyword}` : keyword;
+    });
+  }, []);
+
+  const handleAddAllSuggestions = useCallback(() => {
+    const existing = keywordInput.split(/[,\n]+/).map((k) => k.trim()).filter(Boolean);
+    const newKeywords = suggestions.map((s) => s.keyword).filter((k) => !existing.includes(k));
+    setKeywordInput(() => {
+      const all = [...existing, ...newKeywords];
+      return all.join(', ');
+    });
+  }, [keywordInput, suggestions]);
 
   // â”€â”€â”€ Generate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -691,22 +743,168 @@ export function BlogPage() {
           background: 'linear-gradient(135deg, rgba(102,126,234,0.03) 0%, rgba(118,75,162,0.03) 100%)',
         }}
       >
-        <Typography sx={{ fontSize: '0.88rem', fontWeight: 800, color: '#1a1a2e', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AddIcon sx={{ fontSize: 18, color: '#667eea' }} />
-          Add Keywords
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+          <Typography sx={{ fontSize: '0.88rem', fontWeight: 800, color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AddIcon sx={{ fontSize: 18, color: '#667eea' }} />
+            Add Keywords
+          </Typography>
+          <Button
+            size="small"
+            startIcon={<TipsIcon sx={{ fontSize: 16 }} />}
+            onClick={() => setShowTips(!showTips)}
+            sx={{ fontSize: '0.75rem', color: '#667eea', textTransform: 'none' }}
+          >
+            {showTips ? 'Hide Tips' : 'LLM Keyword Tips'}
+          </Button>
+        </Box>
+
+        {/* Keyword Tips Panel */}
+        <Collapse in={showTips}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2, mb: 2, borderRadius: 2,
+              background: 'linear-gradient(135deg, rgba(102,126,234,0.06) 0%, rgba(118,75,162,0.06) 100%)',
+              border: '1px solid rgba(102,126,234,0.15)',
+            }}
+          >
+            <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#1a1a2e', mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <InfoIcon sx={{ fontSize: 16, color: '#667eea' }} /> Keywords that LLMs love to cite:
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8 }}>
+              {[
+                { label: '"What is X?"', type: 'Question', color: '#667eea' },
+                { label: '"How to X step by step"', type: 'How-to', color: '#27ae60' },
+                { label: '"X vs Y comparison"', type: 'Comparison', color: '#e67e22' },
+                { label: '"Best X for Y in 2026"', type: 'List/Ranking', color: '#9b59b6' },
+                { label: '"X explained simply"', type: 'Definition', color: '#3498db' },
+                { label: '"How to fix X"', type: 'Problem/Solution', color: '#e74c3c' },
+              ].map((tip) => (
+                <Chip
+                  key={tip.label}
+                  label={<><strong>{tip.type}:</strong> {tip.label}</>}
+                  size="small"
+                  sx={{
+                    fontSize: '0.72rem', bgcolor: `${tip.color}12`, color: tip.color,
+                    border: `1px solid ${tip.color}30`, cursor: 'default',
+                  }}
+                />
+              ))}
+            </Box>
+            <Typography sx={{ fontSize: '0.73rem', color: '#888', mt: 1, fontStyle: 'italic' }}>
+              Tip: Type a broad topic below and click "Optimize" to auto-generate LLM-optimized keyword variations.
+            </Typography>
+          </Paper>
+        </Collapse>
+
         <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-          <TextField
-            multiline
-            minRows={2}
-            maxRows={4}
-            placeholder="Enter keywords separated by commas or new lines...&#10;e.g. best fishing spots 2026, how to tie fishing knots, top 10 fishing reels"
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            fullWidth
-            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
-          />
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 150 }}>
+          <Box sx={{ flex: 1 }}>
+            <TextField
+              multiline
+              minRows={2}
+              maxRows={4}
+              placeholder={'Enter keywords separated by commas or new lines...\ne.g. best fishing spots 2026, how to tie fishing knots, top 10 fishing reels\n\nTip: Type a broad topic like "fishing reels" and click Optimize for AI suggestions'}
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
+            />
+            {/* Keyword Suggestions */}
+            {(suggestingKeywords || suggestions.length > 0) && (
+              <Paper
+                elevation={0}
+                sx={{
+                  mt: 1.5, p: 2, borderRadius: 2,
+                  border: '1px solid rgba(102,126,234,0.2)',
+                  background: 'linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(39,174,96,0.04) 100%)',
+                }}
+              >
+                {suggestingKeywords ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+                    <CircularProgress size={18} sx={{ color: '#667eea' }} />
+                    <Typography sx={{ fontSize: '0.82rem', color: '#667eea', fontWeight: 600 }}>
+                      AI is generating optimized keyword variations...
+                    </Typography>
+                  </Box>
+                ) : (
+                  <>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <OptimizeIcon sx={{ fontSize: 16, color: '#667eea' }} />
+                        Optimized Suggestions ({suggestions.length})
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          size="small"
+                          onClick={handleAddAllSuggestions}
+                          sx={{ fontSize: '0.72rem', color: '#27ae60', textTransform: 'none' }}
+                        >
+                          Add All
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => setSuggestions([])}
+                          sx={{ fontSize: '0.72rem', color: '#999', textTransform: 'none' }}
+                        >
+                          Dismiss
+                        </Button>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+                      {suggestions.map((s, i) => {
+                        const typeColors: Record<string, string> = {
+                          question: '#667eea', comparison: '#e67e22', definition: '#3498db',
+                          list: '#9b59b6', howto: '#27ae60', problem: '#e74c3c', specific: '#f39c12',
+                        };
+                        const color = typeColors[s.type] || '#667eea';
+                        const isAdded = keywordInput.split(/[,\n]+/).map(k => k.trim()).includes(s.keyword);
+                        return (
+                          <Box
+                            key={i}
+                            sx={{
+                              display: 'flex', alignItems: 'center', gap: 1, py: 0.5, px: 1,
+                              borderRadius: 1.5, cursor: isAdded ? 'default' : 'pointer',
+                              bgcolor: isAdded ? 'rgba(39,174,96,0.06)' : 'transparent',
+                              '&:hover': { bgcolor: isAdded ? 'rgba(39,174,96,0.06)' : 'rgba(102,126,234,0.06)' },
+                              transition: 'all 0.15s',
+                            }}
+                            onClick={() => !isAdded && handleAddSuggestion(s.keyword)}
+                          >
+                            {isAdded ? (
+                              <CheckIcon sx={{ fontSize: 16, color: '#27ae60' }} />
+                            ) : (
+                              <AddIcon sx={{ fontSize: 16, color: '#667eea' }} />
+                            )}
+                            <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: '#1a1a2e', flex: 1 }}>
+                              {s.keyword}
+                            </Typography>
+                            <Chip
+                              label={s.type}
+                              size="small"
+                              sx={{ fontSize: '0.65rem', height: 20, bgcolor: `${color}15`, color, border: `1px solid ${color}30` }}
+                            />
+                            <Chip
+                              label={`${s.score}/100`}
+                              size="small"
+                              sx={{
+                                fontSize: '0.65rem', height: 20, fontWeight: 700,
+                                bgcolor: s.score >= 80 ? 'rgba(39,174,96,0.1)' : s.score >= 60 ? 'rgba(243,156,18,0.1)' : 'rgba(231,76,60,0.1)',
+                                color: s.score >= 80 ? '#27ae60' : s.score >= 60 ? '#f39c12' : '#e74c3c',
+                              }}
+                            />
+                            <Tooltip title={s.reason} arrow>
+                              <InfoIcon sx={{ fontSize: 14, color: '#bbb', cursor: 'help' }} />
+                            </Tooltip>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </>
+                )}
+              </Paper>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 170 }}>
             <FormControl size="small" fullWidth>
               <InputLabel sx={{ fontSize: '0.78rem' }}>Length</InputLabel>
               <Select
@@ -722,6 +920,23 @@ export function BlogPage() {
                 ))}
               </Select>
             </FormControl>
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleSuggestKeywords}
+              disabled={!keywordInput.trim() || suggestingKeywords}
+              startIcon={suggestingKeywords ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <OptimizeIcon />}
+              sx={{
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                py: 1,
+                '&:hover': { background: 'linear-gradient(135deg, #e67e22 0%, #d35400 100%)' },
+              }}
+            >
+              {suggestingKeywords ? 'Optimizing...' : 'Optimize'}
+            </Button>
             <Button
               variant="contained"
               fullWidth

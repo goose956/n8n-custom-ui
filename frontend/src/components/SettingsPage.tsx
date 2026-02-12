@@ -57,6 +57,7 @@ interface IntegrationKeys {
   brave: string;
   make: string;
   zapier: string;
+  apify: string;
 }
 
 const SETTINGS_API = API.settings;
@@ -86,6 +87,7 @@ function SettingsPage() {
     brave: '',
     make: '',
     zapier: '',
+    apify: '',
   });
   const [integrationKeysLoading, setIntegrationKeysLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
@@ -94,6 +96,7 @@ function SettingsPage() {
     brave: false,
     make: false,
     zapier: false,
+    apify: false,
   });
   const [integrationKeysTestLoading, setIntegrationKeysTestLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
@@ -102,6 +105,7 @@ function SettingsPage() {
     brave: false,
     make: false,
     zapier: false,
+    apify: false,
   });
   
   // OpenAI specific state
@@ -126,10 +130,11 @@ function SettingsPage() {
           brave: '',
           make: '',
           zapier: '',
+          apify: '',
         };
         
         keys.forEach((key: ApiKey) => {
-          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'claude' || key.name === 'brave' || key.name === 'make' || key.name === 'zapier') {
+          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'claude' || key.name === 'brave' || key.name === 'make' || key.name === 'zapier' || key.name === 'apify') {
             integrations[key.name as keyof IntegrationKeys] = 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'; // Show masked placeholder
           }
         });
@@ -685,6 +690,37 @@ function SettingsPage() {
                           {integrationKeysTestLoading.make ? 'Testing...' : 'Test'}
                         </Button>
                         <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('make')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Apify */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Apify</Typography>
+                      <Typography variant="caption" sx={{ color: '#999' }}>Web scraping, data extraction & automation platform</Typography>
+                    </Box>
+                    {integrationKeys.apify && integrationKeys.apify !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Token" type="password" placeholder="apify_api_..." value={integrationKeys.apify} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, apify: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('apify')} disabled={integrationKeysLoading.apify || !integrationKeys.apify} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.apify ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.apify === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('apify')} disabled={integrationKeysTestLoading.apify} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.apify ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('apify')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
                           Delete
                         </Button>
                       </>

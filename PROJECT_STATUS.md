@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 12, 2026
+**Last Updated:** February 13, 2026
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -8,7 +8,7 @@
 
 ## Current State
 
-The platform is a fully functional multi-app SaaS management system with 15 backend modules and 10 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
+The platform is a fully functional multi-app SaaS management system with 18 backend modules and 13 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
 
 ### Services
 
@@ -30,15 +30,17 @@ The platform is a fully functional multi-app SaaS management system with 15 back
 | WorkflowsModule | `workflows/` | n8n workflow listing, validation, config storage, triggering |
 | SettingsModule | `settings/` | Platform settings (n8n URL, API key) |
 | ApiKeysModule | `api-keys/` | Encrypted API key vault (masked for frontend, decrypted server-side) |
-| ChatModule | `chat/` | AI chat messaging (OpenAI/OpenRouter) |
+| ChatModule | `chat/` | AI chat messaging (OpenAI/OpenRouter, partial-patch mode) |
 | PageAgentModule | `page-agent/` | AI page content generation |
 | N8nBuilderModule | `n8n-builder/` | AI workflow JSON builder with validation and node schema reference |
 | BlogModule | `blog/` | Blog post CRUD + OpenAI generation |
 | ResearchModule | `research/` | Brave Search + Claude analysis pipeline |
 | AppPlannerModule | `app-planner/` | AI feature planning and roadmap generation |
-| AnalyticsModule | `analytics/` | Per-app usage statistics |
+| AnalyticsModule | `analytics/` | Per-app usage statistics + error logging interceptor |
 | HealthModule | `health/` | Service health check |
 | MigrationsModule | `migrations/` | Legacy db.json to multi-app schema migration |
+| ProgrammerAgentModule | `programmer-agent/` | AI code generation with orchestrator + sub-agent model routing |
+| SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
 
 ### Shared Infrastructure
 
@@ -54,12 +56,15 @@ The platform is a fully functional multi-app SaaS management system with 15 back
 | Page | Component | Features |
 |------|-----------|----------|
 | Projects | ProjectsPage.tsx | Card grid, create/edit/delete apps, color picker |
-| Pages | PagesPage.tsx | JSON editor, live preview, AI chat, format toolbar |
+| Pages | PagesPage.tsx | JSON editor, live preview, AI chat (partial-patch), format toolbar |
 | Workflows | WorkflowsPage.tsx | Table view, validation badges, edit/trigger/view |
 | Workflow Builder | WorkflowBuilderPage.tsx | AI chat, template sidebar, JSON viewer, node reference |
 | Apps | AppsPage.tsx | App planner interface |
 | Blog | BlogPage.tsx | Blog management + AI generation |
 | Research | ResearchPage.tsx | Brave + Claude research, PDF export, model picker |
+| Programmer Agent | ProgrammerAgentPage.tsx | AI code gen, orchestrator/sub-agent routing, file viewer, refine |
+| Preview | AppPreviewPage.tsx | Full browser simulation, 5 page-type renderers, navigation history |
+| Social Monitor | SocialMonitorPage.tsx | Reddit monitoring, keyword management, AI draft replies, relevance scoring |
 | Analytics | AnalyticsPage.tsx | Stats cards, usage tables |
 | Templates | TemplatesPage.tsx | Template previews |
 | Settings | SettingsPage.tsx | n8n config, API keys, connection testing |
@@ -67,9 +72,10 @@ The platform is a fully functional multi-app SaaS management system with 15 back
 ### Frontend Architecture
 
 - Centralized API config in frontend/src/config/api.ts with VITE_API_URL env var support
-- Zero hardcoded URLs - all 12 component files use the centralized API object
-- XSS protection via DOMPurify on all 5 dangerouslySetInnerHTML usages
+- Zero hardcoded URLs - all component files use the centralized API object
+- XSS protection via DOMPurify on all dangerouslySetInnerHTML usages
 - Design system: dark nav (#1a1a2e), gradient accents (#667eea to #764ba2), light bg (#fafbfc), Inter font
+- Shared page renderers: RenderPage exports from AppPreviewPage used by both Preview and Pages editor
 
 ---
 

@@ -11,6 +11,9 @@ import AnalyticsPage from './components/AnalyticsPage';
 import { WorkflowBuilderPage } from './components/WorkflowBuilderPage';
 import { AppsPage } from './components/AppsPage';
 import { ResearchPage } from './components/ResearchPage';
+import { ProgrammerAgentPage } from './components/ProgrammerAgentPage';
+import { SocialMonitorPage } from './components/SocialMonitorPage';
+import { AppPreviewPage } from './components/AppPreviewPage';
 import {
   Dashboard as DashboardIcon,
   Settings as SettingsIcon,
@@ -24,6 +27,9 @@ import {
   Circle as CircleIcon,
   Refresh as RefreshIcon,
   TravelExplore as ResearchIcon,
+  SmartToy as ProgrammerIcon,
+  Forum as SocialIcon,
+  Visibility as PreviewIcon,
 } from '@mui/icons-material';
 
 const theme = createTheme({
@@ -147,7 +153,10 @@ const navItems: NavItem[] = [
   { label: 'Pages', path: '/pages', icon: <PagesIcon sx={{ fontSize: 18 }} /> },
   { label: 'Apps', path: '/apps', icon: <AppsIcon sx={{ fontSize: 18 }} /> },
   { label: 'Research', path: '/research', icon: <ResearchIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Programmer', path: '/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
   { label: 'Builder', path: '/builder', icon: <BuildIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Preview', path: '/preview', icon: <PreviewIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Social', path: '/social', icon: <SocialIcon sx={{ fontSize: 18 }} /> },
   { label: 'Analytics', path: '/analytics', icon: <AnalyticsIcon sx={{ fontSize: 18 }} /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon sx={{ fontSize: 18 }} /> },
 ];
@@ -433,7 +442,10 @@ function App() {
             <Route path="/pages" element={<PagesPage />} />
             <Route path="/apps" element={<AppsPage />} />
             <Route path="/research" element={<ResearchPage />} />
+            <Route path="/programmer" element={<ProgrammerAgentPage />} />
             <Route path="/builder" element={<WorkflowBuilderPage />} />
+            <Route path="/social" element={<SocialMonitorPage />} />
+            <Route path="/preview" element={<AppPreviewPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/" element={<ProjectsPage />} />
           </Routes>

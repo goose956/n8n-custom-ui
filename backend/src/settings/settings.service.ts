@@ -133,6 +133,8 @@ export class SettingsService {
           return await this.testMakeKey(apiKey);
         case 'zapier':
           return await this.testZapierKey(apiKey);
+        case 'apify':
+          return await this.testApifyKey(apiKey);
         default:
           return { success: false, message: `Unknown service: ${service}` };
       }
@@ -237,6 +239,29 @@ export class SettingsService {
       }
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, message: `Zapier test failed: ${message}` };
+    }
+  }
+
+  private async testApifyKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://api.apify.com/v2/users/me', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        timeout: 5000,
+      });
+
+      const username = response.data?.data?.username || 'unknown';
+      return { success: true, message: `Apify API token is valid! Connected as: ${username}` };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'Apify API token is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `Apify test failed: ${error.response?.status} - ${error.response?.statusText}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Apify test failed: ${message}` };
     }
   }
 

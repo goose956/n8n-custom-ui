@@ -18,5 +18,7 @@ export const API = {
   appPlanner: `${API_BASE_URL}/api/app-planner`,
   blog: `${API_BASE_URL}/api/blog`,
   research: `${API_BASE_URL}/api/research`,
+  programmerAgent: `${API_BASE_URL}/api/programmer-agent`,
   health: `${API_BASE_URL}/api/health`,
+  socialMonitor: `${API_BASE_URL}/api/social-monitor`,
 } as const;

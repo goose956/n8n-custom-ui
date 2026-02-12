@@ -66,3 +66,13 @@
 - [ ] Docker containerization
 - [ ] RBAC (role-based access control)
 - [ ] Audit logging
+
+## Phase 6: Platform Conversion - PLANNED
+
+- [ ] Convert/Export page UI (select app → pick target platform → generate)
+- [ ] Shopify App export (App Bridge scaffold, OAuth, embedded iframe wrapper)
+- [ ] Android export via Capacitor (native shell + mobile-friendly layout swap)
+- [ ] Desktop export via Electron (standalone .exe/.dmg wrapper)
+- [ ] PWA export (service worker, manifest.json, offline support)
+- [ ] Shared conversion engine (analyze React components, extract routes/API calls)
+- [ ] Platform-specific UI adapter (swap hover→touch, tables→cards for mobile)

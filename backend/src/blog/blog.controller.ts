@@ -47,6 +47,11 @@ export class BlogController {
     return this.blogService.addKeywords(body.keywords, body.length, body.projectId);
   }
 
+  @Post('suggest-keywords')
+  async suggestKeywords(@Body() body: { seed: string }) {
+    return this.blogService.suggestKeywords(body.seed);
+  }
+
   // ─── Generation ────────────────────────────────────────────────────────────
 
   @Post('generate/:id')
