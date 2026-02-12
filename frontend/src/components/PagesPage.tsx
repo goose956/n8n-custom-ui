@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Container,
   Box,
@@ -45,7 +46,16 @@ import {
   TrendingUp as TrendingUpIcon,
   Check as CheckIcon,
   Article as ArticleIcon,
+  Send as SendIcon,
+  Visibility as VisibilityIcon,
+  SmartToy as SmartToyIcon,
+  AutoFixHigh as AutoFixHighIcon,
+  Build as BuildIcon,
+  PlayArrow as PlayArrowIcon,
+  CheckCircle as CheckCircleIcon,
+  RadioButtonUnchecked as PendingIcon,
 } from '@mui/icons-material';
+import LinearProgress from '@mui/material/LinearProgress';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import axios from 'axios';
@@ -117,17 +127,28 @@ export const PagesPage: React.FC = () => {
     }
   };
 
-  // Apply AI suggestion to editor
+  // Apply AI suggestion to editor and update preview live
   const handleApplySuggestion = (content: string) => {
     if (isValidJson(content)) {
       setEditorContent(JSON.stringify(JSON.parse(content), null, 2));
-      setSuccess('Page updated with AI suggestion');
+      setSuccess('Preview updated with AI suggestion');
       setTimeout(() => setSuccess(null), 3000);
     } else {
       setError('AI response is not valid JSON format');
       setTimeout(() => setError(null), 3000);
     }
   };
+
+  // State for chat panel toggle on preview
+  const [chatPanelOpen, setChatPanelOpen] = useState(true);
+
+  // Backend Agent state
+  const [agentMode, setAgentMode] = useState<'design' | 'backend'>('design');
+  const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([]);
+  const [agentInput, setAgentInput] = useState('');
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [backendTasks, setBackendTasks] = useState<any[]>([]);
+  const [agentProgress, setAgentProgress] = useState({ completed: 0, total: 0 });
 
   // Track page view when editing/previewing a page
   useEffect(() => {
@@ -150,9 +171,97 @@ export const PagesPage: React.FC = () => {
     }
   }, [selectedProjectId]);
 
+  // Backend Agent: analyze page tasks
+  const analyzePageTasks = async () => {
+    if (!contentPage || !selectedProjectId) return;
+    try {
+      const res = await axios.get(`${API.pageAgent}/analyze/${selectedProjectId}/${contentPage.id}`);
+      if (res.data.success) {
+        setBackendTasks(res.data.tasks || []);
+        setAgentProgress({ completed: res.data.completedCount || 0, total: res.data.totalCount || 0 });
+      }
+    } catch (err) {
+      console.error('Failed to analyze page:', err);
+    }
+  };
+
+  // Backend Agent: send chat message
+  const handleSendAgentMessage = async (directMessage?: string) => {
+    const msgText = directMessage || agentInput;
+    if (!msgText.trim() || !contentPage || !selectedProjectId) return;
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: msgText,
+      timestamp: new Date(),
+    };
+    setAgentMessages(prev => [...prev, userMsg]);
+    setAgentInput('');
+    setAgentLoading(true);
+
+    try {
+      const res = await axios.post(`${API.pageAgent}/chat`, {
+        appId: parseInt(selectedProjectId),
+        pageId: contentPage.id,
+        message: msgText,
+        apiProvider: chatApiProvider,
+        model: chatApiProvider === 'openai' ? openaiModel : undefined,
+      });
+
+      if (res.data.success) {
+        const assistantMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: res.data.message,
+          timestamp: new Date(),
+        };
+        setAgentMessages(prev => [...prev, assistantMsg]);
+        if (res.data.tasks) {
+          setBackendTasks(res.data.tasks);
+          const done = res.data.tasks.filter((t: any) => t.status === 'done').length;
+          setAgentProgress({ completed: done, total: res.data.tasks.length });
+        }
+      }
+    } catch (err) {
+      console.error('Agent chat error:', err);
+      setError('Failed to contact backend agent.');
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  // Backend Agent: implement a single task
+  const handleImplementTask = async (taskId: string) => {
+    if (!contentPage || !selectedProjectId) return;
+    setAgentLoading(true);
+    try {
+      const res = await axios.post(`${API.pageAgent}/implement/${selectedProjectId}/${contentPage.id}/${taskId}`);
+      const msg: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `${res.data.success ? '✅' : '⚠️'} ${res.data.message}`,
+        timestamp: new Date(),
+      };
+      setAgentMessages(prev => [...prev, msg]);
+      await analyzePageTasks();
+    } catch (err) {
+      console.error('Implement task error:', err);
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  // Auto-analyze when switching to backend agent mode
+  useEffect(() => {
+    if (agentMode === 'backend' && contentPage && selectedProjectId) {
+      analyzePageTasks();
+    }
+  }, [agentMode, contentPage?.id]);
+
   const loadAvailableApis = async () => {
     try {
-      const response = await axios.get('http://localhost:3000/api/api-keys');
+      const response = await axios.get(API.apiKeys);
       if (response.data.success) {
         const apiNames = response.data.keys.map((k: any) => k.name).filter((name: string) => 
           ['openai', 'openrouter', 'make', 'zapier'].includes(name)
@@ -182,7 +291,7 @@ export const PagesPage: React.FC = () => {
     setChatLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:3000/api/chat', {
+      const response = await axios.post(API.chat, {
         message: chatInput,
         apiProvider: chatApiProvider,
         model: chatApiProvider === 'openai' ? openaiModel : undefined,
@@ -214,7 +323,7 @@ export const PagesPage: React.FC = () => {
     try {
       console.log('Loading apps...');
       setAppLoading(true);
-      const response = await axios.get('http://localhost:3000/api/apps');
+      const response = await axios.get(API.apps);
       const appsList = response.data?.data || response.data || [];
       console.log('Apps loaded:', appsList);
       setApps(appsList);
@@ -232,7 +341,7 @@ export const PagesPage: React.FC = () => {
     try {
       console.log('Loading pages for project:', selectedProjectId);
       setLoading(true);
-      const response = await axios.get(`http://localhost:3000/api/pages?app_id=${selectedProjectId}`);
+      const response = await axios.get(`${API.pages}?app_id=${selectedProjectId}`);
       const pagesList = response.data?.data || response.data || [];
       console.log('Pages loaded:', pagesList);
       setPages(pagesList);
@@ -250,7 +359,7 @@ export const PagesPage: React.FC = () => {
 
     try {
       setLoading(true);
-      await axios.delete(`http://localhost:3000/api/pages/${pageId}`);
+      await axios.delete(`${API.pages}/${pageId}`);
       setSuccess('Page deleted successfully');
       loadPages();
       setTimeout(() => setSuccess(null), 3000);
@@ -277,7 +386,7 @@ export const PagesPage: React.FC = () => {
 
     try {
       setLoading(true);
-      await axios.patch(`http://localhost:3000/api/pages/${editDialog.page.id}`, {
+      await axios.patch(`${API.pages}/${editDialog.page.id}`, {
         title: editTitle,
       });
       setSuccess('Page updated successfully');
@@ -322,7 +431,7 @@ export const PagesPage: React.FC = () => {
         return;
       }
 
-      await axios.patch(`http://localhost:3000/api/pages/${contentPage.id}`, {
+      await axios.patch(`${API.pages}/${contentPage.id}`, {
         content_json: contentJson,
       });
       setSuccess('Page content updated successfully');
@@ -769,369 +878,536 @@ export const PagesPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Content Editor Dialog */}
-      <Dialog open={contentEditorOpen} onClose={handleCloseContentEditor} maxWidth="md" fullWidth PaperProps={{ sx: { maxHeight: '90vh' } }}>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 1, pt: 3 }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Edit Page Content</Typography>
-            <Typography variant="caption" sx={{ color: '#888' }}>
-              {contentPage?.title} <Chip label={contentPage?.page_type} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#eef0ff', color: '#667eea', ml: 0.5 }} />
-            </Typography>
+      {/* Content Editor Dialog — Preview + Chat side-by-side */}
+      <Dialog
+        open={contentEditorOpen}
+        onClose={handleCloseContentEditor}
+        maxWidth={false}
+        fullWidth
+        PaperProps={{ sx: { maxHeight: '95vh', height: '90vh', width: '95vw', maxWidth: '1400px', m: 1 } }}
+      >
+        {/* Top bar */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, pt: 2, pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '1.05rem' }}>
+                {contentPage?.title}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <Chip label={contentPage?.page_type} size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#eef0ff', color: '#667eea' }} />
+                <Typography variant="caption" sx={{ color: '#aaa' }}>Live Preview + AI Chat</Typography>
+              </Box>
+            </Box>
           </Box>
-          <IconButton size="small" onClick={handleCloseContentEditor} sx={{ color: '#888' }}>
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            {/* Tab toggle: Preview & Chat vs JSON Editor */}
+            <Tabs
+              value={editorTabIndex}
+              onChange={(_e, newValue) => setEditorTabIndex(newValue)}
+              sx={{
+                minHeight: 36,
+                '& .MuiTab-root': { minHeight: 36, fontWeight: 600, fontSize: '0.8rem', textTransform: 'none', color: '#888', py: 0.5, px: 2 },
+                '& .Mui-selected': { color: '#667eea !important' },
+                '& .MuiTabs-indicator': { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', height: 3, borderRadius: '3px 3px 0 0' },
+              }}
+            >
+              <Tab icon={<VisibilityIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="Preview & Chat" />
+              <Tab icon={<CodeIcon sx={{ fontSize: 16 }} />} iconPosition="start" label="JSON Editor" />
+            </Tabs>
+            <IconButton size="small" onClick={handleCloseContentEditor} sx={{ color: '#888', ml: 1 }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </Box>
         <Divider />
 
-        {/* Editor Tabs */}
-        <Tabs value={editorTabIndex} onChange={(_e, newValue) => setEditorTabIndex(newValue)} sx={{ px: 2, '& .MuiTab-root': { fontWeight: 600, fontSize: '0.875rem', textTransform: 'none', color: '#888' }, '& .Mui-selected': { color: '#667eea !important' }, '& .MuiTabs-indicator': { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', height: 3, borderRadius: '3px 3px 0 0' } }}>
-          <Tab label="JSON Editor" />
-          <Tab label="Preview" />
-          <Tab label="Chat Assistant" />
-        </Tabs>
-
-        <DialogContent sx={{ pt: 2, display: editorTabIndex === 0 ? 'block' : 'none', maxHeight: '70vh', overflow: 'auto' }}>
-          {/* Formatting Toolbar */}
-          <Toolbar
-            variant="dense"
-            sx={{
-              display: 'flex',
-              gap: 0.5,
-              mb: 2,
-              backgroundColor: '#f5f5f5',
-              p: 1,
-              borderRadius: 1,
-              flexWrap: 'wrap',
-            }}
-          >
-            <Typography variant="body2" sx={{ width: '100%', mb: 1, fontWeight: 'bold' }}>
-              Quick Formats:
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('**bold text**')}
-              title="Bold"
-            >
-              <FormatBoldIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('*italic text*')}
-              title="Italic"
-            >
-              <FormatItalicIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('~~strikethrough~~')}
-              title="Strikethrough"
-            >
-              <FormatUnderlinedIcon fontSize="small" />
-            </IconButton>
-            <Divider orientation="vertical" flexItem />
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('- List item\n')}
-              title="Bullet List"
-            >
-              <FormatListBulletedIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('1. Numbered item\n')}
-              title="Numbered List"
-            >
-              <FormatListNumberedIcon fontSize="small" />
-            </IconButton>
-            <Divider orientation="vertical" flexItem />
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('```\ncode block\n```')}
-              title="Code Block"
-            >
-              <CodeIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={() => insertTextAtCursor('[link text](url)')}
-              title="Link"
-            >
-              <LinkIcon fontSize="small" />
-            </IconButton>
-          </Toolbar>
-
-          {/* JSON Editor */}
-          <TextField
-            id="content-editor"
-            fullWidth
-            multiline
-            rows={24}
-            value={editorContent}
-            onChange={(e) => setEditorContent(e.target.value)}
-            placeholder="Enter JSON content here..."
-            sx={{
-              fontFamily: 'monospace',
-              fontSize: '12px',
-              backgroundColor: '#f9f9f9',
-              '& .MuiOutlinedInput-root': {
-                fontFamily: 'monospace',
-              },
-            }}
-          />
-        </DialogContent>
-
-        {/* Preview Tab */}
-        {editorTabIndex === 1 && (
-          <DialogContent sx={{ p: 1, bgcolor: '#e0e0e0', display: 'flex', justifyContent: 'center', maxHeight: '70vh', overflow: 'auto' }}>
-            {/* Browser Frame */}
-            <Box
-              sx={{
-                width: '100%',
-                maxWidth: '800px',
-                bgcolor: '#fff',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                m: 1.5,
-                display: 'flex',
-                flexDirection: 'column',
-                maxHeight: '100%',
-              }}
-            >
-              {/* Browser Header */}
+        {/* ── Tab 0: Preview + Chat side-by-side ── */}
+        {editorTabIndex === 0 && (
+          <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', height: 'calc(100% - 120px)' }}>
+            {/* Left: Page Preview */}
+            <Box sx={{ flex: chatPanelOpen ? '1 1 60%' : '1 1 100%', bgcolor: '#e8eaed', display: 'flex', justifyContent: 'center', overflow: 'auto', p: 2, transition: 'flex 0.3s' }}>
               <Box
                 sx={{
-                  bgcolor: '#f5f5f5',
-                  p: 1.5,
-                  borderBottom: '1px solid #d0d0d0',
+                  width: '100%',
+                  maxWidth: '900px',
+                  bgcolor: '#fff',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  flexShrink: 0,
+                  flexDirection: 'column',
+                  height: 'fit-content',
+                  minHeight: '500px',
                 }}
               >
-                <Box sx={{ display: 'flex', gap: 0.75 }}>
-                  <Box
-                    sx={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '50%',
-                      bgcolor: '#ff5f56',
-                    }}
-                  />
-                  <Box
-                    sx={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '50%',
-                      bgcolor: '#ffbd2e',
-                    }}
-                  />
-                  <Box
-                    sx={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '50%',
-                      bgcolor: '#27c93f',
-                    }}
-                  />
+                {/* Browser chrome */}
+                <Box sx={{ bgcolor: '#f5f5f5', px: 2, py: 1.25, borderBottom: '1px solid #d0d0d0', display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                  <Box sx={{ display: 'flex', gap: 0.6 }}>
+                    <Box sx={{ width: 11, height: 11, borderRadius: '50%', bgcolor: '#ff5f56' }} />
+                    <Box sx={{ width: 11, height: 11, borderRadius: '50%', bgcolor: '#ffbd2e' }} />
+                    <Box sx={{ width: 11, height: 11, borderRadius: '50%', bgcolor: '#27c93f' }} />
+                  </Box>
+                  <Box sx={{ flex: 1, p: 0.6, bgcolor: '#fff', borderRadius: '6px', border: '1px solid #ddd', ml: 1 }}>
+                    <Typography variant="caption" sx={{ color: '#888', fontSize: '11px', fontFamily: 'monospace' }}>
+                      https://your-app.com/{contentPage?.page_type || ''}
+                    </Typography>
+                  </Box>
+                  {!chatPanelOpen && (
+                    <Tooltip title="Open AI Chat">
+                      <IconButton size="small" onClick={() => setChatPanelOpen(true)} sx={{ color: '#667eea' }}>
+                        <SmartToyIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
-                <Box
-                  sx={{
-                    flex: 1,
-                    p: 0.75,
-                    bgcolor: '#fff',
-                    borderRadius: '4px',
-                    border: '1px solid #ccc',
-                    ml: 1,
-                  }}
-                >
-                  <Typography
-                    variant="caption"
-                    sx={{ color: '#666', fontSize: '11px', fontFamily: 'monospace' }}
-                  >
-                    {contentPage?.title || 'Page Preview'}
-                  </Typography>
+                {/* Rendered preview */}
+                <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
+                  {renderPagePreview(editorContent)}
                 </Box>
               </Box>
+            </Box>
 
-              {/* Page Content */}
+            {/* Right: Chat Panel */}
+            {chatPanelOpen && (
               <Box
                 sx={{
-                  p: 3,
-                  overflow: 'auto',
-                  backgroundColor: '#fff',
-                  flexGrow: 1,
-                  minHeight: '400px',
-                  maxHeight: 'calc(70vh - 100px)',
-                  '&::-webkit-scrollbar': {
-                    width: '10px',
-                  },
-                  '&::-webkit-scrollbar-track': {
-                    bgcolor: '#f1f1f1',
-                  },
-                  '&::-webkit-scrollbar-thumb': {
-                    bgcolor: '#888',
-                    borderRadius: '4px',
-                    '&:hover': {
-                      bgcolor: '#555',
-                    },
-                  },
+                  flex: '0 0 380px',
+                  minWidth: 340,
+                  maxWidth: 420,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderLeft: '1px solid #e0e0e0',
+                  bgcolor: '#fafbfc',
                 }}
               >
-                {renderPagePreview(editorContent)}
-              </Box>
-            </Box>
-          </DialogContent>
-        )}
-
-        {/* Chat Assistant Tab */}
-        {editorTabIndex === 2 && (
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', maxHeight: '600px' }}>
-            <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'flex-end' }}>
-              <FormControl sx={{ minWidth: 150 }}>
-                <InputLabel id="api-provider-label">API Provider</InputLabel>
-                <Select
-                  labelId="api-provider-label"
-                  id="api-provider-select"
-                  value={chatApiProvider}
-                  onChange={(e) => setChatApiProvider(e.target.value)}
-                  label="API Provider"
-                  disabled={availableApis.length === 0 || chatLoading}
-                >
-                  {availableApis.map((api) => (
-                    <MenuItem key={api} value={api}>
-                      {api.charAt(0).toUpperCase() + api.slice(1)}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {chatApiProvider === 'openai' && (
-                <FormControl sx={{ minWidth: 150 }}>
-                  <InputLabel id="model-label">Model</InputLabel>
-                  <Select
-                    labelId="model-label"
-                    id="model-select"
-                    value={openaiModel}
-                    onChange={(e) => setOpenaiModel(e.target.value)}
-                    label="Model"
-                    disabled={chatLoading}
+                {/* Agent mode toggle header */}
+                <Box sx={{ px: 1, py: 0.75, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Tabs
+                    value={agentMode === 'design' ? 0 : 1}
+                    onChange={(_e, v) => setAgentMode(v === 0 ? 'design' : 'backend')}
+                    sx={{
+                      minHeight: 34,
+                      '& .MuiTab-root': { minHeight: 34, fontSize: '0.75rem', fontWeight: 700, textTransform: 'none', py: 0.25, px: 1.5, minWidth: 0 },
+                      '& .Mui-selected': { color: agentMode === 'design' ? '#667eea !important' : '#e67e22 !important' },
+                      '& .MuiTabs-indicator': { background: agentMode === 'design' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #e67e22 0%, #e74c3c 100%)', height: 3, borderRadius: '3px 3px 0 0' },
+                    }}
                   >
-                    <MenuItem value="gpt-4">GPT-4</MenuItem>
-                    <MenuItem value="gpt-4-turbo-preview">GPT-4 Turbo</MenuItem>
-                    <MenuItem value="gpt-3.5-turbo">GPT-3.5 Turbo</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
+                    <Tab icon={<SmartToyIcon sx={{ fontSize: 15 }} />} iconPosition="start" label="Design" />
+                    <Tab icon={<BuildIcon sx={{ fontSize: 15 }} />} iconPosition="start" label="Backend" />
+                  </Tabs>
+                  <IconButton size="small" onClick={() => setChatPanelOpen(false)} sx={{ color: '#bbb' }}>
+                    <CloseIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Box>
 
-              {availableApis.length === 0 && (
-                <Typography variant="caption" sx={{ color: '#d32f2f' }}>
-                  No API keys configured. Go to Settings to add API keys.
-                </Typography>
-              )}
-            </Box>
+                {/* ═══ DESIGN AGENT PANEL ═══ */}
+                {agentMode === 'design' && (
+                  <>
+                    {/* API Provider selector */}
+                    <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 1, alignItems: 'center' }}>
+                      <FormControl size="small" sx={{ flex: 1 }}>
+                        <InputLabel id="api-provider-label">Provider</InputLabel>
+                        <Select
+                          labelId="api-provider-label"
+                          value={chatApiProvider}
+                          onChange={(e) => setChatApiProvider(e.target.value)}
+                          label="Provider"
+                          disabled={availableApis.length === 0 || chatLoading}
+                          sx={{ fontSize: '0.85rem' }}
+                        >
+                          {availableApis.map((api) => (
+                            <MenuItem key={api} value={api}>
+                              {api.charAt(0).toUpperCase() + api.slice(1)}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {chatApiProvider === 'openai' && (
+                        <FormControl size="small" sx={{ flex: 1 }}>
+                          <InputLabel id="model-label">Model</InputLabel>
+                          <Select
+                            labelId="model-label"
+                            value={openaiModel}
+                            onChange={(e) => setOpenaiModel(e.target.value)}
+                            label="Model"
+                            disabled={chatLoading}
+                            sx={{ fontSize: '0.85rem' }}
+                          >
+                            <MenuItem value="gpt-4">GPT-4</MenuItem>
+                            <MenuItem value="gpt-4-turbo-preview">GPT-4 Turbo</MenuItem>
+                            <MenuItem value="gpt-3.5-turbo">GPT-3.5 Turbo</MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
+                    </Box>
 
-            {/* Chat Messages */}
-            <Paper
-              sx={{
-                flex: 1,
-                overflow: 'auto',
-                p: 2,
-                mb: 2,
-                backgroundColor: '#f9f9f9',
-                border: '1px solid #e0e0e0',
-                minHeight: '250px',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              {chatMessages.length === 0 ? (
-                <Typography variant="body2" sx={{ color: '#999', m: 'auto' }}>
-                  Start a conversation about your page content...
-                </Typography>
-              ) : (
-                chatMessages.map((msg) => {
-                  const isJson = msg.role === 'assistant' && isValidJson(msg.content);
-                  return (
+                    {availableApis.length === 0 && (
+                      <Box sx={{ px: 2, py: 1.5 }}>
+                        <Alert severity="warning" sx={{ fontSize: '0.75rem', py: 0 }}>
+                          No API keys configured. Go to Settings to add keys.
+                        </Alert>
+                      </Box>
+                    )}
+
+                    {/* Design chat messages */}
                     <Box
-                      key={msg.id}
                       sx={{
-                        mb: 1.5,
-                        p: 1.5,
-                        backgroundColor: msg.role === 'user' ? '#e3f2fd' : '#f5f5f5',
-                        borderLeft: `4px solid ${msg.role === 'user' ? '#1976d2' : '#666'}`,
-                        borderRadius: 0.5,
+                        flex: 1,
+                        overflow: 'auto',
+                        px: 2,
+                        py: 1.5,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                        '&::-webkit-scrollbar': { width: 6 },
+                        '&::-webkit-scrollbar-thumb': { bgcolor: '#ccc', borderRadius: 3 },
                       }}
                     >
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#666' }}>
-                          {msg.role === 'user' ? 'You' : 'Assistant'}
-                        </Typography>
-                        {isJson && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleApplySuggestion(msg.content)}
-                            sx={{ ml: 1 }}
-                          >
-                            Apply to Editor
-                          </Button>
-                        )}
-                      </Box>
-                      <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {isJson ? JSON.stringify(JSON.parse(msg.content), null, 2) : msg.content}
-                      </Typography>
+                      {chatMessages.length === 0 ? (
+                        <Box sx={{ m: 'auto', textAlign: 'center', py: 4 }}>
+                          <SmartToyIcon sx={{ fontSize: 40, color: '#ddd', mb: 1 }} />
+                          <Typography variant="body2" sx={{ color: '#999', mb: 0.5 }}>Chat about this page</Typography>
+                          <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5 }}>
+                            Ask the AI to change headlines, add sections, update pricing, or restyle the page. Changes appear in the preview instantly.
+                          </Typography>
+                        </Box>
+                      ) : (
+                        chatMessages.map((msg) => {
+                          const isJson = msg.role === 'assistant' && isValidJson(msg.content);
+                          return (
+                            <Box
+                              key={msg.id}
+                              sx={{
+                                p: 1.5,
+                                backgroundColor: msg.role === 'user' ? '#e8f0fe' : '#fff',
+                                border: msg.role === 'user' ? '1px solid #d0ddf7' : '1px solid #e8e8e8',
+                                borderRadius: 2,
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  {msg.role === 'assistant' && <AutoFixHighIcon sx={{ fontSize: 14, color: '#667eea' }} />}
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#5a7bbf' : '#667eea' }}>
+                                    {msg.role === 'user' ? 'You' : 'AI Assistant'}
+                                  </Typography>
+                                </Box>
+                                {isJson && (
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    startIcon={<AutoFixHighIcon sx={{ fontSize: 14 }} />}
+                                    onClick={() => handleApplySuggestion(msg.content)}
+                                    sx={{
+                                      fontSize: '0.7rem',
+                                      py: 0.25,
+                                      px: 1.5,
+                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                      '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+                                    }}
+                                  >
+                                    Apply to Preview
+                                  </Button>
+                                )}
+                              </Box>
+                              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.82rem', lineHeight: 1.6, color: '#333' }}>
+                                {isJson ? 'New page content ready — click "Apply to Preview" to see changes.' : msg.content}
+                              </Typography>
+                            </Box>
+                          );
+                        })
+                      )}
+                      {chatLoading && (
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#f5f0ff', borderRadius: 2, border: '1px solid #e8dff5' }}>
+                          <CircularProgress size={16} sx={{ color: '#667eea' }} />
+                          <Typography variant="caption" sx={{ color: '#764ba2', fontWeight: 600 }}>Generating changes...</Typography>
+                        </Box>
+                      )}
                     </Box>
-                  );
-                })
-              )}
-              {chatLoading && (
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 1 }}>
-                  <CircularProgress size={16} />
-                  <Typography variant="caption" sx={{ color: '#666' }}>
-                    Waiting for response...
-                  </Typography>
-                </Box>
-              )}
-            </Paper>
 
-            {/* Chat Input */}
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <TextField
-                fullWidth
-                size="small"
-                placeholder="Ask about your page content..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendChatMessage();
-                  }
-                }}
-                disabled={chatLoading || availableApis.length === 0}
-                multiline
-                maxRows={3}
-              />
-              <Button
-                variant="contained"
-                onClick={handleSendChatMessage}
-                disabled={chatLoading || !chatInput.trim() || availableApis.length === 0}
-                sx={{ whiteSpace: 'nowrap', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}
-              >
-                Send
-              </Button>
-            </Box>
+                    {/* Design chat input */}
+                    <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder='e.g. "Change the headline to..."'
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendChatMessage();
+                            }
+                          }}
+                          disabled={chatLoading || availableApis.length === 0}
+                          multiline
+                          maxRows={3}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.875rem' } }}
+                        />
+                        <IconButton
+                          onClick={handleSendChatMessage}
+                          disabled={chatLoading || !chatInput.trim() || availableApis.length === 0}
+                          sx={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: '#fff',
+                            borderRadius: 2,
+                            width: 40,
+                            height: 40,
+                            '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
+                            '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#aaa' },
+                          }}
+                        >
+                          <SendIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                  </>
+                )}
+
+                {/* ═══ BACKEND AGENT PANEL ═══ */}
+                {agentMode === 'backend' && (
+                  <>
+                    {/* Progress bar */}
+                    <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.75rem' }}>Backend Readiness</Typography>
+                        <Chip
+                          label={`${agentProgress.completed}/${agentProgress.total}`}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            bgcolor: agentProgress.completed === agentProgress.total && agentProgress.total > 0 ? '#e8f5e9' : '#fff3e0',
+                            color: agentProgress.completed === agentProgress.total && agentProgress.total > 0 ? '#2e7d32' : '#e65100',
+                          }}
+                        />
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={agentProgress.total > 0 ? (agentProgress.completed / agentProgress.total) * 100 : 0}
+                        sx={{
+                          height: 6,
+                          borderRadius: 3,
+                          bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': { background: 'linear-gradient(135deg, #e67e22 0%, #e74c3c 100%)', borderRadius: 3 },
+                        }}
+                      />
+                    </Box>
+
+                    {/* Task list */}
+                    {backendTasks.length > 0 && (
+                      <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #f0f0f0', maxHeight: 200, overflow: 'auto', '&::-webkit-scrollbar': { width: 5 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ddd', borderRadius: 3 } }}>
+                        {backendTasks.map((task: any) => (
+                          <Box
+                            key={task.id}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1,
+                              py: 0.75,
+                              borderBottom: '1px solid #f8f8f8',
+                              '&:last-child': { borderBottom: 'none' },
+                            }}
+                          >
+                            {task.status === 'done' ? (
+                              <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            ) : (
+                              <PendingIcon sx={{ fontSize: 16, color: '#e0e0e0' }} />
+                            )}
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography variant="caption" sx={{ fontWeight: 600, color: task.status === 'done' ? '#999' : '#1a1a2e', fontSize: '0.72rem', display: 'block', lineHeight: 1.3, textDecoration: task.status === 'done' ? 'line-through' : 'none' }}>
+                                {task.title}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>
+                                {task.category} · {task.priority}
+                              </Typography>
+                            </Box>
+                            {task.status !== 'done' && task.implementation && (
+                              <Tooltip title="Auto-implement this task">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleImplementTask(task.id)}
+                                  disabled={agentLoading}
+                                  sx={{ color: '#e67e22', '&:hover': { bgcolor: '#fff3e0' } }}
+                                >
+                                  <PlayArrowIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+
+                    {/* Agent chat messages */}
+                    <Box
+                      sx={{
+                        flex: 1,
+                        overflow: 'auto',
+                        px: 2,
+                        py: 1.5,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                        '&::-webkit-scrollbar': { width: 6 },
+                        '&::-webkit-scrollbar-thumb': { bgcolor: '#ccc', borderRadius: 3 },
+                      }}
+                    >
+                      {agentMessages.length === 0 ? (
+                        <Box sx={{ m: 'auto', textAlign: 'center', py: 3 }}>
+                          <BuildIcon sx={{ fontSize: 36, color: '#e0e0e0', mb: 1 }} />
+                          <Typography variant="body2" sx={{ color: '#999', mb: 0.5, fontSize: '0.85rem' }}>Backend Agent</Typography>
+                          <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block', mb: 1.5 }}>
+                            Ask what backend work this page needs, or implement tasks to make the page fully functional.
+                          </Typography>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, alignItems: 'center' }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleSendAgentMessage('What backend tasks does this page need?')}
+                              sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
+                            >
+                              🔍 Analyze this page
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleSendAgentMessage('Implement all auto tasks')}
+                              sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
+                            >
+                              ⚡ Implement all auto-tasks
+                            </Button>
+                          </Box>
+                        </Box>
+                      ) : (
+                        agentMessages.map((msg) => (
+                          <Box
+                            key={msg.id}
+                            sx={{
+                              p: 1.5,
+                              backgroundColor: msg.role === 'user' ? '#fef3e8' : '#fff',
+                              border: msg.role === 'user' ? '1px solid #f5d5b0' : '1px solid #e8e8e8',
+                              borderRadius: 2,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                              {msg.role === 'assistant' && <BuildIcon sx={{ fontSize: 14, color: '#e67e22' }} />}
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#bf6c1a' : '#e67e22' }}>
+                                {msg.role === 'user' ? 'You' : 'Backend Agent'}
+                              </Typography>
+                            </Box>
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.8rem', lineHeight: 1.6, color: '#333' }}>
+                              {msg.content}
+                            </Typography>
+                          </Box>
+                        ))
+                      )}
+                      {agentLoading && (
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#fff8f0', borderRadius: 2, border: '1px solid #f5d5b0' }}>
+                          <CircularProgress size={16} sx={{ color: '#e67e22' }} />
+                          <Typography variant="caption" sx={{ color: '#d35400', fontWeight: 600 }}>Working...</Typography>
+                        </Box>
+                      )}
+                    </Box>
+
+                    {/* Agent chat input */}
+                    <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder='e.g. "What needs done?" or "Implement all"'
+                          value={agentInput}
+                          onChange={(e) => setAgentInput(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendAgentMessage();
+                            }
+                          }}
+                          disabled={agentLoading}
+                          multiline
+                          maxRows={3}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.875rem' } }}
+                        />
+                        <IconButton
+                          onClick={() => handleSendAgentMessage()}
+                          disabled={agentLoading || !agentInput.trim()}
+                          sx={{
+                            background: 'linear-gradient(135deg, #e67e22 0%, #e74c3c 100%)',
+                            color: '#fff',
+                            borderRadius: 2,
+                            width: 40,
+                            height: 40,
+                            '&:hover': { background: 'linear-gradient(135deg, #d35400 0%, #c0392b 100%)' },
+                            '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#aaa' },
+                          }}
+                        >
+                          <SendIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                  </>
+                )}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* ── Tab 1: JSON Editor ── */}
+        {editorTabIndex === 1 && (
+          <DialogContent sx={{ pt: 2, overflow: 'auto', flex: 1 }}>
+            <Toolbar
+              variant="dense"
+              sx={{ display: 'flex', gap: 0.5, mb: 2, backgroundColor: '#f5f5f5', p: 1, borderRadius: 1, flexWrap: 'wrap' }}
+            >
+              <Typography variant="body2" sx={{ width: '100%', mb: 1, fontWeight: 'bold' }}>Quick Formats:</Typography>
+              <IconButton size="small" onClick={() => insertTextAtCursor('**bold text**')} title="Bold"><FormatBoldIcon fontSize="small" /></IconButton>
+              <IconButton size="small" onClick={() => insertTextAtCursor('*italic text*')} title="Italic"><FormatItalicIcon fontSize="small" /></IconButton>
+              <IconButton size="small" onClick={() => insertTextAtCursor('~~strikethrough~~')} title="Strikethrough"><FormatUnderlinedIcon fontSize="small" /></IconButton>
+              <Divider orientation="vertical" flexItem />
+              <IconButton size="small" onClick={() => insertTextAtCursor('- List item\n')} title="Bullet List"><FormatListBulletedIcon fontSize="small" /></IconButton>
+              <IconButton size="small" onClick={() => insertTextAtCursor('1. Numbered item\n')} title="Numbered List"><FormatListNumberedIcon fontSize="small" /></IconButton>
+              <Divider orientation="vertical" flexItem />
+              <IconButton size="small" onClick={() => insertTextAtCursor('```\ncode block\n```')} title="Code Block"><CodeIcon fontSize="small" /></IconButton>
+              <IconButton size="small" onClick={() => insertTextAtCursor('[link text](url)')} title="Link"><LinkIcon fontSize="small" /></IconButton>
+            </Toolbar>
+            <TextField
+              id="content-editor"
+              fullWidth
+              multiline
+              rows={28}
+              value={editorContent}
+              onChange={(e) => setEditorContent(e.target.value)}
+              placeholder="Enter JSON content here..."
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                backgroundColor: '#f9f9f9',
+                '& .MuiOutlinedInput-root': { fontFamily: 'monospace' },
+              }}
+            />
           </DialogContent>
         )}
 
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={handleCloseContentEditor} sx={{ color: '#888' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveContent} disabled={loading} sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
-            Save Content
-          </Button>
+        {/* Bottom actions */}
+        <Divider />
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Typography variant="caption" sx={{ color: '#bbb' }}>
+            {editorTabIndex === 0 ? 'Chat with AI to modify the page, then save.' : 'Edit raw JSON directly.'}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button onClick={handleCloseContentEditor} sx={{ color: '#888' }}>Cancel</Button>
+            <Button
+              variant="contained"
+              onClick={handleSaveContent}
+              disabled={loading}
+              sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}
+            >
+              Save Content
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
     </Container>

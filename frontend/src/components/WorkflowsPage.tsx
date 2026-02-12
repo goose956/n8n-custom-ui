@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Container,
   Paper,
@@ -86,7 +87,7 @@ export function WorkflowsPage() {
     try {
       setWorkflowsLoading(true);
       setMessage(null);
-      const response = await axios.get('http://localhost:3000/api/workflows/validation');
+      const response = await axios.get(`${API.workflows}/validation`);
       if (response.data.success) {
         setWorkflows(response.data.workflows || []);
       } else {
@@ -119,7 +120,7 @@ export function WorkflowsPage() {
       }
 
       const response = await axios.post(
-        `http://localhost:3000/api/workflows/${selectedWorkflow.id}/trigger`,
+        `${API.workflows}/${selectedWorkflow.id}/trigger`,
         { data }
       );
 
@@ -139,7 +140,7 @@ export function WorkflowsPage() {
   const handleEditWorkflow = async (workflow: Workflow) => {
     let fullWorkflow = workflow;
     try {
-      const wfRes = await axios.get(`http://localhost:3000/api/workflows`);
+      const wfRes = await axios.get(API.workflows);
       if (wfRes.data && wfRes.data.workflows) {
         const found = wfRes.data.workflows.find((w: any) => w.id === workflow.id);
         if (found) fullWorkflow = found;
@@ -147,7 +148,7 @@ export function WorkflowsPage() {
     } catch {}
     setSelectedWorkflowForEdit(fullWorkflow);
     try {
-      const response = await axios.get(`http://localhost:3000/api/workflows/config/${workflow.id}`);
+      const response = await axios.get(`${API.workflows}/config/${workflow.id}`);
       if (response.data.config && response.data.config.fields) {
         const fieldsMap: Record<string, any> = {};
         for (const field of response.data.config.fields) {
@@ -185,7 +186,7 @@ export function WorkflowsPage() {
       });
 
       const response = await axios.put(
-        `http://localhost:3000/api/workflows/config/${selectedWorkflowForEdit.id}`,
+        `${API.workflows}/config/${selectedWorkflowForEdit.id}`,
         {
           workflowName: selectedWorkflowForEdit.name,
           fields,

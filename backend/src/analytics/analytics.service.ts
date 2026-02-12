@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { DatabaseService } from '../shared/database.service';
 
 export interface PageView {
   id?: string;
@@ -20,7 +20,7 @@ export interface AnalyticsData {
 
 @Injectable()
 export class AnalyticsService {
-  private dbPath = join(process.cwd(), 'db.json');
+  constructor(private readonly db: DatabaseService) {}
 
   async trackPageView(pageView: PageView): Promise<PageView> {
     const database = await this.readDatabase();
@@ -162,7 +162,7 @@ export class AnalyticsService {
 
   private async readDatabase(): Promise<any> {
     try {
-      const content = await readFile(this.dbPath, 'utf-8');
+      const content = await readFile(this.db.dbPath, 'utf-8');
       return JSON.parse(content);
     } catch (error) {
       return { analytics: [] };
@@ -170,6 +170,6 @@ export class AnalyticsService {
   }
 
   private async writeDatabase(data: any): Promise<void> {
-    await writeFile(this.dbPath, JSON.stringify(data, null, 2), 'utf-8');
+    await writeFile(this.db.dbPath, JSON.stringify(data, null, 2), 'utf-8');
   }
 }

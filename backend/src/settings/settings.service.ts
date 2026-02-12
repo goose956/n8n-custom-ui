@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
 import axios from 'axios';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-secret-key-change-in-production';
+import { CryptoService } from '../shared/crypto.service';
+import { DatabaseService } from '../shared/database.service';
 
 interface SettingsDto {
   n8nUrl: string;
@@ -14,42 +11,19 @@ interface SettingsDto {
 
 @Injectable()
 export class SettingsService {
-  private encryptionKey: Buffer;
-
-  constructor() {
-    // Create a deterministic key from the encryption key
-    this.encryptionKey = crypto
-      .createHash('sha256')
-      .update(ENCRYPTION_KEY)
-      .digest();
-  }
-
-  private encrypt(text: string): string {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-cbc', this.encryptionKey, iv);
-    let encrypted = cipher.update(text);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return iv.toString('hex') + ':' + encrypted.toString('hex');
-  }
-
-  private decrypt(text: string): string {
-    const parts = text.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const encryptedText = Buffer.from(parts[1], 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', this.encryptionKey, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
-  }
+  constructor(
+    private readonly cryptoService: CryptoService,
+    private readonly db: DatabaseService,
+  ) {}
 
   async saveSettings(settings: SettingsDto): Promise<{ success: boolean; message: string }> {
     try {
-      const encryptedApiKey = this.encrypt(settings.n8nApiKey);
+      const encryptedApiKey = this.cryptoService.encrypt(settings.n8nApiKey);
 
       // Read existing data first to preserve apps, pages, etc.
       let existingData: any = {};
-      if (fs.existsSync(DB_FILE)) {
-        existingData = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      if (this.db.exists()) {
+        existingData = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       }
 
       const data = {
@@ -59,7 +33,7 @@ export class SettingsService {
         lastUpdated: new Date().toISOString(),
       };
 
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
       return { success: true, message: 'Settings saved successfully' };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -69,11 +43,11 @@ export class SettingsService {
 
   async loadSettings(): Promise<{ n8nUrl: string; n8nApiKey?: string } | null> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return null;
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       return {
         n8nUrl: data.n8nUrl,
         // Don't return the actual API key to frontend
@@ -85,12 +59,12 @@ export class SettingsService {
 
   async testN8nConnection(): Promise<{ success: boolean; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: false, message: 'No settings saved' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-      const decryptedApiKey = this.decrypt(data.n8nApiKey);
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
+      const decryptedApiKey = this.cryptoService.decrypt(data.n8nApiKey);
 
       const response = await axios.get(`${data.n8nUrl}/api/v1/workflows`, {
         headers: {
@@ -108,12 +82,12 @@ export class SettingsService {
 
   async getWorkflows(): Promise<{ success: boolean; workflows?: any[]; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: false, message: 'No settings saved' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-      const decryptedApiKey = this.decrypt(data.n8nApiKey);
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
+      const decryptedApiKey = this.cryptoService.decrypt(data.n8nApiKey);
 
       const response = await axios.get(`${data.n8nUrl}/api/v1/workflows`, {
         headers: {
@@ -135,11 +109,11 @@ export class SettingsService {
 
   async testIntegrationKey(service: string): Promise<{ success: boolean; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: false, message: 'No API keys saved yet' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       const apiKeys = data.apiKeys || [];
       
       const keyEntry = apiKeys.find((k: any) => k.name === service);
@@ -147,7 +121,7 @@ export class SettingsService {
         return { success: false, message: `${service} API key not found or not configured` };
       }
 
-      const apiKey = this.decrypt(keyEntry.value);
+      const apiKey = this.cryptoService.decrypt(keyEntry.value);
 
       // Test based on service type
       switch (service.toLowerCase()) {
@@ -269,20 +243,20 @@ export class SettingsService {
   // Sync versions for use in other services
   loadSettingsSync(): any | null {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return null;
       }
-      return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      return JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
     } catch {
       return null;
     }
   }
 
   decryptSync(text: string): string {
-    return this.decrypt(text);
+    return this.cryptoService.decrypt(text);
   }
 
   encryptSync(text: string): string {
-    return this.encrypt(text);
+    return this.cryptoService.encrypt(text);
   }
 }

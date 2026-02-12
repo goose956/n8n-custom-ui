@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, NotFoundException } from '@nestjs/common';
 import { PagesService, Page } from './pages.service';
 
 @Controller('api/pages')
@@ -38,11 +38,7 @@ export class PagesController {
   findOne(@Param('id') id: string) {
     const page = this.pagesService.findOne(parseInt(id, 10));
     if (!page) {
-      return {
-        success: false,
-        error: 'Page not found',
-        statusCode: 404,
-      };
+      throw new NotFoundException('Page not found');
     }
     return {
       success: true,
@@ -55,11 +51,7 @@ export class PagesController {
   update(@Param('id') id: string, @Body() updatePageDto: Partial<any>) {
     const page = this.pagesService.update(parseInt(id, 10), updatePageDto);
     if (!page) {
-      return {
-        success: false,
-        error: 'Page not found',
-        statusCode: 404,
-      };
+      throw new NotFoundException('Page not found');
     }
     return {
       success: true,
@@ -72,11 +64,7 @@ export class PagesController {
   delete(@Param('id') id: string) {
     const deleted = this.pagesService.delete(parseInt(id, 10));
     if (!deleted) {
-      return {
-        success: false,
-        error: 'Page not found',
-        statusCode: 404,
-      };
+      throw new NotFoundException('Page not found');
     }
     return {
       success: true,

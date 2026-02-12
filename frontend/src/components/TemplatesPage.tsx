@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Container,
   Grid,
@@ -45,10 +46,8 @@ import {
   Warning as WarningIcon,
   RocketLaunch as RocketIcon,
   Speed as SpeedIcon,
-  Brush as BrushIcon,
   ArrowForward as ArrowForwardIcon,
   Bolt as BoltIcon,
-  AutoAwesome as AutoAwesomeIcon,
   Lock as LockIcon,
   PlayArrow as PlayArrowIcon,
   TrendingUp as TrendingUpIcon,
@@ -59,23 +58,19 @@ import {
   Email as EmailIcon,
   Support as SupportIcon,
   Verified as VerifiedIcon,
-  Schedule as ScheduleIcon,
   Settings as SettingsIcon,
   CloudDone as CloudDoneIcon,
   Dashboard as DashboardIcon,
   EmojiEvents as EmojiEventsIcon,
-  FavoriteBorder as FavoriteIcon,
-  Share as ShareIcon,
-  MoreVert as MoreVertIcon,
   Circle as CircleIcon,
-  Article as ArticleIcon,
-  VideoLibrary as VideoLibraryIcon,
   School as SchoolIcon,
   CreditCard as CreditCardIcon,
   Shield as ShieldIcon,
 } from '@mui/icons-material';
-import { LinearProgress, Divider, IconButton, Badge, Tab, Tabs, Switch, FormControlLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip } from '@mui/material';
+import { LinearProgress, Divider, IconButton, Badge, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Tabs, Tab } from '@mui/material';
+import { RssFeed as BlogIcon, ViewQuilt as TemplateIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { BlogPage } from './BlogPage';
 
 interface Template {
   id: string;
@@ -965,9 +960,9 @@ export const TemplatesPage: React.FC = () => {
 
   const loadApps = async () => {
     try {
-      console.log('Loading apps from http://localhost:3000/api/apps');
+      console.log('Loading apps from', API.apps);
       setAppLoading(true);
-      const response = await axios.get('http://localhost:3000/api/apps');
+      const response = await axios.get(API.apps);
       console.log('Response from API:', response.data);
       const appsList = response.data?.data || response.data || [];
       console.log('Apps loaded successfully:', appsList);
@@ -1031,7 +1026,7 @@ export const TemplatesPage: React.FC = () => {
       }
 
       // Get existing pages for this project
-      const existingResponse = await axios.get(`http://localhost:3000/api/pages?app_id=${projectId}`);
+      const existingResponse = await axios.get(`${API.pages}?app_id=${projectId}`);
       const existingPages = existingResponse.data?.data || existingResponse.data || [];
 
       // Get selected template objects
@@ -1068,6 +1063,196 @@ export const TemplatesPage: React.FC = () => {
     return warnings;
   };
 
+  const getTemplateContentJson = (type: string, template: Template): Record<string, any> => {
+    switch (type) {
+      case 'index':
+        return {
+          page_type: 'index',
+          description: template.description,
+          features: template.features,
+          nav: {
+            brand: 'Acme SaaS',
+            links: ['Features', 'Pricing', 'About', 'Blog'],
+            cta: 'Get Started',
+          },
+          hero: {
+            badge: '🚀 Now in Public Beta',
+            headline: 'Build, Ship & Scale Your Dream Product',
+            subheading: 'The all-in-one platform that helps startups and solopreneurs launch production-ready SaaS applications in record time. No complex infrastructure needed.',
+            cta_primary: { text: 'Start Building Free', url: '/signup' },
+            cta_secondary: { text: 'Watch Demo', url: '/demo' },
+            social_proof: '2,400+ builders already onboard',
+          },
+          trusted_by: ['Stripe', 'Vercel', 'Notion', 'Linear', 'Figma'],
+          features_section: {
+            headline: 'Everything You Need to Launch',
+            subheading: 'From authentication to analytics, every feature is built-in so you can focus on what makes your product unique.',
+            items: [
+              { icon: 'bolt', title: 'Lightning Fast', description: 'Sub-100ms response times with global edge caching and optimised queries.', color: '#667eea' },
+              { icon: 'lock', title: 'Enterprise Security', description: 'SOC 2 compliant with end-to-end encryption and role-based access controls.', color: '#27ae60' },
+              { icon: 'trending_up', title: 'Built-in Analytics', description: 'Real-time dashboards tracking MRR, churn, LTV and user engagement metrics.', color: '#f39c12' },
+              { icon: 'people', title: 'Team Collaboration', description: 'Invite unlimited team members with granular permissions and activity logs.', color: '#e74c3c' },
+              { icon: 'speed', title: 'Auto-Scaling', description: 'Seamlessly handles 10 to 10 million users without any configuration changes.', color: '#9b59b6' },
+              { icon: 'support', title: '24/7 Support', description: 'Dedicated support team with <2 hour response times and onboarding assistance.', color: '#00bcd4' },
+            ],
+          },
+          stats: [
+            { value: '10K+', label: 'Active Users' },
+            { value: '99.9%', label: 'Uptime SLA' },
+            { value: '4.9★', label: 'Average Rating' },
+            { value: '$2.4M', label: 'Revenue Generated' },
+          ],
+          cta_footer: {
+            headline: 'Ready to Get Started?',
+            subheading: 'Join thousands of founders who launched their SaaS with our platform. Free tier available — no credit card required.',
+            button_text: 'Create Your Free Account',
+          },
+        };
+
+      case 'thanks':
+        return {
+          page_type: 'thanks',
+          description: template.description,
+          features: template.features,
+          hero: {
+            headline: "You're All Set! 🎉",
+            subheading: 'Thank you for signing up. Your account has been created successfully and you\'re ready to start building amazing things.',
+          },
+          order_confirmation: {
+            plan: 'Professional',
+            billing: 'Monthly',
+            amount: '$29.00/mo',
+            confirmation_number: 'ACM-2026-8847',
+          },
+          email_notification: {
+            message: 'Confirmation email sent',
+            detail: 'Check your inbox at j.smith@example.com',
+          },
+          next_steps: [
+            { step: '1', title: 'Complete your profile', description: 'Add your company details and logo' },
+            { step: '2', title: 'Create your first project', description: 'Use a template or start from scratch' },
+            { step: '3', title: 'Invite your team', description: 'Collaborate with up to 10 team members' },
+          ],
+          cta_primary: { text: 'Go to Dashboard', url: '/dashboard' },
+          cta_secondary: { text: 'Back to Home', url: '/' },
+        };
+
+      case 'members':
+        return {
+          page_type: 'members',
+          description: template.description,
+          features: template.features,
+          welcome: {
+            headline: 'Welcome back, Jessica 👋',
+            subheading: 'You have 3 new lessons available and your streak is on fire — 14 days!',
+          },
+          stats: [
+            { label: 'Current Plan', value: 'Premium', sub: 'Renews Mar 15, 2026' },
+            { label: 'Courses Completed', value: '12 / 24', sub: '50% complete' },
+            { label: 'Streak', value: '14 Days', sub: 'Personal best!' },
+          ],
+          courses: [
+            { title: 'Building Your First Workflow', progress: 75, lessons: '6/8 lessons', tag: 'In Progress' },
+            { title: 'Advanced Automation Patterns', progress: 30, lessons: '3/10 lessons', tag: 'In Progress' },
+            { title: 'Scaling to 10K Users', progress: 0, lessons: '0/12 lessons', tag: 'New' },
+          ],
+          quick_actions: ['My Profile', 'Billing', 'Support', 'Community'],
+        };
+
+      case 'checkout':
+        return {
+          page_type: 'checkout',
+          description: template.description,
+          features: template.features,
+          headline: 'Choose Your Plan',
+          subheading: 'All plans include a 14-day free trial. No credit card required to start.',
+          plans: [
+            {
+              name: 'Starter',
+              price: '$0',
+              period: '/month',
+              description: 'Perfect for individuals getting started',
+              features: ['1 Project', '1,000 API calls/mo', 'Community support', 'Basic analytics'],
+              cta: 'Current Plan',
+              popular: false,
+              disabled: true,
+            },
+            {
+              name: 'Professional',
+              price: '$29',
+              period: '/month',
+              description: 'For growing teams and startups',
+              features: ['Unlimited projects', '100K API calls/mo', 'Priority support', 'Advanced analytics', 'Custom domains', 'Team collaboration'],
+              cta: 'Upgrade Now',
+              popular: true,
+              disabled: false,
+            },
+            {
+              name: 'Enterprise',
+              price: '$99',
+              period: '/month',
+              description: 'For large organisations needing scale',
+              features: ['Everything in Pro', 'Unlimited API calls', 'Dedicated support', 'SLA guarantee', 'SSO & SAML', 'Custom integrations'],
+              cta: 'Contact Sales',
+              popular: false,
+              disabled: false,
+            },
+          ],
+          payment_form: {
+            fields: ['Cardholder Name', 'Card Number', 'Expiry', 'CVC'],
+            submit_text: 'Start 14-Day Free Trial',
+          },
+          trust_badges: ['256-bit SSL', 'SOC 2 Certified', 'PCI Compliant'],
+          guarantee: '30-day money-back guarantee · Cancel anytime · No hidden fees',
+        };
+
+      case 'admin':
+        return {
+          page_type: 'admin',
+          description: template.description,
+          features: template.features,
+          dashboard_title: 'Dashboard Overview',
+          kpis: [
+            { label: 'Total Revenue', value: '$48,295', change: '+12.5%', up: true },
+            { label: 'Active Users', value: '3,847', change: '+8.2%', up: true },
+            { label: 'New Signups', value: '284', change: '+23.1%', up: true },
+            { label: 'Churn Rate', value: '2.4%', change: '-0.3%', up: false },
+          ],
+          revenue_chart: {
+            title: 'Revenue Overview',
+            periods: ['7D', '30D', '90D', '1Y'],
+            default_period: '30D',
+            data: [45, 62, 58, 75, 88, 72, 95, 80, 68, 92, 78, 85],
+            months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+          },
+          recent_users: [
+            { name: 'Sarah Chen', email: 's.chen@startup.io', plan: 'Enterprise', status: 'Active', mrr: '$99' },
+            { name: 'Marcus Johnson', email: 'm.johnson@scale.co', plan: 'Professional', status: 'Active', mrr: '$29' },
+            { name: 'Emily Rodriguez', email: 'e.rod@dev.studio', plan: 'Professional', status: 'Trial', mrr: '$0' },
+            { name: 'David Park', email: 'd.park@cloud.io', plan: 'Starter', status: 'Churned', mrr: '$0' },
+          ],
+          system_health: [
+            { label: 'API Server', status: 'Operational' },
+            { label: 'Database', status: 'Operational' },
+            { label: 'CDN', status: 'Operational' },
+            { label: 'Email Service', status: 'Degraded' },
+          ],
+          recent_activity: [
+            { text: 'New enterprise signup: Acme Corp', time: '2 min ago' },
+            { text: 'Payment received: $99.00', time: '15 min ago' },
+            { text: 'Support ticket #482 resolved', time: '1 hr ago' },
+            { text: 'Database backup completed', time: '3 hrs ago' },
+          ],
+        };
+
+      default:
+        return {
+          description: template.description,
+          features: template.features,
+        };
+    }
+  };
+
   const handleConfirmSave = async () => {
     if (!confirmDialog.selectedProject) return;
 
@@ -1076,14 +1261,11 @@ export const TemplatesPage: React.FC = () => {
 
       // Create pages for each selected template
       for (const template of confirmDialog.selectedTemplates) {
-        await axios.post('http://localhost:3000/api/pages', {
+        await axios.post(API.pages, {
           app_id: confirmDialog.selectedProject.id,
           page_type: template.type,
           title: template.title,
-          content_json: {
-            description: template.description,
-            features: template.features,
-          },
+          content_json: getTemplateContentJson(template.type, template),
         });
       }
 
@@ -1111,205 +1293,45 @@ export const TemplatesPage: React.FC = () => {
   const overwriteWarnings = getOverwriteWarnings();
   const selectedCount = getSelectedTemplateCount();
 
+  const [mainTab, setMainTab] = useState(0);
+
   return (
     <Box sx={{ backgroundColor: '#fafbfc', minHeight: '100vh' }}>
-      {/* ===== HERO SECTION ===== */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
-          color: 'white',
-          pt: { xs: 6, md: 10 },
-          pb: { xs: 8, md: 12 },
-          px: 3,
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background:
-              'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%)',
-            pointerEvents: 'none',
-          },
-        }}
-      >
-        <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
-          <Box sx={{ textAlign: 'center', maxWidth: 800, mx: 'auto' }}>
-            <Chip
-              icon={<AutoAwesomeIcon sx={{ color: '#ffd700 !important' }} />}
-              label="Production-Ready Templates"
-              sx={{
-                mb: 3,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-                color: 'white',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                px: 1,
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
-              }}
-            />
-            <Typography
-              variant="h2"
-              sx={{
-                fontWeight: 800,
-                mb: 3,
-                fontSize: { xs: '2rem', sm: '2.75rem', md: '3.5rem' },
-                lineHeight: 1.15,
-                letterSpacing: '-0.02em',
-              }}
-            >
-              Launch Your SaaS
-              <br />
-              <Box
-                component="span"
-                sx={{
-                  background: 'linear-gradient(90deg, #667eea, #764ba2, #f093fb)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                In Record Time
-              </Box>
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                mb: 5,
-                color: 'rgba(255,255,255,0.7)',
-                fontWeight: 400,
-                lineHeight: 1.7,
-                fontSize: { xs: '1rem', md: '1.2rem' },
-                maxWidth: 640,
-                mx: 'auto',
-              }}
-            >
-              Stop building from scratch. Our professionally designed page templates let you
-              go from idea to live product in hours, not months. Every template is fully customisable,
-              responsive, and optimised for conversions.
-            </Typography>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center" sx={{ mb: 6 }}>
-              <Button
-                variant="contained"
-                size="large"
-                endIcon={<ArrowForwardIcon />}
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  borderRadius: 3,
-                  fontSize: '1.05rem',
-                  fontWeight: 700,
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  boxShadow: '0 8px 32px rgba(102, 126, 234, 0.4)',
-                  '&:hover': {
-                    background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)',
-                    boxShadow: '0 12px 40px rgba(102, 126, 234, 0.5)',
-                    transform: 'translateY(-2px)',
-                  },
-                  transition: 'all 0.3s ease',
-                }}
-                onClick={() => {
-                  document.getElementById('templates-grid')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-              >
-                Browse Templates
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  borderRadius: 3,
-                  fontSize: '1.05rem',
-                  fontWeight: 600,
-                  color: 'white',
-                  borderColor: 'rgba(255,255,255,0.3)',
-                  '&:hover': {
-                    borderColor: 'white',
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                  },
-                }}
-              >
-                View Demo
-              </Button>
-            </Stack>
-
-            {/* Social Proof Avatars */}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-              <AvatarGroup max={5} sx={{ '& .MuiAvatar-root': { width: 36, height: 36, border: '2px solid #302b63' } }}>
-                <Avatar src="https://i.pravatar.cc/40?img=1" />
-                <Avatar src="https://i.pravatar.cc/40?img=2" />
-                <Avatar src="https://i.pravatar.cc/40?img=3" />
-                <Avatar src="https://i.pravatar.cc/40?img=4" />
-                <Avatar src="https://i.pravatar.cc/40?img=5" />
-              </AvatarGroup>
-              <Box sx={{ textAlign: 'left' }}>
-                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
-                  Trusted by 2,400+ builders
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {[...Array(5)].map((_, i) => (
-                    <StarIcon key={i} sx={{ fontSize: 14, color: '#ffd700' }} />
-                  ))}
-                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', ml: 0.5 }}>
-                    4.9/5 average rating
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Box>
+      {/* ===== TOP TABS ===== */}
+      <Box sx={{ borderBottom: '1px solid rgba(0,0,0,0.06)', bgcolor: 'white', position: 'sticky', top: 0, zIndex: 10 }}>
+        <Container maxWidth="lg">
+          <Tabs
+            value={mainTab}
+            onChange={(_, v) => setMainTab(v)}
+            sx={{
+              minHeight: 48,
+              '& .MuiTab-root': {
+                minHeight: 48,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                textTransform: 'none',
+                gap: 1,
+              },
+              '& .MuiTabs-indicator': {
+                background: 'linear-gradient(90deg, #667eea, #764ba2)',
+                height: 3,
+                borderRadius: '3px 3px 0 0',
+              },
+            }}
+          >
+            <Tab icon={<TemplateIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Page Templates" />
+            <Tab icon={<BlogIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Blog Manager" />
+          </Tabs>
         </Container>
       </Box>
 
-      {/* ===== STATS BAR ===== */}
-      <Container maxWidth="lg" sx={{ mt: -5, mb: 6, position: 'relative', zIndex: 2 }}>
-        <Paper
-          elevation={8}
-          sx={{
-            borderRadius: 4,
-            overflow: 'hidden',
-            background: 'white',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.08)',
-          }}
-        >
-          <Grid container>
-            {[
-              { value: '5', label: 'Page Templates', icon: <BrushIcon sx={{ fontSize: 28, color: '#667eea' }} /> },
-              { value: '10K+', label: 'Apps Launched', icon: <RocketIcon sx={{ fontSize: 28, color: '#27ae60' }} /> },
-              { value: '99.9%', label: 'Uptime SLA', icon: <SpeedIcon sx={{ fontSize: 28, color: '#f39c12' }} /> },
-              { value: '< 2min', label: 'Setup Time', icon: <BoltIcon sx={{ fontSize: 28, color: '#e74c3c' }} /> },
-            ].map((stat, idx) => (
-              <Grid
-                item
-                xs={6}
-                md={3}
-                key={idx}
-                sx={{
-                  p: 3,
-                  textAlign: 'center',
-                  borderRight: idx < 3 ? { md: '1px solid #f0f0f0' } : 'none',
-                  borderBottom: idx < 2 ? { xs: '1px solid #f0f0f0', md: 'none' } : 'none',
-                }}
-              >
-                <Box sx={{ mb: 1 }}>{stat.icon}</Box>
-                <Typography variant="h5" sx={{ fontWeight: 800, color: '#1a1a2e' }}>
-                  {stat.value}
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#888', fontWeight: 500 }}>
-                  {stat.label}
-                </Typography>
-              </Grid>
-            ))}
-          </Grid>
-        </Paper>
-      </Container>
+      {/* ===== TAB: Blog Manager ===== */}
+      {mainTab === 1 && <BlogPage />}
 
-      <Container maxWidth="lg" sx={{ pb: 8 }}>
+      {/* ===== TAB: Page Templates ===== */}
+      {mainTab === 0 && (
+      <Container maxWidth="lg" sx={{ pt: 4, pb: 8 }}>
         {/* Success/Error Alerts */}
         {success && (
           <Alert severity="success" sx={{ mb: 3, borderRadius: 2 }}>
@@ -1774,6 +1796,7 @@ export const TemplatesPage: React.FC = () => {
           </Button>
         </Box>
       </Container>
+      )}
 
       {/* ===== PREVIEW DIALOG ===== */}
       <Dialog

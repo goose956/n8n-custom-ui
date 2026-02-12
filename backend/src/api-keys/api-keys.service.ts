@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-secret-key-change-in-production';
+import { CryptoService } from '../shared/crypto.service';
+import { DatabaseService } from '../shared/database.service';
 
 interface ApiKey {
   name: string;
@@ -15,32 +12,10 @@ interface ApiKey {
 
 @Injectable()
 export class ApiKeysService {
-  private encryptionKey: Buffer;
-
-  constructor() {
-    this.encryptionKey = crypto
-      .createHash('sha256')
-      .update(ENCRYPTION_KEY)
-      .digest();
-  }
-
-  private encrypt(text: string): string {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-cbc', this.encryptionKey, iv);
-    let encrypted = cipher.update(text);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return iv.toString('hex') + ':' + encrypted.toString('hex');
-  }
-
-  private decrypt(text: string): string {
-    const parts = text.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const encryptedText = Buffer.from(parts[1], 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', this.encryptionKey, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
-  }
+  constructor(
+    private readonly cryptoService: CryptoService,
+    private readonly db: DatabaseService,
+  ) {}
 
   async saveApiKey(name: string, value: string): Promise<{ success: boolean; message: string }> {
     try {
@@ -49,8 +24,8 @@ export class ApiKeysService {
       }
 
       let data: any = { n8nUrl: '', n8nApiKey: '', apiKeys: [] as ApiKey[] };
-      if (fs.existsSync(DB_FILE)) {
-        data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      if (this.db.exists()) {
+        data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       }
 
       if (!data.apiKeys) {
@@ -63,12 +38,12 @@ export class ApiKeysService {
       // Add new key
       const newKey: ApiKey = {
         name,
-        value: this.encrypt(value),
+        value: this.cryptoService.encrypt(value),
         createdAt: new Date().toISOString(),
       };
       (data.apiKeys as ApiKey[]).push(newKey);
 
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
       return { success: true, message: `API key "${name}" saved successfully` };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -78,11 +53,11 @@ export class ApiKeysService {
 
   async getApiKeys(): Promise<{ success: boolean; keys: any[]; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: true, keys: [], message: 'No API keys saved' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       const keys = (data.apiKeys || []).map((k: ApiKey) => ({
         name: k.name,
         createdAt: k.createdAt,
@@ -96,34 +71,65 @@ export class ApiKeysService {
     }
   }
 
-  async getApiKey(name: string): Promise<{ success: boolean; value?: string; message: string }> {
+  /**
+   * Get a masked preview of an API key (safe for frontend display).
+   * Shows first 4 and last 4 characters only.
+   */
+  async getApiKeyMasked(name: string): Promise<{ success: boolean; value?: string; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: false, message: 'No API keys saved' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       const apiKey = (data.apiKeys || []).find((k: ApiKey) => k.name === name);
 
       if (!apiKey) {
         return { success: false, message: `API key "${name}" not found` };
       }
 
-      const decryptedValue = this.decrypt(apiKey.value);
-      return { success: true, value: decryptedValue, message: 'API key retrieved' };
+      const decryptedValue = this.cryptoService.decrypt(apiKey.value);
+      const masked = decryptedValue.length > 8
+        ? decryptedValue.slice(0, 4) + '••••••••' + decryptedValue.slice(-4)
+        : '••••••••';
+      return { success: true, value: masked, message: 'API key retrieved (masked)' };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, message: `Failed to retrieve API key: ${message}` };
     }
   }
 
+  /**
+   * Get the full decrypted API key value. 
+   * FOR INTERNAL SERVER-SIDE USE ONLY — never expose via HTTP endpoint.
+   */
+  async getApiKeyDecrypted(name: string): Promise<string | null> {
+    try {
+      if (!this.db.exists()) {
+        return null;
+      }
+
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
+      const apiKey = (data.apiKeys || []).find((k: ApiKey) => k.name === name);
+
+      if (!apiKey) {
+        return null;
+      }
+
+      return this.cryptoService.decrypt(apiKey.value);
+    } catch (error) {
+      console.error(`Failed to decrypt API key "${name}":`, error);
+      return null;
+    }
+  }
+
   async deleteApiKey(name: string): Promise<{ success: boolean; message: string }> {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { success: false, message: 'No API keys saved' };
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       const initialLength = (data.apiKeys || []).length;
 
       data.apiKeys = (data.apiKeys || []).filter((k: ApiKey) => k.name !== name);
@@ -132,7 +138,7 @@ export class ApiKeysService {
         return { success: false, message: `API key "${name}" not found` };
       }
 
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
       return { success: true, message: `API key "${name}" deleted successfully` };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

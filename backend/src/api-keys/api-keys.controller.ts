@@ -17,7 +17,7 @@ export class ApiKeysController {
 
   @Get(':name')
   async getApiKey(@Param('name') name: string) {
-    return this.apiKeysService.getApiKey(name);
+    return this.apiKeysService.getApiKeyMasked(name);
   }
 
   @Delete(':name')

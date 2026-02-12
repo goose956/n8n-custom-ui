@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 import axios from 'axios';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
+import { DatabaseService } from '../shared/database.service';
 
 interface WorkflowIssue {
   type: 'missing_field' | 'missing_api_key' | 'warning';
@@ -26,6 +23,7 @@ export class WorkflowValidationService {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly apiKeysService: ApiKeysService,
+    private readonly db: DatabaseService,
   ) {}
 
   async validateWorkflow(workflow: any): Promise<WorkflowValidation> {
@@ -188,10 +186,7 @@ export class WorkflowValidationService {
 
   private loadApiKeysSync(): any[] {
     try {
-      if (!fs.existsSync(DB_FILE)) {
-        return [];
-      }
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = this.db.readSync();
       return data.apiKeys || [];
     } catch {
       return [];

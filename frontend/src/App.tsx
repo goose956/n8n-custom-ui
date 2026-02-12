@@ -1,4 +1,6 @@
-import { CssBaseline, ThemeProvider, createTheme, Box, Typography, Button, Avatar, Tooltip, Chip } from '@mui/material';
+import { useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL, API } from './config/api';
+import { CssBaseline, ThemeProvider, createTheme, Box, Typography, Button, Avatar, Tooltip, Chip, Popover, CircularProgress, IconButton } from '@mui/material';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import SettingsPage from './components/SettingsPage';
 import { WorkflowsPage } from './components/WorkflowsPage';
@@ -6,6 +8,9 @@ import { ProjectsPage } from './components/ProjectsPage';
 import { TemplatesPage } from './components/TemplatesPage';
 import { PagesPage } from './components/PagesPage';
 import AnalyticsPage from './components/AnalyticsPage';
+import { WorkflowBuilderPage } from './components/WorkflowBuilderPage';
+import { AppsPage } from './components/AppsPage';
+import { ResearchPage } from './components/ResearchPage';
 import {
   Dashboard as DashboardIcon,
   Settings as SettingsIcon,
@@ -14,6 +19,11 @@ import {
   Article as PagesIcon,
   BarChart as AnalyticsIcon,
   Bolt as BoltIcon,
+  Build as BuildIcon,
+  Widgets as AppsIcon,
+  Circle as CircleIcon,
+  Refresh as RefreshIcon,
+  TravelExplore as ResearchIcon,
 } from '@mui/icons-material';
 
 const theme = createTheme({
@@ -135,12 +145,73 @@ const navItems: NavItem[] = [
   { label: 'Workflows', path: '/workflows', icon: <WorkflowIcon sx={{ fontSize: 18 }} /> },
   { label: 'Templates', path: '/templates', icon: <TemplateIcon sx={{ fontSize: 18 }} /> },
   { label: 'Pages', path: '/pages', icon: <PagesIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Apps', path: '/apps', icon: <AppsIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Research', path: '/research', icon: <ResearchIcon sx={{ fontSize: 18 }} /> },
+  { label: 'Builder', path: '/builder', icon: <BuildIcon sx={{ fontSize: 18 }} /> },
   { label: 'Analytics', path: '/analytics', icon: <AnalyticsIcon sx={{ fontSize: 18 }} /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon sx={{ fontSize: 18 }} /> },
 ];
 
+interface ServiceStatus {
+  name: string;
+  url: string;
+  status: 'online' | 'offline' | 'degraded';
+  responseTime?: number;
+  error?: string;
+}
+
+interface HealthData {
+  overall: string;
+  services: ServiceStatus[];
+}
+
 function Navigation() {
   const location = useLocation();
+
+  // ─── Health Monitor State ───
+  const [health, setHealth] = useState<HealthData | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthAnchor, setHealthAnchor] = useState<HTMLElement | null>(null);
+  const [restartingService, setRestartingService] = useState<string | null>(null);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${API.health}/status`, { signal: AbortSignal.timeout(6000) });
+      const data = await res.json();
+      setHealth(data);
+    } catch {
+      // Backend itself is down
+      setHealth({
+        overall: 'degraded',
+        services: [
+          { name: 'backend', url: API_BASE_URL, status: 'offline', error: 'Connection refused' },
+          { name: 'frontend', url: 'http://localhost:5173', status: 'online' },
+          { name: 'n8n', url: 'http://localhost:5678', status: 'offline', error: 'Cannot check — backend is down' },
+        ],
+      });
+    }
+  }, []);
+
+  // Poll every 15 seconds
+  useEffect(() => {
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 15000);
+    return () => clearInterval(interval);
+  }, [fetchHealth]);
+
+  const restartService = useCallback(async (service: string) => {
+    setRestartingService(service);
+    try {
+      await fetch(`${API.health}/restart/${service}`, { method: 'POST' });
+      // Wait a bit then re-check
+      setTimeout(fetchHealth, 4000);
+    } catch { /* ignore */ }
+    setTimeout(() => setRestartingService(null), 5000);
+  }, [fetchHealth]);
+
+  const onlineCount = health?.services?.filter((s) => s.status === 'online').length ?? 0;
+  const totalCount = health?.services?.length ?? 3;
+  const overallColor = !health ? '#888' : onlineCount === totalCount ? '#4caf50' : onlineCount === 0 ? '#f44336' : '#ff9800';
 
   return (
     <Box
@@ -234,6 +305,85 @@ function Navigation() {
 
       {/* Right side */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        {/* Health Indicator */}
+        <Tooltip title={`Services: ${onlineCount}/${totalCount} online — click for details`}>
+          <Chip
+            icon={<CircleIcon sx={{ fontSize: '10px !important', color: `${overallColor} !important` }} />}
+            label={`${onlineCount}/${totalCount}`}
+            size="small"
+            onClick={(e) => setHealthAnchor(e.currentTarget)}
+            sx={{
+              cursor: 'pointer',
+              bgcolor: 'rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.8)',
+              fontWeight: 700,
+              fontSize: '0.7rem',
+              height: 24,
+              border: `1px solid ${overallColor}40`,
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.14)' },
+            }}
+          />
+        </Tooltip>
+
+        {/* Health Popover */}
+        <Popover
+          open={Boolean(healthAnchor)}
+          anchorEl={healthAnchor}
+          onClose={() => setHealthAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{ paper: { sx: { mt: 1, borderRadius: 3, width: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' } } }}
+        >
+          <Box sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography sx={{ fontSize: '0.85rem', fontWeight: 800, color: '#1a1a2e' }}>Service Health</Typography>
+              <IconButton size="small" onClick={() => { setHealthLoading(true); fetchHealth().finally(() => setHealthLoading(false)); }}>
+                {healthLoading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: 18 }} />}
+              </IconButton>
+            </Box>
+            {health?.services?.map((svc) => (
+              <Box
+                key={svc.name}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  p: 1,
+                  mb: 0.5,
+                  borderRadius: 2,
+                  bgcolor: svc.status === 'online' ? 'rgba(76,175,80,0.06)' : 'rgba(244,67,54,0.06)',
+                  border: `1px solid ${svc.status === 'online' ? 'rgba(76,175,80,0.15)' : 'rgba(244,67,54,0.15)'}`,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircleIcon sx={{ fontSize: 10, color: svc.status === 'online' ? '#4caf50' : '#f44336' }} />
+                  <Box>
+                    <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: '#1a1a2e', textTransform: 'capitalize' }}>
+                      {svc.name}
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.65rem', color: '#999' }}>
+                      {svc.status === 'online' ? `${svc.responseTime}ms` : svc.error || 'Offline'}
+                    </Typography>
+                  </Box>
+                </Box>
+                {svc.status === 'offline' && (
+                  <Button
+                    size="small"
+                    disabled={restartingService === svc.name}
+                    onClick={() => restartService(svc.name)}
+                    sx={{ fontSize: '0.68rem', minWidth: 'auto', px: 1, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, color: '#667eea' }}
+                  >
+                    {restartingService === svc.name ? 'Restarting...' : 'Restart'}
+                  </Button>
+                )}
+              </Box>
+            ))}
+            <Typography sx={{ fontSize: '0.65rem', color: '#bbb', mt: 1.5, textAlign: 'center' }}>
+              Auto-checks every 15s • Use pm2 for auto-restart
+            </Typography>
+          </Box>
+        </Popover>
+
         <Chip
           label="Beta"
           size="small"
@@ -281,6 +431,9 @@ function App() {
             <Route path="/workflows" element={<WorkflowsPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/pages" element={<PagesPage />} />
+            <Route path="/apps" element={<AppsPage />} />
+            <Route path="/research" element={<ResearchPage />} />
+            <Route path="/builder" element={<WorkflowBuilderPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/" element={<ProjectsPage />} />
           </Routes>

@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
 import axios from 'axios';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-secret-key-change-in-production';
+import { CryptoService } from '../shared/crypto.service';
+import { DatabaseService } from '../shared/database.service';
 
 interface ChatRequest {
   message: string;
@@ -24,32 +21,18 @@ interface ChatResponse {
 
 @Injectable()
 export class ChatService {
-  private encryptionKey: Buffer;
-
-  constructor() {
-    this.encryptionKey = crypto
-      .createHash('sha256')
-      .update(ENCRYPTION_KEY)
-      .digest();
-  }
-
-  private decrypt(text: string): string {
-    const parts = text.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const encryptedText = Buffer.from(parts[1], 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', this.encryptionKey, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
-  }
+  constructor(
+    private readonly cryptoService: CryptoService,
+    private readonly db: DatabaseService,
+  ) {}
 
   private getApiKey(provider: string): string | null {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return null;
       }
 
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(this.db.dbPath, 'utf-8'));
       const apiKeys = data.apiKeys || [];
       const keyEntry = apiKeys.find((k: any) => k.name === provider);
 
@@ -57,7 +40,7 @@ export class ChatService {
         return null;
       }
 
-      return this.decrypt(keyEntry.value);
+      return this.cryptoService.decrypt(keyEntry.value);
     } catch (error) {
       console.error('Failed to retrieve API key:', error);
       return null;

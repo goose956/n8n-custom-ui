@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Box,
   Grid,
@@ -90,7 +91,7 @@ export default function AnalyticsPage() {
     const fetchAnalytics = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:3000/api/analytics/apps');
+        const response = await fetch(`${API.analytics}/apps`);
         const result = await response.json();
         if (result.success) {
           setAnalytics(result.data);
@@ -112,8 +113,8 @@ export default function AnalyticsPage() {
     setDetailTabIndex(0);
     try {
       const [detailRes, visitorRes] = await Promise.all([
-        fetch(`http://localhost:3000/api/analytics/app/${app.app_id}`),
-        fetch(`http://localhost:3000/api/analytics/app/${app.app_id}/visitors`),
+        fetch(`${API.analytics}/app/${app.app_id}`),
+        fetch(`${API.analytics}/app/${app.app_id}/visitors`),
       ]);
 
       const detailData = await detailRes.json();

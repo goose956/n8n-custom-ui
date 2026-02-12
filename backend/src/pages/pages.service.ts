@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import * as path from 'path';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
+import { DatabaseService } from '../shared/database.service';
 
 export interface Page {
   id: number;
@@ -24,12 +22,14 @@ interface DatabaseSchema {
 
 @Injectable()
 export class PagesService {
+  constructor(private readonly db: DatabaseService) {}
+
   private readDatabase(): DatabaseSchema {
     try {
-      if (!fs.existsSync(DB_FILE)) {
+      if (!this.db.exists()) {
         return { pages: [] };
       }
-      const data = fs.readFileSync(DB_FILE, 'utf-8');
+      const data = fs.readFileSync(this.db.dbPath, 'utf-8');
       return JSON.parse(data);
     } catch (error) {
       console.error('Failed to read database:', error);
@@ -39,7 +39,7 @@ export class PagesService {
 
   private writeDatabase(data: DatabaseSchema): void {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
     } catch (error) {
       console.error('Failed to write database:', error);
       throw new Error('Database write error');

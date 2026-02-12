@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
 import axios from 'axios';
-
-const DB_FILE = path.join(__dirname, '../../db.json');
+import { CryptoService } from '../shared/crypto.service';
+import { DatabaseService } from '../shared/database.service';
 
 interface WorkflowFieldConfig {
   nodeId: string;
@@ -22,12 +20,31 @@ export interface WorkflowConfig {
 
 @Injectable()
 export class WorkflowConfigService {
+  constructor(
+    private readonly cryptoService: CryptoService,
+    private readonly db: DatabaseService,
+  ) {}
+
+  /**
+   * Read the n8n connection details from db.json, decrypting the API key.
+   */
+  private getN8nCredentials(): { n8nUrl: string; n8nApiKey: string } | null {
+    try {
+      const settingsData = this.db.readSync();
+      const n8nUrl = settingsData.n8nUrl;
+      const encryptedKey = settingsData.n8nApiKey;
+      if (!n8nUrl || !encryptedKey) return null;
+      const n8nApiKey = this.cryptoService.decrypt(encryptedKey);
+      return { n8nUrl, n8nApiKey };
+    } catch (error) {
+      console.error('Failed to load n8n credentials:', error);
+      return null;
+    }
+  }
+
   private loadDb(): any {
     try {
-      if (!fs.existsSync(DB_FILE)) {
-        return { workflowConfigs: [] };
-      }
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = this.db.readSync();
       if (!data.workflowConfigs) {
         data.workflowConfigs = [];
       }
@@ -39,7 +56,7 @@ export class WorkflowConfigService {
 
   private saveDb(data: any): void {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      this.db.writeSync(data);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to save workflow config: ${message}`);
@@ -56,10 +73,9 @@ export class WorkflowConfigService {
         // --- Auto-add missing AI Agent dependencies if needed ---
         // This logic will only add default nodes if the AI Agent node is present and missing required inputs
         try {
-          const settingsPath = path.join(__dirname, '../../db.json');
-          const settingsData = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-          const n8nUrl = settingsData.n8nUrl;
-          const n8nApiKey = settingsData.n8nApiKey;
+          const creds = this.getN8nCredentials();
+          if (!creds) throw new Error('n8n credentials not configured');
+          const { n8nUrl, n8nApiKey } = creds;
           const workflowRes = await axios.get(`${n8nUrl}/api/v1/workflows/${workflowId}`, {
             headers: { 'X-N8N-API-KEY': n8nApiKey },
           });
@@ -163,10 +179,9 @@ export class WorkflowConfigService {
     let n8nUpdate = false;
     let n8nError = undefined;
     try {
-      const settingsPath = path.join(__dirname, '../../db.json');
-      const settingsData = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      const n8nUrl = settingsData.n8nUrl;
-      const n8nApiKey = settingsData.n8nApiKey;
+      const creds = this.getN8nCredentials();
+      if (!creds) throw new Error('n8n credentials not configured');
+      const { n8nUrl, n8nApiKey } = creds;
       const workflowRes = await axios.get(`${n8nUrl}/api/v1/workflows/${workflowId}`, {
         headers: { 'X-N8N-API-KEY': n8nApiKey },
       });

@@ -1,7 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { promises as fs } from 'fs';
-import { join } from 'path';
-import * as crypto from 'crypto';
 import { 
   App, 
   CreateAppDto, 
@@ -10,26 +8,21 @@ import {
   Page,
   Plan
 } from '../types/saas-factory.types';
+import { DatabaseService } from '../shared/database.service';
 
 /**
  * Service for managing multiple SaaS applications
  */
 @Injectable()
 export class AppManagementService {
-  private dbPath: string;
-  private encryptionKey: string;
-
-  constructor() {
-    this.dbPath = join(process.cwd(), 'db.json');
-    this.encryptionKey = process.env.ENCRYPTION_KEY || 'default-secret-key-change-in-production';
-  }
+  constructor(private readonly db: DatabaseService) {}
 
   /**
    * Read the entire database
    */
   private async readDatabase(): Promise<SaaSDatabaseSchema> {
     try {
-      const data = await fs.readFile(this.dbPath, 'utf-8');
+      const data = await fs.readFile(this.db.dbPath, 'utf-8');
       return JSON.parse(data);
     } catch (error) {
       console.error('Failed to read database:', error);
@@ -42,7 +35,7 @@ export class AppManagementService {
    */
   private async writeDatabase(data: SaaSDatabaseSchema): Promise<void> {
     try {
-      await fs.writeFile(this.dbPath, JSON.stringify(data, null, 2));
+      await fs.writeFile(this.db.dbPath, JSON.stringify(data, null, 2));
     } catch (error) {
       console.error('Failed to write database:', error);
       throw new Error('Database write error');
@@ -87,8 +80,9 @@ export class AppManagementService {
 
   /**
    * Create a new app
+   * @param skipDefaults - When true, skips creating default pages and plans (used by cloneApp)
    */
-  async createApp(dto: CreateAppDto): Promise<App> {
+  async createApp(dto: CreateAppDto, skipDefaults = false): Promise<App> {
     const db = await this.readDatabase();
     
     // Validate slug uniqueness
@@ -114,11 +108,13 @@ export class AppManagementService {
     db.apps.push(newApp);
     db.last_updated = new Date().toISOString();
 
-    // Create default pages for the new app
-    await this.createDefaultPages(db, newApp.id);
+    if (!skipDefaults) {
+      // Create default pages for the new app
+      await this.createDefaultPages(db, newApp.id);
 
-    // Create default plan
-    await this.createDefaultPlan(db, newApp.id);
+      // Create default plan
+      await this.createDefaultPlan(db, newApp.id);
+    }
 
     await this.writeDatabase(db);
 
@@ -130,7 +126,7 @@ export class AppManagementService {
    */
   async updateApp(id: number, dto: UpdateAppDto): Promise<App> {
     const db = await this.readDatabase();
-    const appIndex = db.apps?.findIndex(a => a.id === id);
+    const appIndex = (db.apps || []).findIndex(a => a.id === id);
 
     if (appIndex === -1) {
       throw new NotFoundException(`App with ID ${id} not found`);
@@ -159,7 +155,7 @@ export class AppManagementService {
    */
   async deleteApp(id: number): Promise<void> {
     const db = await this.readDatabase();
-    const appIndex = db.apps?.findIndex(a => a.id === id);
+    const appIndex = (db.apps || []).findIndex(a => a.id === id);
 
     if (appIndex === -1) {
       throw new NotFoundException(`App with ID ${id} not found`);
@@ -203,7 +199,7 @@ export class AppManagementService {
         app_id: appId,
         page_type: page.type,
         title: page.title,
-        content_json: { message: `Default ${page.title} page` },
+        content_json: this.getDefaultContentJson(page.type, page.title),
         custom_css: undefined,
         custom_component_path: undefined,
         created_at: new Date().toISOString(),
@@ -213,6 +209,141 @@ export class AppManagementService {
       db.pages = db.pages || [];
       db.pages.push(newPage);
     });
+  }
+
+  /**
+   * Get rich default content for a page type
+   */
+  private getDefaultContentJson(type: string, title: string): Record<string, any> {
+    switch (type) {
+      case 'index':
+        return {
+          page_type: 'index',
+          nav: { brand: 'Acme SaaS', links: ['Features', 'Pricing', 'About', 'Blog'], cta: 'Get Started' },
+          hero: {
+            badge: '🚀 Now in Public Beta',
+            headline: 'Build, Ship & Scale Your Dream Product',
+            subheading: 'The all-in-one platform that helps startups and solopreneurs launch production-ready SaaS applications in record time. No complex infrastructure needed.',
+            cta_primary: { text: 'Start Building Free', url: '/signup' },
+            cta_secondary: { text: 'Watch Demo', url: '/demo' },
+            social_proof: '2,400+ builders already onboard',
+          },
+          trusted_by: ['Stripe', 'Vercel', 'Notion', 'Linear', 'Figma'],
+          features_section: {
+            headline: 'Everything You Need to Launch',
+            subheading: 'From authentication to analytics, every feature is built-in so you can focus on what makes your product unique.',
+            items: [
+              { icon: 'bolt', title: 'Lightning Fast', description: 'Sub-100ms response times with global edge caching and optimised queries.', color: '#667eea' },
+              { icon: 'lock', title: 'Enterprise Security', description: 'SOC 2 compliant with end-to-end encryption and role-based access controls.', color: '#27ae60' },
+              { icon: 'trending_up', title: 'Built-in Analytics', description: 'Real-time dashboards tracking MRR, churn, LTV and user engagement metrics.', color: '#f39c12' },
+              { icon: 'people', title: 'Team Collaboration', description: 'Invite unlimited team members with granular permissions and activity logs.', color: '#e74c3c' },
+              { icon: 'speed', title: 'Auto-Scaling', description: 'Seamlessly handles 10 to 10 million users without any configuration changes.', color: '#9b59b6' },
+              { icon: 'support', title: '24/7 Support', description: 'Dedicated support team with <2 hour response times and onboarding assistance.', color: '#00bcd4' },
+            ],
+          },
+          stats: [
+            { value: '10K+', label: 'Active Users' },
+            { value: '99.9%', label: 'Uptime SLA' },
+            { value: '4.9★', label: 'Average Rating' },
+            { value: '$2.4M', label: 'Revenue Generated' },
+          ],
+          cta_footer: {
+            headline: 'Ready to Get Started?',
+            subheading: 'Join thousands of founders who launched their SaaS with our platform. Free tier available — no credit card required.',
+            button_text: 'Create Your Free Account',
+          },
+        };
+
+      case 'thanks':
+        return {
+          page_type: 'thanks',
+          hero: {
+            headline: "You're All Set! 🎉",
+            subheading: 'Thank you for signing up. Your account has been created successfully and you\'re ready to start building amazing things.',
+          },
+          order_confirmation: { plan: 'Professional', billing: 'Monthly', amount: '$29.00/mo', confirmation_number: 'ACM-2026-8847' },
+          email_notification: { message: 'Confirmation email sent', detail: 'Check your inbox at j.smith@example.com' },
+          next_steps: [
+            { step: '1', title: 'Complete your profile', description: 'Add your company details and logo' },
+            { step: '2', title: 'Create your first project', description: 'Use a template or start from scratch' },
+            { step: '3', title: 'Invite your team', description: 'Collaborate with up to 10 team members' },
+          ],
+          cta_primary: { text: 'Go to Dashboard', url: '/dashboard' },
+          cta_secondary: { text: 'Back to Home', url: '/' },
+        };
+
+      case 'members':
+        return {
+          page_type: 'members',
+          welcome: { headline: 'Welcome back, Jessica 👋', subheading: 'You have 3 new lessons available and your streak is on fire — 14 days!' },
+          stats: [
+            { label: 'Current Plan', value: 'Premium', sub: 'Renews Mar 15, 2026' },
+            { label: 'Courses Completed', value: '12 / 24', sub: '50% complete' },
+            { label: 'Streak', value: '14 Days', sub: 'Personal best!' },
+          ],
+          courses: [
+            { title: 'Building Your First Workflow', progress: 75, lessons: '6/8 lessons', tag: 'In Progress' },
+            { title: 'Advanced Automation Patterns', progress: 30, lessons: '3/10 lessons', tag: 'In Progress' },
+            { title: 'Scaling to 10K Users', progress: 0, lessons: '0/12 lessons', tag: 'New' },
+          ],
+          quick_actions: ['My Profile', 'Billing', 'Support', 'Community'],
+        };
+
+      case 'checkout':
+        return {
+          page_type: 'checkout',
+          headline: 'Choose Your Plan',
+          subheading: 'All plans include a 14-day free trial. No credit card required to start.',
+          plans: [
+            { name: 'Starter', price: '$0', period: '/month', description: 'Perfect for individuals getting started', features: ['1 Project', '1,000 API calls/mo', 'Community support', 'Basic analytics'], cta: 'Current Plan', popular: false, disabled: true },
+            { name: 'Professional', price: '$29', period: '/month', description: 'For growing teams and startups', features: ['Unlimited projects', '100K API calls/mo', 'Priority support', 'Advanced analytics', 'Custom domains', 'Team collaboration'], cta: 'Upgrade Now', popular: true, disabled: false },
+            { name: 'Enterprise', price: '$99', period: '/month', description: 'For large organisations needing scale', features: ['Everything in Pro', 'Unlimited API calls', 'Dedicated support', 'SLA guarantee', 'SSO & SAML', 'Custom integrations'], cta: 'Contact Sales', popular: false, disabled: false },
+          ],
+          payment_form: { fields: ['Cardholder Name', 'Card Number', 'Expiry', 'CVC'], submit_text: 'Start 14-Day Free Trial' },
+          trust_badges: ['256-bit SSL', 'SOC 2 Certified', 'PCI Compliant'],
+          guarantee: '30-day money-back guarantee · Cancel anytime · No hidden fees',
+        };
+
+      case 'admin':
+        return {
+          page_type: 'admin',
+          dashboard_title: 'Dashboard Overview',
+          kpis: [
+            { label: 'Total Revenue', value: '$48,295', change: '+12.5%', up: true },
+            { label: 'Active Users', value: '3,847', change: '+8.2%', up: true },
+            { label: 'New Signups', value: '284', change: '+23.1%', up: true },
+            { label: 'Churn Rate', value: '2.4%', change: '-0.3%', up: false },
+          ],
+          revenue_chart: {
+            title: 'Revenue Overview',
+            periods: ['7D', '30D', '90D', '1Y'],
+            default_period: '30D',
+            data: [45, 62, 58, 75, 88, 72, 95, 80, 68, 92, 78, 85],
+            months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+          },
+          recent_users: [
+            { name: 'Sarah Chen', email: 's.chen@startup.io', plan: 'Enterprise', status: 'Active', mrr: '$99' },
+            { name: 'Marcus Johnson', email: 'm.johnson@scale.co', plan: 'Professional', status: 'Active', mrr: '$29' },
+            { name: 'Emily Rodriguez', email: 'e.rod@dev.studio', plan: 'Professional', status: 'Trial', mrr: '$0' },
+            { name: 'David Park', email: 'd.park@cloud.io', plan: 'Starter', status: 'Churned', mrr: '$0' },
+          ],
+          system_health: [
+            { label: 'API Server', status: 'Operational' },
+            { label: 'Database', status: 'Operational' },
+            { label: 'CDN', status: 'Operational' },
+            { label: 'Email Service', status: 'Degraded' },
+          ],
+          recent_activity: [
+            { text: 'New enterprise signup: Acme Corp', time: '2 min ago' },
+            { text: 'Payment received: $99.00', time: '15 min ago' },
+            { text: 'Support ticket #482 resolved', time: '1 hr ago' },
+            { text: 'Database backup completed', time: '3 hrs ago' },
+          ],
+        };
+
+      default:
+        return { message: `Default ${title} page` };
+    }
   }
 
   /**
@@ -291,14 +422,18 @@ export class AppManagementService {
       throw new NotFoundException(`Source app with ID ${sourceAppId} not found`);
     }
 
-    // Create the new app
-    const newApp = await this.createApp(newAppDto);
+    // Create the new app without default pages (we'll clone the source pages instead)
+    const newApp = await this.createApp(newAppDto, true);
 
-    // Clone pages
-    const sourcePages = db.pages?.filter(p => p.app_id === sourceAppId) || [];
-    const maxPageId = Math.max(0, ...(db.pages?.map(p => p.id) || [0]));
+    // Re-read DB since createApp wrote to it
+    const freshDb = await this.readDatabase();
+
+    // Clone pages from source app
+    const sourcePages = freshDb.pages?.filter(p => p.app_id === sourceAppId) || [];
+    const maxPageId = Math.max(0, ...(freshDb.pages?.map(p => p.id) || [0]));
     let nextPageId = maxPageId + 1;
 
+    freshDb.pages = freshDb.pages || [];
     sourcePages.forEach(page => {
       const clonedPage: Page = {
         ...page,
@@ -307,11 +442,27 @@ export class AppManagementService {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      db.pages.push(clonedPage);
+      freshDb.pages.push(clonedPage);
     });
 
-    db.last_updated = new Date().toISOString();
-    await this.writeDatabase(db);
+    // Clone plans from source app
+    const sourcePlans = freshDb.plans?.filter(p => p.app_id === sourceAppId) || [];
+    const maxPlanId = Math.max(0, ...(freshDb.plans?.map(p => p.id) || [0]));
+    let nextPlanId = maxPlanId + 1;
+
+    freshDb.plans = freshDb.plans || [];
+    sourcePlans.forEach(plan => {
+      const clonedPlan: Plan = {
+        ...plan,
+        id: nextPlanId++,
+        app_id: newApp.id,
+        created_at: new Date().toISOString(),
+      };
+      freshDb.plans.push(clonedPlan);
+    });
+
+    freshDb.last_updated = new Date().toISOString();
+    await this.writeDatabase(freshDb);
 
     return newApp;
   }

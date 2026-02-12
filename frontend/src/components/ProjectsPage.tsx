@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Container,
   Paper,
@@ -74,7 +75,7 @@ export function ProjectsPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get('http://localhost:3000/api/apps');
+      const response = await axios.get(API.apps);
       if (response.data.success) {
         setApps(response.data.data || []);
       } else {
@@ -133,7 +134,7 @@ export function ProjectsPage() {
       if (editingApp) {
         // Update app
         const response = await axios.put(
-          `http://localhost:3000/api/apps/${editingApp.id}`,
+          `${API.apps}/${editingApp.id}`,
           formData
         );
         if (response.data.success) {
@@ -145,7 +146,7 @@ export function ProjectsPage() {
         }
       } else {
         // Create new app
-        const response = await axios.post('http://localhost:3000/api/apps', formData);
+        const response = await axios.post(API.apps, formData);
         if (response.data.success) {
           setSuccess('Project created successfully');
           await loadApps();
@@ -174,7 +175,7 @@ export function ProjectsPage() {
       setError(null);
       setSuccess(null);
 
-      const response = await axios.delete(`http://localhost:3000/api/apps/${appToDelete.id}`);
+      const response = await axios.delete(`${API.apps}/${appToDelete.id}`);
       if (response.data.success) {
         setSuccess('Project deleted successfully');
         await loadApps();

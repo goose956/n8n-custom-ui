@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import { API } from '../config/api';
 import {
   Box,
   Button,
@@ -52,12 +53,14 @@ interface ApiKey {
 interface IntegrationKeys {
   openai: string;
   openrouter: string;
+  claude: string;
+  brave: string;
   make: string;
   zapier: string;
 }
 
-const API_BASE_URL = 'http://localhost:3000/api/settings';
-const API_KEYS_BASE_URL = 'http://localhost:3000/api/api-keys';
+const SETTINGS_API = API.settings;
+const API_KEYS_API = API.apiKeys;
 
 function SettingsPage() {
   const [currentTab, setCurrentTab] = useState(0);
@@ -79,18 +82,24 @@ function SettingsPage() {
   const [integrationKeys, setIntegrationKeys] = useState<IntegrationKeys>({
     openai: '',
     openrouter: '',
+    claude: '',
+    brave: '',
     make: '',
     zapier: '',
   });
   const [integrationKeysLoading, setIntegrationKeysLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
     openrouter: false,
+    claude: false,
+    brave: false,
     make: false,
     zapier: false,
   });
   const [integrationKeysTestLoading, setIntegrationKeysTestLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
     openrouter: false,
+    claude: false,
+    brave: false,
     make: false,
     zapier: false,
   });
@@ -107,19 +116,21 @@ function SettingsPage() {
 
   const loadIntegrationKeys = async () => {
     try {
-      const response = await axios.get(API_KEYS_BASE_URL);
+      const response = await axios.get(API_KEYS_API);
       if (response.data.success) {
         const keys = response.data.keys;
         const integrations: IntegrationKeys = {
           openai: '',
           openrouter: '',
+          claude: '',
+          brave: '',
           make: '',
           zapier: '',
         };
         
         keys.forEach((key: ApiKey) => {
-          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'make' || key.name === 'zapier') {
-            integrations[key.name as keyof IntegrationKeys] = '••••••••'; // Show masked placeholder
+          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'claude' || key.name === 'brave' || key.name === 'make' || key.name === 'zapier') {
+            integrations[key.name as keyof IntegrationKeys] = 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'; // Show masked placeholder
           }
         });
         
@@ -132,7 +143,7 @@ function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/load`);
+      const response = await axios.get(`${SETTINGS_API}/load`);
       if (response.data) {
         setSettings((prev) => ({
           ...prev,
@@ -146,7 +157,7 @@ function SettingsPage() {
 
   const loadApiKeys = async () => {
     try {
-      const response = await axios.get(API_KEYS_BASE_URL);
+      const response = await axios.get(API_KEYS_API);
       if (response.data.success) {
         setApiKeys(response.data.keys);
       }
@@ -171,7 +182,7 @@ function SettingsPage() {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/save`, settings);
+      const response = await axios.post(`${SETTINGS_API}/save`, settings);
       if (response.data.success) {
         setMessage({ type: 'success', text: response.data.message });
         setSettings((prev) => ({
@@ -191,7 +202,7 @@ function SettingsPage() {
   const handleTestConnection = async () => {
     setTestLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/test-connection`);
+      const response = await axios.get(`${SETTINGS_API}/test-connection`);
       if (response.data.success) {
         setMessage({ type: 'success', text: response.data.message });
       } else {
@@ -212,7 +223,7 @@ function SettingsPage() {
 
     setApiKeyLoading(true);
     try {
-      const response = await axios.post(API_KEYS_BASE_URL, {
+      const response = await axios.post(API_KEYS_API, {
         name: apiKeyForm.name,
         value: apiKeyForm.value,
       });
@@ -235,7 +246,7 @@ function SettingsPage() {
     if (!window.confirm(`Delete API key "${name}"?`)) return;
 
     try {
-      const response = await axios.delete(`${API_KEYS_BASE_URL}/${name}`);
+      const response = await axios.delete(`${API_KEYS_API}/${name}`);
       if (response.data.success) {
         setMessage({ type: 'success', text: response.data.message });
         loadApiKeys();
@@ -250,20 +261,20 @@ function SettingsPage() {
   const handleSaveIntegrationKey = async (keyName: keyof IntegrationKeys) => {
     const value = integrationKeys[keyName];
     
-    if (!value || value === '••••••••') {
+    if (!value || value === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢') {
       setMessage({ type: 'error', text: 'Please enter a valid API key' });
       return;
     }
 
     setIntegrationKeysLoading((prev) => ({ ...prev, [keyName]: true }));
     try {
-      const response = await axios.post(API_KEYS_BASE_URL, {
+      const response = await axios.post(API_KEYS_API, {
         name: keyName,
         value: value,
       });
       if (response.data.success) {
         setMessage({ type: 'success', text: `${keyName.toUpperCase()} API key saved successfully` });
-        setIntegrationKeys((prev) => ({ ...prev, [keyName]: '••••••••' }));
+        setIntegrationKeys((prev) => ({ ...prev, [keyName]: 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' }));
       } else {
         setMessage({ type: 'error', text: response.data.message });
       }
@@ -278,7 +289,7 @@ function SettingsPage() {
     if (!window.confirm(`Delete ${keyName.toUpperCase()} API key?`)) return;
 
     try {
-      const response = await axios.delete(`${API_KEYS_BASE_URL}/${keyName}`);
+      const response = await axios.delete(`${API_KEYS_API}/${keyName}`);
       if (response.data.success) {
         setMessage({ type: 'success', text: `${keyName.toUpperCase()} API key deleted` });
         setIntegrationKeys((prev) => ({ ...prev, [keyName]: '' }));
@@ -294,7 +305,7 @@ function SettingsPage() {
   const handleTestIntegrationKey = async (keyName: keyof IntegrationKeys) => {
     setIntegrationKeysTestLoading((prev) => ({ ...prev, [keyName]: true }));
     try {
-      const response = await axios.post(`${API_BASE_URL}/test-integration`, {
+      const response = await axios.post(`${SETTINGS_API}/test-integration`, {
         service: keyName,
       });
       if (response.data.success) {
@@ -539,7 +550,7 @@ function SettingsPage() {
                     <Button variant="contained" onClick={() => handleSaveIntegrationKey('openai')} disabled={integrationKeysLoading.openai || !integrationKeys.openai} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
                       {integrationKeysLoading.openai ? 'Saving...' : 'Save'}
                     </Button>
-                    {integrationKeys.openai === '••••••••' && (
+                    {integrationKeys.openai === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
                       <>
                         <Button variant="outlined" onClick={() => handleTestIntegrationKey('openai')} disabled={integrationKeysTestLoading.openai} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
                           {integrationKeysTestLoading.openai ? 'Testing...' : 'Test'}
@@ -550,7 +561,7 @@ function SettingsPage() {
                       </>
                     )}
                   </Box>
-                  {integrationKeys.openai === '••••••••' && (
+                  {integrationKeys.openai === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
                     <FormControl fullWidth size="small">
                       <InputLabel>Model</InputLabel>
                       <Select value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} label="Model">
@@ -584,12 +595,68 @@ function SettingsPage() {
                     <Button variant="contained" onClick={() => handleSaveIntegrationKey('openrouter')} disabled={integrationKeysLoading.openrouter || !integrationKeys.openrouter} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
                       {integrationKeysLoading.openrouter ? 'Saving...' : 'Save'}
                     </Button>
-                    {integrationKeys.openrouter === '••••••••' && (
+                    {integrationKeys.openrouter === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
                       <>
                         <Button variant="outlined" onClick={() => handleTestIntegrationKey('openrouter')} disabled={integrationKeysTestLoading.openrouter} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
                           {integrationKeysTestLoading.openrouter ? 'Testing...' : 'Test'}
                         </Button>
                         <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('openrouter')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Claude (Anthropic) */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Claude (Anthropic)</Typography>
+                    {integrationKeys.claude && integrationKeys.claude !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="sk-ant-..." value={integrationKeys.claude} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, claude: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('claude')} disabled={integrationKeysLoading.claude || !integrationKeys.claude} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.claude ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.claude === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('claude')} disabled={integrationKeysTestLoading.claude} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.claude ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('claude')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Brave Search */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Brave Search</Typography>
+                    {integrationKeys.brave && integrationKeys.brave !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="API Key" type="password" placeholder="BSA..." value={integrationKeys.brave} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, brave: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('brave')} disabled={integrationKeysLoading.brave || !integrationKeys.brave} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.brave ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.brave === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('brave')} disabled={integrationKeysTestLoading.brave} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.brave ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('brave')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
                           Delete
                         </Button>
                       </>
@@ -612,7 +679,7 @@ function SettingsPage() {
                     <Button variant="contained" onClick={() => handleSaveIntegrationKey('make')} disabled={integrationKeysLoading.make || !integrationKeys.make} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
                       {integrationKeysLoading.make ? 'Saving...' : 'Save'}
                     </Button>
-                    {integrationKeys.make === '••••••••' && (
+                    {integrationKeys.make === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
                       <>
                         <Button variant="outlined" onClick={() => handleTestIntegrationKey('make')} disabled={integrationKeysTestLoading.make} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
                           {integrationKeysTestLoading.make ? 'Testing...' : 'Test'}
@@ -640,7 +707,7 @@ function SettingsPage() {
                     <Button variant="contained" onClick={() => handleSaveIntegrationKey('zapier')} disabled={integrationKeysLoading.zapier || !integrationKeys.zapier} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
                       {integrationKeysLoading.zapier ? 'Saving...' : 'Save'}
                     </Button>
-                    {integrationKeys.zapier === '••••••••' && (
+                    {integrationKeys.zapier === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' && (
                       <>
                         <Button variant="outlined" onClick={() => handleTestIntegrationKey('zapier')} disabled={integrationKeysTestLoading.zapier} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
                           {integrationKeysTestLoading.zapier ? 'Testing...' : 'Test'}

@@ -1,235 +1,202 @@
-# SaaS Factory - Multi-App n8n Platform
+# SaaS Factory
 
-✅ **MVP Complete** — A fully functional multi-tenant SaaS platform for rapidly creating, managing, and scaling multiple applications with shared n8n workflow infrastructure.
+A multi-tenant SaaS management platform for creating, managing, and exporting standalone applications. Built with NestJS, React, and n8n workflow automation.
 
-### Key Features
-- 🎯 **Projects Management** - Create and manage multiple SaaS applications
-- 🔧 **Workflows** - View, validate, edit, and trigger n8n workflows
-- 🔐 **Global API Keys** - Centralized credential management with encryption
-- ⚡ **One-Click App Creation** - Automatic page and plan generation
-- 🚀 **Three Services** - Backend (NestJS), Frontend (React), n8n integration
+## Features
+
+- **Multi-App Management** — Create, edit, clone, and delete SaaS applications with auto-generated pages and pricing plans
+- **Page Builder** — Visual page editor with JSON editing, live preview, and AI chat assistant
+- **n8n Workflow Integration** — View, validate, configure, and trigger n8n workflows
+- **AI Workflow Builder** — Chat-based n8n workflow JSON generation with validation and node reference
+- **Blog Manager** — AI-powered blog post generation with OpenAI integration
+- **Research Tool** — Web research via Brave Search + Claude analysis with PDF export
+- **App Planner** — AI-assisted feature planning and roadmap generation
+- **Analytics Dashboard** — Per-app usage tracking and statistics
+- **API Key Vault** — Centralized encrypted credential storage (AES-256-CBC)
+- **Health Monitoring** — Live service status indicator
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | NestJS 10, TypeScript, Node.js |
+| Frontend | React 18, Vite 5, Material-UI 5 |
+| Automation | n8n (self-hosted) |
+| Database | File-based JSON (Supabase/PostgreSQL planned) |
+| Encryption | AES-256-CBC via shared CryptoService |
 
 ## Project Structure
 
 ```
 n8n surface/
-├── backend/                     # NestJS REST API (localhost:3000)
-│   ├── src/
-│   │   ├── main.ts
-│   │   ├── app.module.ts
-│   │   ├── apps/                # Multi-app management ✨ NEW
-│   │   ├── settings/            # n8n connection
-│   │   ├── api-keys/            # Global API key management
-│   │   ├── workflows/           # Workflow management & validation
-│   │   ├── types/               # TypeScript interfaces
-│   │   └── health/              # Status endpoint
-│   └── db.json                  # Multi-app JSON database
-│
-├── frontend/                    # React + Vite (localhost:5173)
-│   ├── src/
-│   │   ├── App.tsx              # Router + Top navigation
-│   │   ├── components/
-│   │   │   ├── ProjectsPage.tsx     # App management ✨ NEW
-│   │   │   ├── WorkflowsPage.tsx    # Workflow manager ✨ CONSOLIDATED
-│   │   │   ├── SettingsPage.tsx     # n8n + API Keys
-│   │   │   └── nodeSchemas.ts
-│   │   └── main.tsx
-│   └── package.json
-│
-├── scripts/                     # Helper scripts
-├── docs/                        # Documentation
-├── package.json                 # Root monorepo
-├── PROJECT_STATUS.md            # Detailed technical status
-└── README.md                    # This file
+├── backend/                         # NestJS REST API (:3000)
+│   └── src/
+│       ├── shared/                  # Global CryptoService + DatabaseService
+│       ├── apps/                    # Multi-app CRUD
+│       ├── pages/                   # Page management
+│       ├── workflows/               # n8n workflow management & validation
+│       ├── settings/                # Platform configuration
+│       ├── api-keys/                # Encrypted API key storage
+│       ├── chat/                    # AI chat (page agent)
+│       ├── page-agent/              # Page content generation
+│       ├── n8n-builder/             # AI workflow builder
+│       ├── blog/                    # Blog post management
+│       ├── research/                # Brave Search + Claude research
+│       ├── app-planner/             # AI app planning
+│       ├── analytics/               # Usage analytics
+│       ├── health/                  # Health check endpoint
+│       ├── migrations/              # Database migration tools
+│       └── types/                   # Shared TypeScript types
+├── frontend/                        # React + Vite SPA (:5173)
+│   └── src/
+│       ├── config/api.ts            # Centralized API URL config
+│       ├── components/              # All page components
+│       └── utils/                   # Utilities
+├── database/schema.sql              # SQL schema reference
+├── docs/                            # Architecture docs
+├── scripts/                         # App creation scripts
+└── ecosystem.config.js              # PM2 config
 ```
 
 ## Quick Start
 
-### Install Dependencies
-
-From the root directory:
-
 ```bash
-# Install root dependencies
+# Install dependencies
 npm install
-
-# Install backend dependencies
-cd backend
-npm install
-
-# Install frontend dependencies
-cd ../frontend
-npm install
-
-# Go back to root
+cd backend && npm install
+cd ../frontend && npm install
 cd ..
-```
 
-### Start Development
-
-```bash
-# Start all three services (recommended)
+# Start all services
 npm run dev:full
-
-# Or start individual services
-npm run dev:backend    # Backend only
-npm run dev:frontend   # Frontend only
-npm run dev:n8n        # n8n only
 ```
 
-This will start:
-- **Backend**: http://localhost:3000 (NestJS API)
-- **Frontend**: http://localhost:5173 (React UI)
-- **n8n**: http://localhost:5678 (Workflow engine)
+Services:
+- **Frontend** — http://localhost:5173
+- **Backend API** — http://localhost:3000
+- **n8n** — http://localhost:5678
 
-### Test It Out
+### First-Time Setup
 
-1. **Create a Project**
-   - Open http://localhost:5173
-   - Go to **Projects** page (default landing)
-   - Click **Create New**
-   - Enter: Name, Slug (lowercase-hyphen), Description, Color
-   - Click **Create** → Auto-generates pages and plans
+1. Open http://localhost:5173
+2. Go to **Settings** → configure n8n URL (`http://localhost:5678`) and API key
+3. Add API keys (OpenAI, Anthropic, Brave Search) as needed
+4. Go to **Projects** → create your first app
 
-2. **Configure n8n Connection**
-   - Go to **Settings** page
-   - Enter n8n URL: `http://localhost:5678`
-   - Add n8n API key (get from n8n Settings → API)
-   - Click **Test Connection**
-   - Add any **Global API Keys** needed by workflows
-
-3. **Manage Workflows**
-   - Go to **Workflows** page
-   - View all n8n workflows with validation status
-   - Click **⚠ Issues** to see what needs configuration
-   - Click **Edit** to configure missing fields
-   - Click **Trigger** to execute with test data
-
----
-
-## Main Features
-
-### Projects Management
-- **Create** new SaaS applications with custom branding
-- **Edit** project metadata (name, description, color)
-- **Delete** projects with automatic cleanup of related data
-- **Auto-generated** default pages and payment plans
-
-### Workflows
-- **List** all n8n workflows with live status
-- **Validate** workflow configurations (detect missing API keys, fields)
-- **Edit** workflow parameters and save configurations
-- **Trigger** workflows with custom JSON input
-- **View** workflow details in n8n editor
-
-### Settings
-- **n8n Connection** - Add and test n8n instance
-- **Global API Keys** - Centralized encrypted credential storage
-- All sensitive data encrypted with AES-256-CBC
-
----
-
-## API Endpoints
+## API Reference
 
 ### Apps
-- `GET /api/apps` - List all projects
-- `POST /api/apps` - Create new project
-- `GET /api/apps/:id` - Get project details
-- `PUT /api/apps/:id` - Update project
-- `DELETE /api/apps/:id` - Delete project
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/apps` | List all apps |
+| POST | `/api/apps` | Create app (auto-generates pages & plans) |
+| GET | `/api/apps/:id` | Get app by ID |
+| PUT | `/api/apps/:id` | Update app |
+| DELETE | `/api/apps/:id` | Delete app (cascade) |
+| POST | `/api/apps/:id/clone` | Clone app |
+
+### Pages
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/pages?app_id=:id` | List pages for app |
+| POST | `/api/pages` | Create page |
+| PUT | `/api/pages/:id` | Update page |
+| DELETE | `/api/pages/:id` | Delete page |
 
 ### Workflows
-- `GET /api/workflows/validation` - List workflows with validation
-- `GET /api/workflows/config/:id` - Get workflow configuration
-- `PUT /api/workflows/config/:id` - Save workflow configuration
-- `POST /api/workflows/:id/trigger` - Execute workflow
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/workflows/validation` | List workflows with validation |
+| GET | `/api/workflows/config/:id` | Get workflow config |
+| PUT | `/api/workflows/config/:id` | Save workflow config |
+| POST | `/api/workflows/:id/trigger` | Execute workflow |
 
-### Settings
-- `GET /api/settings/load` - Load n8n settings
-- `POST /api/settings/save` - Save n8n settings
-- `GET /api/settings/test-connection` - Test n8n connectivity
+### Settings & Keys
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/load` | Load settings |
+| POST | `/api/settings/save` | Save settings |
+| GET | `/api/settings/test-connection` | Test n8n connection |
+| GET | `/api/api-keys` | List API keys (masked) |
+| POST | `/api/api-keys` | Store API key (encrypted) |
+| DELETE | `/api/api-keys/:name` | Delete API key |
 
-### API Keys
-- `GET /api/api-keys` - List all API keys
-- `POST /api/api-keys` - Add new API key
-- `DELETE /api/api-keys/:name` - Delete API key
+### Blog, Research, Chat, Analytics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/blog/posts` | List blog posts |
+| POST | `/api/blog/generate` | AI-generate blog post |
+| GET | `/api/research/projects` | List research projects |
+| POST | `/api/research/run/:id` | Run research (Brave + Claude) |
+| POST | `/api/chat/message` | Send chat message |
+| GET | `/api/analytics/stats` | Get analytics |
+| GET | `/api/health` | Health check |
 
-### GET `/api/settings/test-connection`
-Test the connection to n8n using saved credentials
+## Architecture
 
-## Complete Features
+### Backend Modules (15)
 
-✅ **Multi-App Management** - Create, edit, delete SaaS projects
-✅ **Workflow Management** - List, validate, configure, and trigger n8n workflows  
-✅ **API Key Management** - Global encrypted credential storage
-✅ **Workflow Validation** - Auto-detect missing API keys and fields
-✅ **TypeScript** - Strict type checking in backend and frontend
-✅ **NestJS Backend** - Enterprise-grade REST API architecture
-✅ **React 18 Frontend** - Modern SPA with Material-UI components
-✅ **AES-256 Encryption** - Secure credential storage
-✅ **File-based Database** - Easy to backup and version control
-✅ **Three Services** - Backend, Frontend, n8n integration
+All services share a global `SharedModule` providing:
+- **CryptoService** — Single AES-256-CBC encrypt/decrypt implementation
+- **DatabaseService** — Consistent `db.json` read/write with path resolution
 
-## Troubleshooting
+### Security
 
-### Backend won't start
-- Check if port 3000 is available: `netstat -ano | findstr :3000`
-- Verify `db.json` exists in the project root
-- Check Node.js version: Requires 18+
+- API keys returned masked to frontend (`sk-••••••••xxxx`)
+- Decrypted keys only used server-side for API calls
+- Input validation via NestJS `ValidationPipe` (whitelist + transform)
+- XSS protection via DOMPurify on all `dangerouslySetInnerHTML` usage
+- n8n API key properly decrypted before use in workflow operations
 
-### Frontend won't compile
-- Delete `node_modules` and `package-lock.json`: `rm -r node_modules package-lock.json`
-- Reinstall: `npm install`
-- Clear Vite cache: `npm run dev:frontend -- --force`
+### Frontend
 
-### n8n connection fails
-- Verify n8n is running: `http://localhost:5678`
-- Check n8n API key has workflow access
-- Ensure correct URL format: `http://localhost:5678`
-
-### Workflows not loading
-- Check browser console for fetch errors
-- Verify backend API is responding: `http://localhost:3000/api/apps`
-- Restart backend service
-
-## Next Steps & Roadmap
-
-**Phase 2**: Enhanced project management (dashboards, metrics)  
-**Phase 3**: Advanced workflow features (history, scheduling, templates)  
-**Phase 4**: Multi-tenancy & security (RBAC, audit logging)  
-**Phase 5**: Infrastructure scaling (Docker, PostgreSQL)  
-**Phase 6**: Frontend polish (mobile, dark mode, visual editor)
-
-See [PROJECT_STATUS.md](PROJECT_STATUS.md) for complete roadmap and technical details.
+- Centralized API config in `frontend/src/config/api.ts`
+- Supports `VITE_API_URL` environment variable for deployment
+- Design system: dark nav (#1a1a2e), gradient accents (#667eea → #764ba2), light backgrounds (#fafbfc)
 
 ## Environment Variables
 
-Create a `.env` file in the root to customize:
-
-```
+```env
+# Backend
 ENCRYPTION_KEY=your-secret-key-change-in-production
 NODE_ENV=development
+
+# Frontend (.env in frontend/)
+VITE_API_URL=http://localhost:3000
 ```
 
 ## Build for Production
 
 ```bash
-# Build backend
-cd backend && npm run build
-
-# Build frontend  
-cd ../frontend && npm run build
-
-# Output: backend/dist/ and frontend/dist/
+npm run build:backend    # → backend/dist/
+npm run build:frontend   # → frontend/dist/
 ```
 
-## Learn More
+PM2 support:
+```bash
+npm run pm2:start        # Start with ecosystem.config.js
+npm run pm2:status       # Check status
+npm run pm2:logs         # View logs
+```
 
-- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Complete technical documentation
-- **[n8n Docs](https://docs.n8n.io/)** - n8n workflow engine
-- **[NestJS Docs](https://docs.nestjs.com/)** - Backend framework
-- **[React Docs](https://react.dev/)** - Frontend framework
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Port 3000 in use | `netstat -ano \| findstr :3000` then kill the process |
+| Backend won't start | Check `db.json` exists in `backend/`, Node.js 18+ required |
+| Frontend won't compile | Delete `node_modules` + `package-lock.json`, reinstall |
+| n8n connection fails | Verify n8n running at :5678, check API key in Settings |
+| Workflows not triggering | n8n API key was likely encrypted — fixed in latest update |
+
+## Roadmap
+
+- [ ] **Export Module** — One-click export of apps as standalone Next.js projects
+- [ ] **Supabase Migration** — Replace db.json with PostgreSQL + auth + RLS
+- [ ] **Per-App Deployment** — Vercel/Railway deployment pipeline
+- [ ] **RBAC** — Role-based access control and audit logging
+- [ ] **Docker** — Containerized deployment
 
 ## License
 
-MIT - Feel free to use, fork, and contribute!
+MIT

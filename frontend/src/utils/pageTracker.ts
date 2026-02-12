@@ -2,9 +2,10 @@
  * Analytics Tracking Script
  * Include this script in any page template to track page views
  */
+import { API_BASE_URL } from '../config/api';
 
 class PageTracker {
-  private backendUrl: string = 'http://localhost:3000';
+  private backendUrl: string = API_BASE_URL;
   private visitorId: string;
 
   constructor(backendUrl?: string) {
