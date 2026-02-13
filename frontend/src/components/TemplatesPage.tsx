@@ -66,6 +66,13 @@ import {
   School as SchoolIcon,
   CreditCard as CreditCardIcon,
   Shield as ShieldIcon,
+  MonetizationOn as PricingIcon,
+  Info as AboutIcon,
+  QuestionAnswer as FaqIcon,
+  ContactMail as ContactIcon,
+  Phone as PhoneIcon,
+  LocationOn as LocationIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import { LinearProgress, Divider, IconButton, Badge, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Tabs, Tab } from '@mui/material';
 import { RssFeed as BlogIcon, ViewQuilt as TemplateIcon } from '@mui/icons-material';
@@ -74,11 +81,11 @@ import { BlogPage } from './BlogPage';
 
 interface Template {
   id: string;
-  type: 'index' | 'thanks' | 'members' | 'checkout' | 'admin';
+  type: 'index' | 'thanks' | 'members' | 'checkout' | 'admin' | 'pricing' | 'about' | 'faq' | 'contact';
   title: string;
   description: string;
   longDescription: string;
-  iconType: 'home' | 'thumbup' | 'group' | 'cart' | 'admin';
+  iconType: 'home' | 'thumbup' | 'group' | 'cart' | 'admin' | 'pricing' | 'about' | 'faq' | 'contact';
   features: string[];
   rating: number;
   reviews: number;
@@ -225,6 +232,66 @@ const templates: Template[] = [
     image: 'https://picsum.photos/seed/admin-saas/600/340',
     gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
   },
+  {
+    id: '6',
+    type: 'pricing',
+    title: 'Pricing Page',
+    description: 'Clear pricing tiers with feature comparison to drive conversions',
+    longDescription:
+      'A dedicated pricing page designed to convert visitors into customers. Features side-by-side plan comparison, feature matrix, toggle between monthly/annual billing, FAQ section, trust badges, and a money-back guarantee — everything needed to remove purchase hesitation.',
+    iconType: 'pricing',
+    features: ['Plan comparison cards', 'Feature matrix table', 'Monthly/annual toggle', 'FAQ & guarantees'],
+    rating: 4.8,
+    reviews: 1956,
+    category: 'Conversion',
+    image: 'https://picsum.photos/seed/pricing-saas/600/340',
+    gradient: 'linear-gradient(135deg, #f5af19 0%, #f12711 100%)',
+  },
+  {
+    id: '7',
+    type: 'about',
+    title: 'About Us',
+    description: 'Tell your story, introduce your team, and build trust',
+    longDescription:
+      'Build credibility and connection with this beautifully crafted About Us page. Includes a compelling company story section, team member profiles with photos and roles, company timeline/milestones, core values showcase, and a call-to-action to get in touch.',
+    iconType: 'about',
+    features: ['Company story hero', 'Team member grid', 'Mission & values', 'Timeline milestones'],
+    rating: 4.7,
+    reviews: 1234,
+    category: 'Brand',
+    image: 'https://picsum.photos/seed/aboutus-saas/600/340',
+    gradient: 'linear-gradient(135deg, #667eea 0%, #43e97b 100%)',
+  },
+  {
+    id: '8',
+    type: 'faq',
+    title: 'FAQ Page',
+    description: 'Answer common questions and reduce support tickets',
+    longDescription:
+      'Reduce support load and build confidence with a well-organized FAQ page. Features categorized accordion-style questions and answers, a search prompt, contact CTA for unanswered questions, and a clean layout that makes finding answers effortless.',
+    iconType: 'faq',
+    features: ['Categorized sections', 'Accordion layout', 'Search guidance', 'Contact fallback CTA'],
+    rating: 4.6,
+    reviews: 987,
+    category: 'Support',
+    image: 'https://picsum.photos/seed/faq-saas/600/340',
+    gradient: 'linear-gradient(135deg, #a18cd1 0%, #5fc3e4 100%)',
+  },
+  {
+    id: '9',
+    type: 'contact',
+    title: 'Contact Page',
+    description: 'Professional contact form with multiple ways to reach you',
+    longDescription:
+      'Make it easy for visitors, leads, and customers to get in touch. This contact page includes a clean contact form with subject categories, office location with map placeholder, email/phone/social links, business hours, and an optional live chat prompt.',
+    iconType: 'contact',
+    features: ['Contact form', 'Office location', 'Email & phone', 'Business hours'],
+    rating: 4.5,
+    reviews: 1102,
+    category: 'Communication',
+    image: 'https://picsum.photos/seed/contact-saas/600/340',
+    gradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+  },
 ];
 
 interface PreviewDialogState {
@@ -252,6 +319,14 @@ const getTemplateIcon = (iconType: string): React.ReactNode => {
       return <ShoppingCartIcon sx={{ ...iconProps, color: '#e74c3c' }} />;
     case 'admin':
       return <AdminIcon sx={{ ...iconProps, color: '#34495e' }} />;
+    case 'pricing':
+      return <PricingIcon sx={{ ...iconProps, color: '#f39c12' }} />;
+    case 'about':
+      return <AboutIcon sx={{ ...iconProps, color: '#3498db' }} />;
+    case 'faq':
+      return <FaqIcon sx={{ ...iconProps, color: '#8e44ad' }} />;
+    case 'contact':
+      return <ContactIcon sx={{ ...iconProps, color: '#e74c3c' }} />;
     default:
       return <HomeIcon sx={{ ...iconProps }} />;
   }
@@ -932,6 +1007,435 @@ const PreviewContent: React.FC<{ template: Template }> = ({ template }) => {
         </Box>
       );
 
+    case 'pricing':
+      return (
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* Nav */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 24, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {['Features', 'Pricing', 'About', 'Contact'].map((item) => (
+                <Typography key={item} variant="body2" sx={{ color: item === 'Pricing' ? '#667eea' : '#666', fontWeight: item === 'Pricing' ? 700 : 500, cursor: 'pointer' }}>
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Hero */}
+          <Box sx={{ textAlign: 'center', pt: 6, pb: 4, px: 3 }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>Simple, Transparent Pricing</Typography>
+            <Typography variant="body1" sx={{ color: '#888', maxWidth: 500, mx: 'auto', mb: 3 }}>
+              Start free, scale as you grow. No hidden fees, no surprises. Cancel anytime.
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1.5, mb: 4 }}>
+              <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>Monthly</Typography>
+              <Box sx={{ width: 44, height: 24, borderRadius: 12, bgcolor: '#667eea', position: 'relative', cursor: 'pointer' }}>
+                <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#fff', position: 'absolute', top: 2, right: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </Box>
+              <Typography variant="body2" sx={{ color: '#667eea', fontWeight: 700 }}>Annual <Chip label="Save 20%" size="small" sx={{ ml: 0.5, height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#e8f5e9', color: '#27ae60' }} /></Typography>
+            </Box>
+          </Box>
+
+          {/* Plans */}
+          <Box sx={{ px: 3, pb: 4 }}>
+            <Grid container spacing={2.5} justifyContent="center">
+              {[
+                { name: 'Starter', price: '$0', period: '/mo', desc: 'Perfect for side projects and MVPs', features: ['1 project', '1,000 page views/mo', 'Community support', 'Basic analytics', 'SSL included'], cta: 'Get Started Free', popular: false },
+                { name: 'Professional', price: '$29', period: '/mo', desc: 'For growing businesses and teams', features: ['10 projects', '100,000 page views/mo', 'Priority support', 'Advanced analytics', 'Custom domains', 'Team collaboration', 'API access'], cta: 'Start Free Trial', popular: true },
+                { name: 'Enterprise', price: '$99', period: '/mo', desc: 'For large-scale production apps', features: ['Unlimited projects', 'Unlimited page views', 'Dedicated support', 'Custom analytics', 'SLA guarantee', 'SSO & SAML', 'Audit logs', 'Custom integrations'], cta: 'Contact Sales', popular: false },
+              ].map((plan, i) => (
+                <Grid item xs={12} sm={4} key={i}>
+                  <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: plan.popular ? '2px solid #667eea' : '1px solid #eee', position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {plan.popular && (
+                      <Chip label="Most Popular" size="small" sx={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', bgcolor: '#667eea', color: '#fff', fontWeight: 700, fontSize: '0.7rem' }} />
+                    )}
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5 }}>{plan.name}</Typography>
+                    <Typography variant="body2" sx={{ color: '#888', mb: 2, minHeight: 40 }}>{plan.desc}</Typography>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="h3" component="span" sx={{ fontWeight: 800, color: '#1a1a2e' }}>{plan.price}</Typography>
+                      <Typography component="span" sx={{ color: '#999' }}>{plan.period}</Typography>
+                    </Box>
+                    <Divider sx={{ mb: 2 }} />
+                    <Box sx={{ flex: 1, mb: 2 }}>
+                      {plan.features.map((f, fi) => (
+                        <Box key={fi} sx={{ display: 'flex', gap: 1, mb: 0.75, alignItems: 'center' }}>
+                          <CheckCircleIcon sx={{ fontSize: 16, color: '#27ae60' }} />
+                          <Typography variant="body2" sx={{ color: '#555' }}>{f}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                    <Button variant={plan.popular ? 'contained' : 'outlined'} fullWidth sx={{ fontWeight: 700, borderRadius: 2, textTransform: 'none', ...(plan.popular ? { background: 'linear-gradient(135deg, #667eea, #764ba2)' } : { borderColor: '#ddd', color: '#555' }) }}>
+                      {plan.cta}
+                    </Button>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          {/* Feature Comparison */}
+          <Box sx={{ px: 3, pb: 4 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>Compare Plans</Typography>
+            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #eee', borderRadius: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#fafbfc' }}>
+                    <TableCell sx={{ fontWeight: 700, color: '#1a1a2e' }}>Feature</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700, color: '#888' }}>Starter</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700, color: '#667eea' }}>Professional</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700, color: '#888' }}>Enterprise</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {[
+                    { feature: 'Projects', starter: '1', pro: '10', enterprise: 'Unlimited' },
+                    { feature: 'Team members', starter: '1', pro: '5', enterprise: 'Unlimited' },
+                    { feature: 'Custom domains', starter: '—', pro: '✓', enterprise: '✓' },
+                    { feature: 'API access', starter: '—', pro: '✓', enterprise: '✓' },
+                    { feature: 'Priority support', starter: '—', pro: '✓', enterprise: '✓' },
+                    { feature: 'SSO / SAML', starter: '—', pro: '—', enterprise: '✓' },
+                  ].map((row, i) => (
+                    <TableRow key={i} sx={{ '& td': { borderBottom: '1px solid #f5f5f5' } }}>
+                      <TableCell sx={{ color: '#555', fontWeight: 500 }}>{row.feature}</TableCell>
+                      <TableCell align="center" sx={{ color: row.starter === '✓' ? '#27ae60' : row.starter === '—' ? '#ccc' : '#555', fontWeight: 600 }}>{row.starter}</TableCell>
+                      <TableCell align="center" sx={{ color: row.pro === '✓' ? '#27ae60' : row.pro === '—' ? '#ccc' : '#667eea', fontWeight: 600 }}>{row.pro}</TableCell>
+                      <TableCell align="center" sx={{ color: row.enterprise === '✓' ? '#27ae60' : row.enterprise === '—' ? '#ccc' : '#555', fontWeight: 600 }}>{row.enterprise}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* Trust */}
+          <Box sx={{ px: 3, pb: 4, textAlign: 'center' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 4, flexWrap: 'wrap' }}>
+              {['🔒 256-bit SSL', '💳 No credit card required', '🔄 Cancel anytime', '💰 30-day money-back'].map((badge, i) => (
+                <Typography key={i} variant="body2" sx={{ color: '#888', fontWeight: 600, fontSize: '0.82rem' }}>{badge}</Typography>
+              ))}
+            </Box>
+          </Box>
+        </Box>
+      );
+
+    case 'about':
+      return (
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* Nav */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 24, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {['Features', 'Pricing', 'About', 'Contact'].map((item) => (
+                <Typography key={item} variant="body2" sx={{ color: item === 'About' ? '#667eea' : '#666', fontWeight: item === 'About' ? 700 : 500, cursor: 'pointer' }}>
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Hero */}
+          <Box sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', py: 6, px: 4, textAlign: 'center' }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, mb: 1.5 }}>Our Mission</Typography>
+            <Typography sx={{ fontSize: '1.05rem', opacity: 0.9, maxWidth: 560, mx: 'auto', lineHeight: 1.7 }}>
+              We believe every entrepreneur deserves the tools to build and launch
+              a world-class SaaS product — without needing a team of ten engineers.
+            </Typography>
+          </Box>
+
+          {/* Story */}
+          <Box sx={{ px: 4, py: 5 }}>
+            <Grid container spacing={4} alignItems="center">
+              <Grid item xs={12} sm={6}>
+                <Typography variant="overline" sx={{ color: '#667eea', fontWeight: 700, letterSpacing: 1.5 }}>Our Story</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 2, mt: 1 }}>Born from Frustration, Built with Love</Typography>
+                <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.8, mb: 2 }}>
+                  In 2024, our founders spent months wiring together authentication, billing, dashboards, and landing pages just to test a simple idea. They thought: there has to be a better way.
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.8 }}>
+                  That frustration became Acme SaaS — a platform that gives solo founders and small teams everything they need to launch, manage, and scale a SaaS product in days, not months.
+                </Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Paper elevation={0} sx={{ height: 200, borderRadius: 3, background: 'linear-gradient(135deg, #eef0ff 0%, #f3e5f5 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography sx={{ fontSize: '3rem' }}>🚀</Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Values */}
+          <Box sx={{ px: 4, py: 4, bgcolor: '#fafbfc' }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 1, color: '#1a1a2e' }}>Our Values</Typography>
+            <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 4 }}>The principles that guide everything we build</Typography>
+            <Grid container spacing={2.5}>
+              {[
+                { emoji: '⚡', title: 'Speed First', desc: 'We ship fast and iterate faster. An imperfect launch beats a perfect plan.' },
+                { emoji: '🤝', title: 'Transparency', desc: 'Open pricing, honest roadmaps, and genuine communication with our users.' },
+                { emoji: '🎯', title: 'Simplicity', desc: 'Complex problems deserve simple solutions. We fight feature bloat relentlessly.' },
+                { emoji: '💪', title: 'Empowerment', desc: 'We build tools that multiply what a small team can accomplish.' },
+              ].map((v, i) => (
+                <Grid item xs={12} sm={6} key={i}>
+                  <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee', height: '100%' }}>
+                    <Typography sx={{ fontSize: '1.5rem', mb: 1 }}>{v.emoji}</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5 }}>{v.title}</Typography>
+                    <Typography variant="body2" sx={{ color: '#777', lineHeight: 1.6 }}>{v.desc}</Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          {/* Team */}
+          <Box sx={{ px: 4, py: 5 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 1, color: '#1a1a2e' }}>Meet the Team</Typography>
+            <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 4 }}>The people behind the product</Typography>
+            <Grid container spacing={3} justifyContent="center">
+              {[
+                { name: 'Alex Turner', role: 'Co-Founder & CEO', avatar: 'https://i.pravatar.cc/80?img=33' },
+                { name: 'Priya Sharma', role: 'Co-Founder & CTO', avatar: 'https://i.pravatar.cc/80?img=32' },
+                { name: 'Jordan Lee', role: 'Head of Design', avatar: 'https://i.pravatar.cc/80?img=12' },
+                { name: 'Sam Nguyen', role: 'Lead Engineer', avatar: 'https://i.pravatar.cc/80?img=59' },
+              ].map((member, i) => (
+                <Grid item xs={6} sm={3} key={i}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Avatar src={member.avatar} sx={{ width: 72, height: 72, mx: 'auto', mb: 1.5, border: '3px solid #eef0ff' }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>{member.name}</Typography>
+                    <Typography variant="caption" sx={{ color: '#888' }}>{member.role}</Typography>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          {/* Timeline */}
+          <Box sx={{ px: 4, py: 4, bgcolor: '#fafbfc' }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>Our Journey</Typography>
+            {[
+              { year: '2024', event: 'Founded — first prototype built in 2 weeks' },
+              { year: '2024', event: 'Public beta launch — 500 users in first month' },
+              { year: '2025', event: 'Reached 5,000 active users & $100K ARR' },
+              { year: '2026', event: 'Enterprise launch — SOC 2 certification' },
+            ].map((item, i) => (
+              <Box key={i} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                <Chip label={item.year} size="small" sx={{ fontWeight: 700, bgcolor: '#667eea', color: '#fff', minWidth: 50 }} />
+                <Typography variant="body2" sx={{ color: '#555' }}>{item.event}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {/* CTA */}
+          <Box sx={{ py: 5, textAlign: 'center', px: 3 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#1a1a2e' }}>Want to Join Us?</Typography>
+            <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>We're always looking for talented people to help shape the future of SaaS.</Typography>
+            <Button variant="contained" sx={{ borderRadius: 3, px: 4, background: 'linear-gradient(135deg, #667eea, #764ba2)', textTransform: 'none', fontWeight: 700 }}>
+              View Open Positions
+            </Button>
+          </Box>
+        </Box>
+      );
+
+    case 'faq':
+      return (
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* Nav */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 24, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {['Features', 'Pricing', 'FAQ', 'Contact'].map((item) => (
+                <Typography key={item} variant="body2" sx={{ color: item === 'FAQ' ? '#667eea' : '#666', fontWeight: item === 'FAQ' ? 700 : 500, cursor: 'pointer' }}>
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Hero */}
+          <Box sx={{ textAlign: 'center', pt: 6, pb: 4, px: 3 }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>Frequently Asked Questions</Typography>
+            <Typography variant="body1" sx={{ color: '#888', maxWidth: 500, mx: 'auto' }}>
+              Everything you need to know about Acme SaaS. Can't find your answer? Contact us.
+            </Typography>
+          </Box>
+
+          {/* FAQ Categories */}
+          {[
+            {
+              category: 'Getting Started',
+              questions: [
+                { q: 'How do I create my first project?', a: 'After signing up, click "New Project" on your dashboard. Choose a template, give it a name, and you\'re ready to start building in under 60 seconds.' },
+                { q: 'Do I need coding experience?', a: 'Not at all! Our visual editor and AI assistant handle the heavy lifting. However, developers can access the full code for advanced customisations.' },
+                { q: 'Can I import an existing website?', a: 'Yes — use our import tool to bring in content from any URL. We\'ll parse the structure and map it to our template system automatically.' },
+              ],
+            },
+            {
+              category: 'Billing & Plans',
+              questions: [
+                { q: 'Is there a free plan?', a: 'Yes! Our Starter plan is free forever with 1 project and 1,000 page views per month. No credit card required to get started.' },
+                { q: 'Can I change plans at any time?', a: 'Absolutely. Upgrade, downgrade, or cancel anytime. Plan changes take effect immediately and we prorate the billing automatically.' },
+                { q: 'Do you offer refunds?', a: 'We offer a 30-day money-back guarantee, no questions asked. If you\'re not satisfied, just contact support for a full refund.' },
+              ],
+            },
+            {
+              category: 'Technical',
+              questions: [
+                { q: 'What tech stack do you use?', a: 'React 18 + TypeScript on the frontend, NestJS on the backend, with n8n for workflow automation. Everything runs on serverless infrastructure.' },
+                { q: 'Can I use my own domain?', a: 'Yes — Professional and Enterprise plans support custom domains. Just point your DNS and we handle SSL certificates automatically.' },
+              ],
+            },
+          ].map((section, si) => (
+            <Box key={si} sx={{ px: 3, mb: 4 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#667eea', mb: 2, pl: 1 }}>{section.category}</Typography>
+              {section.questions.map((faq, qi) => (
+                <Paper key={qi} elevation={0} sx={{ mb: 1.5, border: '1px solid #eee', borderRadius: 2, overflow: 'hidden' }}>
+                  <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', '&:hover': { bgcolor: '#fafbfc' } }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{faq.q}</Typography>
+                    <ExpandMoreIcon sx={{ fontSize: 20, color: '#999' }} />
+                  </Box>
+                  <Box sx={{ px: 2, pb: 2 }}>
+                    <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.7 }}>{faq.a}</Typography>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          ))}
+
+          {/* Still have questions */}
+          <Box sx={{ mx: 3, mb: 4, p: 3, borderRadius: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', textAlign: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Still have questions?</Typography>
+            <Typography variant="body2" sx={{ opacity: 0.9, mb: 2 }}>Our support team is here to help. Average response time: under 2 hours.</Typography>
+            <Button variant="contained" sx={{ bgcolor: '#fff', color: '#667eea', fontWeight: 700, textTransform: 'none', borderRadius: 2 }}>
+              Contact Support
+            </Button>
+          </Box>
+        </Box>
+      );
+
+    case 'contact':
+      return (
+        <Box sx={{ overflow: 'hidden' }}>
+          {/* Nav */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BoltIcon sx={{ fontSize: 24, color: '#667eea' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#1a1a2e' }}>Acme SaaS</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {['Features', 'Pricing', 'About', 'Contact'].map((item) => (
+                <Typography key={item} variant="body2" sx={{ color: item === 'Contact' ? '#667eea' : '#666', fontWeight: item === 'Contact' ? 700 : 500, cursor: 'pointer' }}>
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Hero */}
+          <Box sx={{ textAlign: 'center', pt: 6, pb: 4, px: 3 }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>Get in Touch</Typography>
+            <Typography variant="body1" sx={{ color: '#888', maxWidth: 500, mx: 'auto' }}>
+              Have a question, feedback, or just want to say hello? We'd love to hear from you.
+            </Typography>
+          </Box>
+
+          <Box sx={{ px: 3, pb: 5 }}>
+            <Grid container spacing={4}>
+              {/* Contact Form */}
+              <Grid item xs={12} sm={7}>
+                <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>Send us a Message</Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <TextField fullWidth size="small" label="First Name" variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField fullWidth size="small" label="Last Name" variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField fullWidth size="small" label="Email Address" variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Subject</InputLabel>
+                        <Select label="Subject" defaultValue="" sx={{ borderRadius: 2 }}>
+                          <MenuItem value="general">General Inquiry</MenuItem>
+                          <MenuItem value="support">Technical Support</MenuItem>
+                          <MenuItem value="billing">Billing Question</MenuItem>
+                          <MenuItem value="partnership">Partnership</MenuItem>
+                          <MenuItem value="enterprise">Enterprise Sales</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField fullWidth multiline rows={4} label="Message" variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Button variant="contained" fullWidth sx={{ background: 'linear-gradient(135deg, #667eea, #764ba2)', fontWeight: 700, textTransform: 'none', borderRadius: 2, py: 1.2 }}>
+                        Send Message
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+
+              {/* Contact Info */}
+              <Grid item xs={12} sm={5}>
+                <Stack spacing={2.5}>
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee' }}>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                      <Avatar sx={{ bgcolor: '#eef0ff', color: '#667eea', width: 40, height: 40 }}><EmailIcon /></Avatar>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Email</Typography>
+                        <Typography variant="body2" sx={{ color: '#667eea' }}>hello@acmesaas.com</Typography>
+                        <Typography variant="caption" sx={{ color: '#888' }}>We reply within 2 hours</Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee' }}>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                      <Avatar sx={{ bgcolor: '#e8f5e9', color: '#27ae60', width: 40, height: 40 }}><PhoneIcon /></Avatar>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Phone</Typography>
+                        <Typography variant="body2" sx={{ color: '#555' }}>+1 (555) 123-4567</Typography>
+                        <Typography variant="caption" sx={{ color: '#888' }}>Mon–Fri, 9 AM – 6 PM EST</Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee' }}>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                      <Avatar sx={{ bgcolor: '#fce4ec', color: '#e74c3c', width: 40, height: 40 }}><LocationIcon /></Avatar>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Office</Typography>
+                        <Typography variant="body2" sx={{ color: '#555' }}>123 Innovation Drive</Typography>
+                        <Typography variant="caption" sx={{ color: '#888' }}>San Francisco, CA 94105</Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+
+                  {/* Map placeholder */}
+                  <Paper elevation={0} sx={{ height: 120, borderRadius: 3, border: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5' }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <LocationIcon sx={{ fontSize: 28, color: '#ccc' }} />
+                      <Typography variant="caption" sx={{ display: 'block', color: '#bbb' }}>Map placeholder</Typography>
+                    </Box>
+                  </Paper>
+                </Stack>
+              </Grid>
+            </Grid>
+          </Box>
+        </Box>
+      );
+
     default:
       return null;
   }
@@ -1242,6 +1746,172 @@ export const TemplatesPage: React.FC = () => {
             { text: 'Payment received: $99.00', time: '15 min ago' },
             { text: 'Support ticket #482 resolved', time: '1 hr ago' },
             { text: 'Database backup completed', time: '3 hrs ago' },
+          ],
+        };
+
+      case 'pricing':
+        return {
+          page_type: 'pricing',
+          description: template.description,
+          features: template.features,
+          hero: {
+            headline: 'Simple, Transparent Pricing',
+            subheading: 'Start free, scale as you grow. No hidden fees, no surprises. Cancel anytime.',
+          },
+          billing_toggle: { options: ['Monthly', 'Annual'], discount: 'Save 20%' },
+          plans: [
+            {
+              name: 'Starter',
+              price_monthly: '$0',
+              price_annual: '$0',
+              period: '/mo',
+              description: 'Perfect for side projects and MVPs',
+              features: ['1 project', '1,000 page views/mo', 'Community support', 'Basic analytics', 'SSL included'],
+              cta: 'Get Started Free',
+              popular: false,
+            },
+            {
+              name: 'Professional',
+              price_monthly: '$29',
+              price_annual: '$23',
+              period: '/mo',
+              description: 'For growing businesses and teams',
+              features: ['10 projects', '100,000 page views/mo', 'Priority support', 'Advanced analytics', 'Custom domains', 'Team collaboration', 'API access'],
+              cta: 'Start Free Trial',
+              popular: true,
+            },
+            {
+              name: 'Enterprise',
+              price_monthly: '$99',
+              price_annual: '$79',
+              period: '/mo',
+              description: 'For large-scale production apps',
+              features: ['Unlimited projects', 'Unlimited page views', 'Dedicated support', 'Custom analytics', 'SLA guarantee', 'SSO & SAML', 'Audit logs', 'Custom integrations'],
+              cta: 'Contact Sales',
+              popular: false,
+            },
+          ],
+          comparison: {
+            title: 'Compare Plans',
+            rows: [
+              { feature: 'Projects', starter: '1', pro: '10', enterprise: 'Unlimited' },
+              { feature: 'Team members', starter: '1', pro: '5', enterprise: 'Unlimited' },
+              { feature: 'Custom domains', starter: '—', pro: '✓', enterprise: '✓' },
+              { feature: 'API access', starter: '—', pro: '✓', enterprise: '✓' },
+              { feature: 'Priority support', starter: '—', pro: '✓', enterprise: '✓' },
+              { feature: 'SSO / SAML', starter: '—', pro: '—', enterprise: '✓' },
+            ],
+          },
+          trust_badges: ['🔒 256-bit SSL', '💳 No credit card required', '🔄 Cancel anytime', '💰 30-day money-back'],
+        };
+
+      case 'about':
+        return {
+          page_type: 'about',
+          description: template.description,
+          features: template.features,
+          hero: {
+            headline: 'Our Mission',
+            subheading: 'We believe every entrepreneur deserves the tools to build and launch a world-class SaaS product — without needing a team of ten engineers.',
+          },
+          story: {
+            overline: 'Our Story',
+            headline: 'Born from Frustration, Built with Love',
+            paragraphs: [
+              'In 2024, our founders spent months wiring together authentication, billing, dashboards, and landing pages just to test a simple idea. They thought: there has to be a better way.',
+              'That frustration became Acme SaaS — a platform that gives solo founders and small teams everything they need to launch, manage, and scale a SaaS product in days, not months.',
+            ],
+          },
+          values: [
+            { emoji: '⚡', title: 'Speed First', description: 'We ship fast and iterate faster. An imperfect launch beats a perfect plan.' },
+            { emoji: '🤝', title: 'Transparency', description: 'Open pricing, honest roadmaps, and genuine communication with our users.' },
+            { emoji: '🎯', title: 'Simplicity', description: 'Complex problems deserve simple solutions. We fight feature bloat relentlessly.' },
+            { emoji: '💪', title: 'Empowerment', description: 'We build tools that multiply what a small team can accomplish.' },
+          ],
+          team: [
+            { name: 'Alex Turner', role: 'Co-Founder & CEO', avatar: 'https://i.pravatar.cc/80?img=33' },
+            { name: 'Priya Sharma', role: 'Co-Founder & CTO', avatar: 'https://i.pravatar.cc/80?img=32' },
+            { name: 'Jordan Lee', role: 'Head of Design', avatar: 'https://i.pravatar.cc/80?img=12' },
+            { name: 'Sam Nguyen', role: 'Lead Engineer', avatar: 'https://i.pravatar.cc/80?img=59' },
+          ],
+          timeline: [
+            { year: '2024', event: 'Founded — first prototype built in 2 weeks' },
+            { year: '2024', event: 'Public beta launch — 500 users in first month' },
+            { year: '2025', event: 'Reached 5,000 active users & $100K ARR' },
+            { year: '2026', event: 'Enterprise launch — SOC 2 certification' },
+          ],
+          cta: {
+            headline: 'Want to Join Us?',
+            subheading: "We're always looking for talented people to help shape the future of SaaS.",
+            button_text: 'View Open Positions',
+          },
+        };
+
+      case 'faq':
+        return {
+          page_type: 'faq',
+          description: template.description,
+          features: template.features,
+          hero: {
+            headline: 'Frequently Asked Questions',
+            subheading: "Everything you need to know about Acme SaaS. Can't find your answer? Contact us.",
+          },
+          categories: [
+            {
+              title: 'Getting Started',
+              questions: [
+                { question: 'How do I create my first project?', answer: "After signing up, click 'New Project' on your dashboard. Choose a template, give it a name, and you're ready to start building in under 60 seconds." },
+                { question: 'Do I need coding experience?', answer: 'Not at all! Our visual editor and AI assistant handle the heavy lifting. However, developers can access the full code for advanced customisations.' },
+                { question: 'Can I import an existing website?', answer: "Yes — use our import tool to bring in content from any URL. We'll parse the structure and map it to our template system automatically." },
+              ],
+            },
+            {
+              title: 'Billing & Plans',
+              questions: [
+                { question: 'Is there a free plan?', answer: 'Yes! Our Starter plan is free forever with 1 project and 1,000 page views per month. No credit card required to get started.' },
+                { question: 'Can I change plans at any time?', answer: 'Absolutely. Upgrade, downgrade, or cancel anytime. Plan changes take effect immediately and we prorate the billing automatically.' },
+                { question: 'Do you offer refunds?', answer: "We offer a 30-day money-back guarantee, no questions asked. If you're not satisfied, just contact support for a full refund." },
+              ],
+            },
+            {
+              title: 'Technical',
+              questions: [
+                { question: 'What tech stack do you use?', answer: 'React 18 + TypeScript on the frontend, NestJS on the backend, with n8n for workflow automation. Everything runs on serverless infrastructure.' },
+                { question: 'Can I use my own domain?', answer: 'Yes — Professional and Enterprise plans support custom domains. Just point your DNS and we handle SSL certificates automatically.' },
+              ],
+            },
+          ],
+          support_cta: {
+            headline: 'Still have questions?',
+            subheading: 'Our support team is here to help. Average response time: under 2 hours.',
+            button_text: 'Contact Support',
+          },
+        };
+
+      case 'contact':
+        return {
+          page_type: 'contact',
+          description: template.description,
+          features: template.features,
+          hero: {
+            headline: 'Get in Touch',
+            subheading: "Have a question, feedback, or just want to say hello? We'd love to hear from you.",
+          },
+          form: {
+            title: 'Send us a Message',
+            fields: [
+              { name: 'first_name', label: 'First Name', type: 'text', half: true },
+              { name: 'last_name', label: 'Last Name', type: 'text', half: true },
+              { name: 'email', label: 'Email Address', type: 'email' },
+              { name: 'subject', label: 'Subject', type: 'select', options: ['General Inquiry', 'Technical Support', 'Billing Question', 'Partnership', 'Enterprise Sales'] },
+              { name: 'message', label: 'Message', type: 'textarea', rows: 4 },
+            ],
+            submit_text: 'Send Message',
+          },
+          contact_info: [
+            { icon: 'email', title: 'Email', value: 'hello@acmesaas.com', detail: 'We reply within 2 hours' },
+            { icon: 'phone', title: 'Phone', value: '+1 (555) 123-4567', detail: 'Mon–Fri, 9 AM – 6 PM EST' },
+            { icon: 'location', title: 'Office', value: '123 Innovation Drive', detail: 'San Francisco, CA 94105' },
           ],
         };
 

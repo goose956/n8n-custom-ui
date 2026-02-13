@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 /* ─── Types ────────────────────────────────────────────────────────── */
 
@@ -63,6 +64,7 @@ export class SocialMonitorService {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   /* ─── Keywords ────────────────────────────────────────────────── */
@@ -332,6 +334,7 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
 
     try {
       let reply = '';
+      const startTime = Date.now();
 
       if (aiKey.provider === 'openrouter') {
         const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -346,9 +349,10 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
           timeout: 30000,
         });
         reply = res.data.choices?.[0]?.message?.content || '';
+        await this.trackCost('openrouter', 'anthropic/claude-sonnet-4', res.data.usage?.prompt_tokens || 0, res.data.usage?.completion_tokens || 0, Date.now() - startTime, 'social-monitor');
       } else if (aiKey.provider === 'openai') {
         const res = await axios.post('https://api.openai.com/v1/chat/completions', {
-          model: 'gpt-4',
+          model: 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -359,6 +363,7 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
           timeout: 30000,
         });
         reply = res.data.choices?.[0]?.message?.content || '';
+        await this.trackCost('openai', 'gpt-4o', res.data.usage?.prompt_tokens || 0, res.data.usage?.completion_tokens || 0, Date.now() - startTime, 'social-monitor');
       } else if (aiKey.provider === 'claude') {
         const res = await axios.post('https://api.anthropic.com/v1/messages', {
           model: 'claude-sonnet-4-20250514',
@@ -374,6 +379,7 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
           timeout: 30000,
         });
         reply = res.data.content?.[0]?.text || '';
+        await this.trackCost('claude', 'claude-sonnet-4-20250514', res.data.usage?.input_tokens || 0, res.data.usage?.output_tokens || 0, Date.now() - startTime, 'social-monitor');
       }
 
       if (reply) {
@@ -383,8 +389,10 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
       }
 
       return { reply };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+    } catch (err: any) {
+      const apiMsg = err?.response?.data?.error?.message || err?.response?.data?.message || '';
+      const msg = apiMsg || (err instanceof Error ? err.message : String(err));
+      console.error('Social monitor AI draft error:', err?.response?.status, msg);
       throw new Error(`AI draft failed: ${msg}`);
     }
   }
@@ -522,5 +530,18 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
 
   private saveData(data: any): void {
     fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
+  }
+
+  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {
+    const rates: Record<string, [number, number]> = {
+      'gpt-4o-mini': [0.15, 0.60], 'gpt-4o': [2.50, 10.00], 'gpt-3.5-turbo': [0.50, 1.50],
+      'gpt-4': [30.00, 60.00], 'google/gemini-2.0-flash-001': [0.10, 0.40],
+      'anthropic/claude-sonnet-4': [3.00, 15.00], 'claude-sonnet-4-20250514': [3.00, 15.00], 'openai/gpt-4o': [2.50, 10.00],
+    };
+    const [inR, outR] = rates[model] || [1.00, 3.00];
+    const cost = (tokensIn * inR + tokensOut * outR) / 1_000_000;
+    await this.analyticsService.trackApiUsage({
+      provider: provider as any, endpoint: '/chat/completions', model, tokensIn, tokensOut, cost, duration, statusCode: 200, success: true, module,
+    }).catch(() => {});
   }
 }

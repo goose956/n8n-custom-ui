@@ -60,8 +60,8 @@ export class BlogController {
   }
 
   @Post('generate-all')
-  async generateAll() {
-    return this.blogService.generateAll();
+  async generateAll(@Body() body?: { ids?: string[] }) {
+    return this.blogService.generateAll(body?.ids);
   }
 
   @Post('retry/:id')

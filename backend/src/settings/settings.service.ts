@@ -129,12 +129,18 @@ export class SettingsService {
           return await this.testOpenAIKey(apiKey);
         case 'openrouter':
           return await this.testOpenRouterKey(apiKey);
+        case 'claude':
+          return await this.testClaudeKey(apiKey);
+        case 'brave':
+          return await this.testBraveKey(apiKey);
         case 'make':
           return await this.testMakeKey(apiKey);
         case 'zapier':
           return await this.testZapierKey(apiKey);
         case 'apify':
           return await this.testApifyKey(apiKey);
+        case 'stripe':
+          return await this.testStripeKey(apiKey);
         default:
           return { success: false, message: `Unknown service: ${service}` };
       }
@@ -194,6 +200,70 @@ export class SettingsService {
       }
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, message: `OpenRouter test failed: ${message}` };
+    }
+  }
+
+  private async testBraveKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+        params: { q: 'test', count: 1 },
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': apiKey,
+        },
+        timeout: 10000,
+      });
+
+      const resultCount = response.data.web?.results?.length || 0;
+      return { success: true, message: `Brave Search API key is valid! Test query returned ${resultCount} result(s).` };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          return { success: false, message: 'Brave Search API key is invalid (Unauthorized). Check your key at https://brave.com/search/api/' };
+        }
+        if (error.response?.status === 429) {
+          return { success: false, message: 'Brave Search rate limit reached. The key is valid but you have hit the usage limit.' };
+        }
+        return { success: false, message: `Brave Search test failed: ${error.response?.status} - ${error.response?.statusText || error.message}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Brave Search test failed: ${message}` };
+    }
+  }
+
+  private async testClaudeKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.post(
+        'https://api.anthropic.com/v1/messages',
+        {
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Say "ok"' }],
+        },
+        {
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        },
+      );
+
+      return { success: true, message: 'Claude API key is valid!' };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'Claude API key is invalid (401 Unauthorized)' };
+        }
+        if (error.response?.status === 403) {
+          return { success: false, message: 'Claude API key is forbidden (403). Check permissions.' };
+        }
+        return { success: false, message: `Claude test failed: ${error.response?.status} - ${error.response?.statusText || error.message}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Claude test failed: ${message}` };
     }
   }
 
@@ -262,6 +332,32 @@ export class SettingsService {
       }
       const message = error instanceof Error ? error.message : String(error);
       return { success: false, message: `Apify test failed: ${message}` };
+    }
+  }
+
+  private async testStripeKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await axios.get('https://api.stripe.com/v1/balance', {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        timeout: 5000,
+      });
+      const available = response.data.available || [];
+      const balanceStr = available
+        .map((b: any) => `${(b.amount / 100).toFixed(2)} ${b.currency.toUpperCase()}`)
+        .join(', ');
+      return {
+        success: true,
+        message: `Stripe connected! ${available.length > 0 ? `Balance: ${balanceStr}` : 'Account verified.'}`,
+      };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          return { success: false, message: 'Stripe API key is invalid (401 Unauthorized)' };
+        }
+        return { success: false, message: `Stripe test failed: ${error.response?.status} - ${error.response?.statusText}` };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Stripe test failed: ${message}` };
     }
   }
 

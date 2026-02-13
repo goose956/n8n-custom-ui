@@ -37,7 +37,9 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import SecurityIcon from '@mui/icons-material/Security';
+import PaymentIcon from '@mui/icons-material/Payment';
 import axios from 'axios';
+import { StripePage } from './StripePage';
 
 interface Settings {
   n8nUrl: string;
@@ -58,6 +60,7 @@ interface IntegrationKeys {
   make: string;
   zapier: string;
   apify: string;
+  stripe: string;
 }
 
 const SETTINGS_API = API.settings;
@@ -88,6 +91,7 @@ function SettingsPage() {
     make: '',
     zapier: '',
     apify: '',
+    stripe: '',
   });
   const [integrationKeysLoading, setIntegrationKeysLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
@@ -97,6 +101,7 @@ function SettingsPage() {
     make: false,
     zapier: false,
     apify: false,
+    stripe: false,
   });
   const [integrationKeysTestLoading, setIntegrationKeysTestLoading] = useState<{ [key: string]: boolean }>({
     openai: false,
@@ -106,6 +111,7 @@ function SettingsPage() {
     make: false,
     zapier: false,
     apify: false,
+    stripe: false,
   });
   
   // OpenAI specific state
@@ -131,10 +137,11 @@ function SettingsPage() {
           make: '',
           zapier: '',
           apify: '',
+          stripe: '',
         };
         
         keys.forEach((key: ApiKey) => {
-          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'claude' || key.name === 'brave' || key.name === 'make' || key.name === 'zapier' || key.name === 'apify') {
+          if (key.name === 'openai' || key.name === 'openrouter' || key.name === 'claude' || key.name === 'brave' || key.name === 'make' || key.name === 'zapier' || key.name === 'apify' || key.name === 'stripe') {
             integrations[key.name as keyof IntegrationKeys] = 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'; // Show masked placeholder
           }
         });
@@ -343,7 +350,7 @@ function SettingsPage() {
           Settings
         </Typography>
         <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
-          Configure your n8n connection, manage API keys, and set up third-party integrations.
+          Configure your n8n connection, manage API keys, and set up third-party integrations. Connect Stripe for payments, set up Brave Search and Claude API keys, and customise how Surface works for you.
         </Typography>
       </Box>
 
@@ -368,6 +375,7 @@ function SettingsPage() {
           <Tab icon={<LinkIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="n8n Connection" />
           <Tab icon={<VpnKeyIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Global API Keys" />
           <Tab icon={<ExtensionIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Integration Keys" />
+          <Tab icon={<PaymentIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Stripe" />
         </Tabs>
       </Paper>
 
@@ -756,9 +764,45 @@ function SettingsPage() {
                   </Box>
                 </Stack>
               </Paper>
+
+              {/* Stripe */}
+              <Paper elevation={0} sx={{ p: 2.5, border: '1px solid rgba(0,0,0,0.06)', '&:hover': { borderColor: 'rgba(102,126,234,0.2)' }, transition: 'border-color 0.2s' }}>
+                <Stack spacing={2}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e' }}>Stripe</Typography>
+                      <Typography variant="caption" sx={{ color: '#999' }}>Payment processing for your apps — accepts cards, subscriptions & more</Typography>
+                    </Box>
+                    {integrationKeys.stripe && integrationKeys.stripe !== '' && (
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize: '0.75rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#27ae60', '& .MuiChip-icon': { color: '#27ae60' } }} />
+                    )}
+                  </Box>
+                  <TextField fullWidth label="Secret Key" type="password" placeholder="sk_live_... or sk_test_..." value={integrationKeys.stripe} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, stripe: e.target.value }))} variant="outlined" size="small" />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button variant="contained" onClick={() => handleSaveIntegrationKey('stripe')} disabled={integrationKeysLoading.stripe || !integrationKeys.stripe} size="small" sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
+                      {integrationKeysLoading.stripe ? 'Saving...' : 'Save'}
+                    </Button>
+                    {integrationKeys.stripe === '••••••••' && (
+                      <>
+                        <Button variant="outlined" onClick={() => handleTestIntegrationKey('stripe')} disabled={integrationKeysTestLoading.stripe} size="small" sx={{ borderColor: '#e0e0e0', color: '#666', '&:hover': { borderColor: '#667eea', color: '#667eea' } }}>
+                          {integrationKeysTestLoading.stripe ? 'Testing...' : 'Test'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => handleDeleteIntegrationKey('stripe')} size="small" sx={{ borderColor: '#e0e0e0', color: '#e74c3c', '&:hover': { borderColor: '#e74c3c', bgcolor: '#fef0ef' } }}>
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
             </Stack>
           </Paper>
         </Stack>
+      )}
+
+      {/* Tab 4: Stripe */}
+      {currentTab === 3 && (
+        <StripePage />
       )}
 
       {/* Add API Key Dialog */}

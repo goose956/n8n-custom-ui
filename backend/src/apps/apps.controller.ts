@@ -204,4 +204,37 @@ export class AppsController {
       throw new BadRequestException(message);
     }
   }
+
+  /**
+   * POST /api/apps/:id/generate-pages - AI-generate page content from app description
+   */
+  @Post(':id/generate-pages')
+  async generatePages(
+    @Param('id') id: string,
+    @Body() body?: { targetAudience?: string; keyProblem?: string; uniqueValue?: string },
+  ): Promise<ApiResponse<{ pagesUpdated: number }>> {
+    try {
+      const extraContext = body && (body.targetAudience || body.keyProblem || body.uniqueValue) ? body : undefined;
+      const result = await this.appsService.generatePagesContent(parseInt(id, 10), extraContext);
+      if (!result.success) {
+        return {
+          success: false,
+          data: { pagesUpdated: 0 },
+          error: result.error,
+          timestamp: new Date().toISOString(),
+        };
+      }
+      return {
+        success: true,
+        data: { pagesUpdated: result.pagesUpdated },
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      throw new BadRequestException(message);
+    }
+  }
 }

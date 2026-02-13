@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 const SITEMAP_DIR = path.join(__dirname, '../../public');
 
@@ -51,6 +52,7 @@ export class BlogService {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
+    private readonly analyticsService: AnalyticsService,
   ) {
     // Ensure public dir exists for sitemap
     if (!fs.existsSync(SITEMAP_DIR)) {
@@ -122,6 +124,9 @@ export class BlogService {
   }
 
   private async callAI(provider: { provider: string; key: string; url: string; model: string }, systemPrompt: string, userPrompt: string): Promise<string> {
+    const startTime = Date.now();
+    let tokensIn = 0, tokensOut = 0;
+
     if (provider.provider === 'claude') {
       const response = await axios.post(
         provider.url,
@@ -140,6 +145,9 @@ export class BlogService {
           timeout: 180000,
         },
       );
+      tokensIn = response.data.usage?.input_tokens || 0;
+      tokensOut = response.data.usage?.output_tokens || 0;
+      await this.trackCost(provider.provider, provider.model, tokensIn, tokensOut, Date.now() - startTime, 'blog');
       return response.data.content[0].text;
     } else {
       const headers: any = {
@@ -163,6 +171,9 @@ export class BlogService {
         },
         { headers, timeout: 180000 },
       );
+      tokensIn = response.data.usage?.prompt_tokens || 0;
+      tokensOut = response.data.usage?.completion_tokens || 0;
+      await this.trackCost(provider.provider, provider.model, tokensIn, tokensOut, Date.now() - startTime, 'blog');
       return response.data.choices[0].message.content;
     }
   }
@@ -555,9 +566,16 @@ Remember: every heading should be answerable, every paragraph should lead with i
 
   // ─── Bulk generate ───────────────────────────────────────────────────────────
 
-  async generateAll(): Promise<{ success: boolean; message: string; results: { id: string; success: boolean; message: string }[] }> {
+  async generateAll(ids?: string[]): Promise<{ success: boolean; message: string; results: { id: string; success: boolean; message: string }[] }> {
     const posts = this.getPosts();
-    const queued = posts.filter((p) => p.status === 'queued' || p.status === 'failed');
+    let queued: typeof posts;
+    if (ids && ids.length > 0) {
+      // Generate only the specified posts (regardless of status, as long as they're queued/failed)
+      const idSet = new Set(ids);
+      queued = posts.filter((p) => idSet.has(p.id) && (p.status === 'queued' || p.status === 'failed'));
+    } else {
+      queued = posts.filter((p) => p.status === 'queued' || p.status === 'failed');
+    }
     const results: { id: string; success: boolean; message: string }[] = [];
 
     for (const post of queued) {
@@ -606,6 +624,10 @@ Remember: every heading should be answerable, every paragraph should lead with i
     // Regenerate sitemap on status change
     if (updates.status === 'published' || (wasPublished && updates.status && (updates.status as string) !== 'published')) {
       this.generateSitemap();
+      // Sync published posts into the blog-page template
+      if (updated.projectId != null) {
+        this.syncBlogPageContent(updated.projectId);
+      }
     }
 
     return { success: true, data: updated, message: 'Post updated' };
@@ -619,10 +641,14 @@ Remember: every heading should be answerable, every paragraph should lead with i
     if (idx === -1) return { success: false, message: 'Post not found' };
 
     const wasPublished = posts[idx].status === 'published';
+    const projectId = posts[idx].projectId;
     posts.splice(idx, 1);
     this.savePosts(posts);
 
-    if (wasPublished) this.generateSitemap();
+    if (wasPublished) {
+      this.generateSitemap();
+      if (projectId != null) this.syncBlogPageContent(projectId);
+    }
 
     return { success: true, message: 'Post deleted' };
   }
@@ -631,11 +657,96 @@ Remember: every heading should be answerable, every paragraph should lead with i
 
   async deletePosts(ids: string[]): Promise<{ success: boolean; message: string }> {
     let posts = this.getPosts();
-    const hadPublished = posts.some((p) => ids.includes(p.id) && p.status === 'published');
+    // Track which projects had published posts deleted
+    const affectedProjectIds = new Set<number>();
+    posts.forEach((p) => {
+      if (ids.includes(p.id) && p.status === 'published' && p.projectId != null) {
+        affectedProjectIds.add(p.projectId);
+      }
+    });
+    const hadPublished = affectedProjectIds.size > 0;
     posts = posts.filter((p) => !ids.includes(p.id));
     this.savePosts(posts);
-    if (hadPublished) this.generateSitemap();
+    if (hadPublished) {
+      this.generateSitemap();
+      affectedProjectIds.forEach((pid) => this.syncBlogPageContent(pid));
+    }
     return { success: true, message: `${ids.length} post(s) deleted` };
+  }
+
+  // ─── Sync published posts into the blog-page template ─────────────────────
+
+  private syncBlogPageContent(projectId: number): void {
+    try {
+      const data = this.readDb();
+      const pages: any[] = data.pages || [];
+      const apps: any[] = data.apps || [];
+
+      const app = apps.find((a: any) => a.id === projectId);
+      if (!app) return;
+
+      // Find the blog-page for this app
+      const blogPageIdx = pages.findIndex(
+        (p: any) => p.app_id === projectId && p.page_type === 'blog-page',
+      );
+      if (blogPageIdx === -1) return;
+
+      // Get all published posts for this project, newest first
+      const published = (data.blogPosts || [])
+        .filter((p: BlogPost) => p.projectId === projectId && p.status === 'published')
+        .sort(
+          (a: BlogPost, b: BlogPost) =>
+            new Date(b.publishedAt || b.createdAt).getTime() -
+            new Date(a.publishedAt || a.createdAt).getTime(),
+        );
+
+      const existing = pages[blogPageIdx].content_json || {};
+      const appName = app.name || app.slug || 'Team';
+
+      // Map a BlogPost to the template card format
+      const mapPost = (post: BlogPost) => ({
+        title: post.title,
+        excerpt: post.excerpt || post.metaDescription || '',
+        author: appName,
+        date: post.publishedAt
+          ? new Date(post.publishedAt).toISOString().split('T')[0]
+          : new Date(post.createdAt).toISOString().split('T')[0],
+        read_time: `${Math.max(1, Math.ceil((post.wordCount || 200) / 200))} min read`,
+        category: (post.tags && post.tags[0]) || 'General',
+        slug: post.slug,
+      });
+
+      // Newest post becomes the featured post; rest fill the grid
+      const featured =
+        published.length > 0
+          ? { ...mapPost(published[0]), image_placeholder: 'featured-post-hero.jpg' }
+          : null;
+
+      const gridPosts = published.slice(1).map(mapPost);
+
+      // Collect unique categories from the published posts
+      const cats = new Set<string>(['All']);
+      for (const p of published) {
+        if (p.tags) p.tags.forEach((t: string) => cats.add(t));
+      }
+
+      // Update content_json, preserving nav / hero / newsletter
+      pages[blogPageIdx].content_json = {
+        ...existing,
+        featured_post: featured,
+        posts: gridPosts,
+        categories: cats.size > 1 ? Array.from(cats) : existing.categories || ['All'],
+      };
+      pages[blogPageIdx].updated_at = new Date().toISOString();
+
+      data.pages = pages;
+      this.writeDb(data);
+      console.log(
+        `[Blog] Synced ${published.length} published post(s) into blog-page for project ${projectId}`,
+      );
+    } catch (err) {
+      console.error('Failed to sync blog page content:', err);
+    }
   }
 
   // ─── Publish / Unpublish ─────────────────────────────────────────────────────
@@ -717,5 +828,18 @@ ${combinedSitemap}</urlset>`;
     posts[idx] = { ...posts[idx], status: 'queued', error: undefined, updatedAt: new Date().toISOString() };
     this.savePosts(posts);
     return this.generatePost(id);
+  }
+
+  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {
+    const rates: Record<string, [number, number]> = {
+      'gpt-4o-mini': [0.15, 0.60], 'gpt-4o': [2.50, 10.00], 'gpt-3.5-turbo': [0.50, 1.50],
+      'gpt-4': [30.00, 60.00], 'google/gemini-2.0-flash-001': [0.10, 0.40],
+      'anthropic/claude-sonnet-4': [3.00, 15.00], 'claude-sonnet-4-20250514': [3.00, 15.00], 'openai/gpt-4o': [2.50, 10.00],
+    };
+    const [inR, outR] = rates[model] || [1.00, 3.00];
+    const cost = (tokensIn * inR + tokensOut * outR) / 1_000_000;
+    await this.analyticsService.trackApiUsage({
+      provider: provider as any, endpoint: '/chat/completions', model, tokensIn, tokensOut, cost, duration, statusCode: 200, success: true, module,
+    }).catch(() => {});
   }
 }

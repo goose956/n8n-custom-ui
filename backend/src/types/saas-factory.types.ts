@@ -3,6 +3,8 @@
  */
 
 // ==================== Apps ====================
+export type AppLocale = 'en-GB' | 'en-US';
+
 export interface App {
   id: number;
   name: string;
@@ -10,6 +12,7 @@ export interface App {
   description?: string;
   logo_url?: string;
   primary_color: string;
+  locale?: AppLocale;
   n8n_workflow_id?: string;
   version: string;
   active: boolean;
@@ -23,6 +26,7 @@ export interface CreateAppDto {
   description?: string;
   logo_url?: string;
   primary_color?: string;
+  locale?: AppLocale;
   n8n_workflow_id?: string;
 }
 
@@ -31,6 +35,7 @@ export interface UpdateAppDto {
   description?: string;
   logo_url?: string;
   primary_color?: string;
+  locale?: AppLocale;
   active?: boolean;
 }
 
@@ -38,7 +43,7 @@ export interface UpdateAppDto {
 export interface Page {
   id: number;
   app_id: number;
-  page_type: 'index' | 'thanks' | 'members' | 'checkout' | 'admin' | 'custom';
+  page_type: 'index' | 'thanks' | 'members' | 'checkout' | 'admin' | 'features' | 'pricing' | 'about' | 'blog-page' | 'custom';
   title: string;
   content_json?: Record<string, any>;
   custom_css?: string;

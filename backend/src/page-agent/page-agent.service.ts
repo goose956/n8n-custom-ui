@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 /**
  * Defines a single backend task that needs to be completed
@@ -50,6 +51,7 @@ export class PageAgentService {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   private getApiKey(provider: string): string | null {
@@ -109,6 +111,18 @@ export class PageAgentService {
         break;
       case 'thanks':
         this.analyzeThanksPage(content, db, appId, tasks);
+        break;
+      case 'features':
+        this.analyzeFeaturesPage(content, db, appId, tasks);
+        break;
+      case 'pricing':
+        this.analyzePricingPage(content, db, appId, tasks);
+        break;
+      case 'about':
+        this.analyzeAboutPage(content, db, appId, tasks);
+        break;
+      case 'blog-page':
+        this.analyzeBlogPage(content, db, appId, tasks);
         break;
       default:
         this.analyzeGenericPage(content, db, appId, tasks);
@@ -361,6 +375,30 @@ export class PageAgentService {
   // ─── Index/landing page analysis ───
 
   private analyzeIndexPage(content: any, db: any, appId: number, tasks: BackendTask[]): void {
+    // Seed testimonials / social proof data
+    if (content.trusted_by || content.social_proof || content.testimonials) {
+      const hasTestimonials = (db.testimonials || []).filter((t: any) => t.app_id === appId).length > 0;
+      tasks.push({
+        id: 'index-testimonials-seed',
+        category: 'database',
+        title: 'Seed testimonial records',
+        description: 'Create testimonial records so the landing page social proof section pulls from real data.',
+        status: hasTestimonials ? 'done' : 'pending',
+        priority: 'medium',
+        implementation: hasTestimonials ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'testimonials',
+            records: [
+              { name: 'Sarah Chen', role: 'Founder, TechStart', quote: 'Absolutely transformed how we build our product.', rating: 5 },
+              { name: 'Marcus Johnson', role: 'CTO, ScaleUp', quote: 'The best investment we\'ve made for our SaaS stack.', rating: 5 },
+              { name: 'Emily Rodriguez', role: 'Product Lead', quote: 'Intuitive, powerful, and saves us hours every week.', rating: 5 },
+            ],
+          },
+        },
+      });
+    }
+
     if (content.features_section) {
       tasks.push({
         id: 'index-features-api',
@@ -373,13 +411,25 @@ export class PageAgentService {
     }
 
     if (content.stats) {
+      const hasStats = (db.site_stats || []).filter((s: any) => s.app_id === appId).length > 0;
       tasks.push({
-        id: 'index-stats-api',
-        category: 'api',
-        title: 'Live stats aggregation',
-        description: 'Create GET /api/apps/:id/public-stats that returns real active user count, uptime SLA, and revenue figures for the landing page social proof.',
-        status: 'pending',
+        id: 'index-stats-seed',
+        category: 'database',
+        title: 'Seed landing page stats',
+        description: 'Create stats records so the landing page shows real metrics instead of hardcoded numbers.',
+        status: hasStats ? 'done' : 'pending',
         priority: 'medium',
+        implementation: hasStats ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'site_stats',
+            records: [
+              { stat_key: 'active_users', stat_value: '2,500+', label: 'Active Users' },
+              { stat_key: 'uptime', stat_value: '99.9%', label: 'Uptime SLA' },
+              { stat_key: 'satisfaction', stat_value: '4.9/5', label: 'Customer Rating' },
+            ],
+          },
+        },
       });
     }
 
@@ -439,6 +489,271 @@ export class PageAgentService {
         description: 'Create GET/PUT /api/apps/:id/onboarding that tracks which onboarding steps the user has completed and returns progress.',
         status: 'pending',
         priority: 'low',
+      });
+    }
+  }
+
+  // ─── Features page analysis ───
+
+  private analyzeFeaturesPage(content: any, db: any, appId: number, tasks: BackendTask[]): void {
+    // Feature categories need a dynamic API so they can be managed from admin
+    if (content.feature_categories) {
+      const hasFeatureRecords = (db.features || []).filter((f: any) => f.app_id === appId).length > 0;
+      tasks.push({
+        id: 'features-data-seed',
+        category: 'database',
+        title: 'Seed feature records',
+        description: 'Create feature records in the database so the features page can be managed dynamically from the admin panel.',
+        status: hasFeatureRecords ? 'done' : 'pending',
+        priority: 'high',
+        implementation: {
+          type: 'db_seed',
+          payload: {
+            table: 'features',
+            records: (content.feature_categories || []).flatMap((cat: any) =>
+              (cat.items || []).map((item: any) => ({
+                category: cat.category,
+                title: typeof item === 'string' ? item : (item.title || 'Feature'),
+                description: typeof item === 'string' ? '' : (item.description || ''),
+                icon: typeof item === 'string' ? 'star' : (item.icon || 'star'),
+              })),
+            ),
+          },
+        },
+      });
+
+      tasks.push({
+        id: 'features-api',
+        category: 'api',
+        title: 'Features CRUD API',
+        description: 'Create GET/POST/PUT/DELETE /api/apps/:id/features endpoints so features can be dynamically managed.',
+        status: 'pending',
+        priority: 'medium',
+      });
+    }
+
+    if (content.comparison) {
+      tasks.push({
+        id: 'features-comparison-data',
+        category: 'data',
+        title: 'Comparison table data',
+        description: 'Store comparison data in the database so it can be updated without redeploying — useful for keeping competitor info current.',
+        status: 'pending',
+        priority: 'low',
+      });
+    }
+
+    if (content.cta_footer) {
+      tasks.push({
+        id: 'features-cta-signup',
+        category: 'api',
+        title: 'CTA signup endpoint',
+        description: 'Wire the "Get Started" CTA to POST /api/apps/:id/signup to create a user account and start a free trial.',
+        status: 'pending',
+        priority: 'high',
+      });
+    }
+  }
+
+  // ─── Pricing page analysis ───
+
+  private analyzePricingPage(content: any, db: any, appId: number, tasks: BackendTask[]): void {
+    const existingPlans = (db.plans || []).filter((p: any) => p.app_id === appId);
+
+    if (content.plans && content.plans.length > 0) {
+      // Check if the DB plans match the page pricing plans
+      const plansMatch = existingPlans.length >= content.plans.length;
+      tasks.push({
+        id: 'pricing-sync-plans',
+        category: 'database',
+        title: 'Sync pricing plans to database',
+        description: 'Ensure the pricing page plans match the database records so checkout and subscription management use consistent data.',
+        status: plansMatch ? 'done' : 'pending',
+        priority: 'high',
+        implementation: plansMatch ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'plans',
+            records: content.plans.map((p: any) => ({
+              name: p.name,
+              price: p.price,
+              period: p.period || '/month',
+              description: p.description || '',
+              features: JSON.stringify(p.features || []),
+              highlighted: p.highlighted || false,
+            })),
+          },
+        },
+      });
+    }
+
+    if (content.billing_toggle) {
+      tasks.push({
+        id: 'pricing-billing-toggle',
+        category: 'api',
+        title: 'Annual/monthly pricing API',
+        description: 'Create GET /api/apps/:id/pricing that returns both monthly and annual pricing so the toggle works with real calculated discounts.',
+        status: 'pending',
+        priority: 'medium',
+      });
+    }
+
+    if (content.faq) {
+      const hasFaqRecords = (db.faqs || []).filter((f: any) => f.app_id === appId).length > 0;
+      tasks.push({
+        id: 'pricing-faq-seed',
+        category: 'database',
+        title: 'Seed pricing FAQ records',
+        description: 'Store FAQ entries in the database so they can be managed from the admin panel.',
+        status: hasFaqRecords ? 'done' : 'pending',
+        priority: 'low',
+        implementation: hasFaqRecords ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'faqs',
+            records: (content.faq || []).map((f: any) => ({
+              question: f.question || f.q || '',
+              answer: f.answer || f.a || '',
+              category: 'pricing',
+            })),
+          },
+        },
+      });
+    }
+
+    tasks.push({
+      id: 'pricing-stripe-integration',
+      category: 'integration',
+      title: 'Stripe checkout integration',
+      description: 'Wire the plan CTA buttons to POST /api/apps/:id/checkout to create a Stripe checkout session for the selected plan.',
+      status: 'pending',
+      priority: 'high',
+    });
+  }
+
+  // ─── About page analysis ───
+
+  private analyzeAboutPage(content: any, db: any, appId: number, tasks: BackendTask[]): void {
+    if (content.team) {
+      const hasTeamRecords = (db.team_members || []).filter((t: any) => t.app_id === appId).length > 0;
+      tasks.push({
+        id: 'about-team-seed',
+        category: 'database',
+        title: 'Seed team member records',
+        description: 'Create team member records in the database so profiles can be updated from the admin panel.',
+        status: hasTeamRecords ? 'done' : 'pending',
+        priority: 'medium',
+        implementation: hasTeamRecords ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'team_members',
+            records: (content.team || []).map((m: any) => ({
+              name: m.name || 'Team Member',
+              role: m.role || m.title || '',
+              bio: m.bio || m.description || '',
+              avatar: m.avatar || m.image || '',
+            })),
+          },
+        },
+      });
+    }
+
+    if (content.values) {
+      tasks.push({
+        id: 'about-values-api',
+        category: 'api',
+        title: 'Company values API',
+        description: 'Create GET /api/apps/:id/about endpoint that serves company story, values, and milestones dynamically.',
+        status: 'pending',
+        priority: 'low',
+      });
+    }
+
+    if (content.cta_footer || content.cta) {
+      tasks.push({
+        id: 'about-contact-form',
+        category: 'integration',
+        title: 'Contact form integration',
+        description: 'Wire the contact/CTA section to POST /api/apps/:id/contact that stores enquiries and optionally triggers an n8n email workflow.',
+        status: 'pending',
+        priority: 'medium',
+      });
+    }
+
+    if (content.stats || content.milestones) {
+      tasks.push({
+        id: 'about-stats-api',
+        category: 'api',
+        title: 'Company stats API',
+        description: 'Create GET /api/apps/:id/company-stats to serve live numbers (customers, uptime, etc.) for the about page.',
+        status: 'pending',
+        priority: 'low',
+      });
+    }
+  }
+
+  // ─── Blog page analysis ───
+
+  private analyzeBlogPage(content: any, db: any, appId: number, tasks: BackendTask[]): void {
+    // Blog posts need to come from the database
+    const hasPosts = (db.blog_posts || []).filter((p: any) => p.app_id === appId).length > 0;
+
+    if (content.featured_post || content.posts) {
+      const posts = content.posts || [];
+      const seedPosts = content.featured_post ? [content.featured_post, ...posts] : posts;
+
+      tasks.push({
+        id: 'blog-posts-seed',
+        category: 'database',
+        title: 'Seed blog post records',
+        description: 'Create blog post records in the database so the blog page displays real, editable content.',
+        status: hasPosts ? 'done' : 'pending',
+        priority: 'high',
+        implementation: hasPosts ? undefined : {
+          type: 'db_seed',
+          payload: {
+            table: 'blog_posts',
+            records: seedPosts.slice(0, 10).map((p: any) => ({
+              title: p.title || 'Untitled Post',
+              excerpt: p.excerpt || p.summary || '',
+              author: p.author || 'Team',
+              category: p.category || p.tag || 'General',
+              published: true,
+              featured: p === content.featured_post,
+            })),
+          },
+        },
+      });
+    }
+
+    tasks.push({
+      id: 'blog-crud-api',
+      category: 'api',
+      title: 'Blog posts CRUD API',
+      description: 'Create GET/POST/PUT/DELETE /api/apps/:id/blog endpoints for managing blog posts from the admin panel.',
+      status: 'pending',
+      priority: 'high',
+    });
+
+    if (content.categories || content.sidebar) {
+      tasks.push({
+        id: 'blog-categories-api',
+        category: 'api',
+        title: 'Blog categories & search API',
+        description: 'Create GET /api/apps/:id/blog/categories and GET /api/apps/:id/blog/search for filtering and searching posts.',
+        status: 'pending',
+        priority: 'medium',
+      });
+    }
+
+    if (content.newsletter || content.cta_footer) {
+      tasks.push({
+        id: 'blog-newsletter',
+        category: 'integration',
+        title: 'Newsletter signup integration',
+        description: 'Wire the newsletter/CTA section to POST /api/apps/:id/subscribe that stores the email and triggers a welcome email via n8n.',
+        status: 'pending',
+        priority: 'medium',
       });
     }
   }
@@ -578,14 +893,7 @@ export class PageAgentService {
     // Check for quick commands
     const lowerMsg = message.toLowerCase().trim();
 
-    if (lowerMsg.includes('what needs') || lowerMsg.includes('what tasks') || lowerMsg.includes('what backend') || lowerMsg.includes('analyse') || lowerMsg.includes('analyze') || lowerMsg.includes('scan') || lowerMsg.includes('status')) {
-      return {
-        success: true,
-        message: this.formatAnalysisMessage(analysis),
-        tasks: analysis.tasks,
-      };
-    }
-
+    // Check implement-all BEFORE analysis — 'implement all auto tasks' contains 'what tasks' substring
     if (lowerMsg.includes('implement all') || lowerMsg.includes('do everything') || lowerMsg.includes('run all') || lowerMsg.includes('fix all') || lowerMsg.includes('set up everything')) {
       const results = this.implementAll(appId, pageId);
       const successCount = results.filter(r => r.success).length;
@@ -596,6 +904,14 @@ export class PageAgentService {
         message: `Implemented ${successCount}/${results.length} auto-tasks.\n\n${results.map(r => `${r.success ? '✅' : '⚠️'} ${r.message}`).join('\n')}\n\n${this.formatRemainingTasks(updatedAnalysis)}`,
         tasks: updatedAnalysis.tasks,
         actions: results,
+      };
+    }
+
+    if (lowerMsg.includes('what needs') || lowerMsg.includes('what tasks') || lowerMsg.includes('what backend') || lowerMsg.includes('analyse') || lowerMsg.includes('analyze') || lowerMsg.includes('scan') || lowerMsg.includes('status')) {
+      return {
+        success: true,
+        message: this.formatAnalysisMessage(analysis),
+        tasks: analysis.tasks,
       };
     }
 
@@ -617,7 +933,17 @@ export class PageAgentService {
     }
 
     // Fall through to AI for complex questions
-    const apiKey = this.getApiKey(apiProvider);
+    // Try the requested provider, then fall back to openrouter → openai
+    let apiKey = this.getApiKey(apiProvider);
+    let resolvedProvider = apiProvider;
+    if (!apiKey && apiProvider !== 'openrouter') {
+      apiKey = this.getApiKey('openrouter');
+      resolvedProvider = 'openrouter';
+    }
+    if (!apiKey && apiProvider !== 'openai') {
+      apiKey = this.getApiKey('openai');
+      resolvedProvider = 'openai';
+    }
     if (!apiKey) {
       // No API key — provide rule-based response
       return {
@@ -627,7 +953,11 @@ export class PageAgentService {
       };
     }
 
-    return this.askAI(apiKey, apiProvider, model || 'gpt-4', message, analysis, page);
+    const resolvedModel = resolvedProvider === 'openrouter'
+      ? 'google/gemini-2.0-flash-001'
+      : (model || 'gpt-4o-mini');
+
+    return this.askAI(apiKey, resolvedProvider, resolvedModel, message, analysis, page);
   }
 
   // ─── Ask AI about backend tasks ───
@@ -660,6 +990,7 @@ Your rules:
 5. Do NOT return JSON. Return human-readable text.`;
 
     try {
+      const startTime = Date.now();
       const endpoint = provider === 'openrouter'
         ? 'https://openrouter.ai/api/v1/chat/completions'
         : 'https://api.openai.com/v1/chat/completions';
@@ -688,6 +1019,13 @@ Your rules:
       );
 
       const aiMessage = response.data.choices?.[0]?.message?.content;
+      const tokensIn = response.data.usage?.prompt_tokens || 0;
+      const tokensOut = response.data.usage?.completion_tokens || 0;
+      const cost = this.estimateCost(model, tokensIn, tokensOut);
+      await this.analyticsService.trackApiUsage({
+        provider: provider as any, endpoint: '/chat/completions', model, tokensIn, tokensOut, cost,
+        duration: Date.now() - startTime, statusCode: 200, success: true, module: 'page-agent',
+      }).catch(() => {});
       return {
         success: true,
         message: aiMessage || 'No response from AI.',
@@ -779,5 +1117,15 @@ Your rules:
       usage_type: `revenue_${month.toLowerCase()}`,
       usage_count: Math.floor(3000 + Math.random() * 5000),
     }));
+  }
+
+  private estimateCost(model: string, tokensIn: number, tokensOut: number): number {
+    const rates: Record<string, [number, number]> = {
+      'gpt-4o-mini': [0.15, 0.60], 'gpt-4o': [2.50, 10.00], 'gpt-3.5-turbo': [0.50, 1.50],
+      'gpt-4': [30.00, 60.00], 'google/gemini-2.0-flash-001': [0.10, 0.40],
+      'anthropic/claude-sonnet-4': [3.00, 15.00], 'openai/gpt-4o': [2.50, 10.00],
+    };
+    const [inR, outR] = rates[model] || [1.00, 3.00];
+    return (tokensIn * inR + tokensOut * outR) / 1_000_000;
   }
 }

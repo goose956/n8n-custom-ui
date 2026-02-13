@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { API } from '../config/api';
 import {
   Container,
@@ -50,6 +50,8 @@ import {
   PlayArrow as PlayArrowIcon,
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as PendingIcon,
+  Palette as PaletteIcon,
+  Check as CheckIcon,
 } from '@mui/icons-material';
 import LinearProgress from '@mui/material/LinearProgress';
 import Chip from '@mui/material/Chip';
@@ -57,6 +59,43 @@ import Tooltip from '@mui/material/Tooltip';
 import { RenderPage } from './AppPreviewPage';
 import axios from 'axios';
 import PageTracker from '../utils/pageTracker';
+
+// Error Boundary to prevent white-screen crashes when AI-merged data breaks a renderer
+class PreviewErrorBoundary extends Component<
+  { children: React.ReactNode; onError?: () => void },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error.message };
+  }
+  componentDidCatch(error: Error) {
+    console.error('Preview render crash:', error);
+  }
+  // Reset when children change (new content)
+  componentDidUpdate(prevProps: any) {
+    if (prevProps.children !== this.props.children && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ p: 4, textAlign: 'center' }}>
+          <Typography sx={{ color: '#e74c3c', fontWeight: 700, mb: 1 }}>Preview crashed</Typography>
+          <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>
+            The AI change produced data the preview can't render. Switch to the Code tab to inspect and fix the JSON.
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#ccc', fontFamily: 'monospace' }}>{this.state.errorMessage}</Typography>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface App {
   id: number;
@@ -82,6 +121,76 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
 }
+
+const COLOR_PRESETS = [
+  { color: '#667eea', label: 'Indigo' },
+  { color: '#1976d2', label: 'Blue' },
+  { color: '#0d9488', label: 'Teal' },
+  { color: '#16a34a', label: 'Green' },
+  { color: '#7c3aed', label: 'Purple' },
+  { color: '#db2777', label: 'Pink' },
+  { color: '#dc2626', label: 'Red' },
+  { color: '#ea580c', label: 'Orange' },
+  { color: '#ca8a04', label: 'Gold' },
+  { color: '#0891b2', label: 'Cyan' },
+  { color: '#4f46e5', label: 'Violet' },
+  { color: '#1a1a2e', label: 'Dark' },
+];
+
+const ColorSchemePicker: React.FC<{
+  currentColor: string;
+  onColorChange: (color: string) => void;
+}> = ({ currentColor, onColorChange }) => (
+  <Paper elevation={0} sx={{ p: 2.5, mb: 3, border: '1px solid rgba(0,0,0,0.06)' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+      <PaletteIcon sx={{ fontSize: 20, color: currentColor }} />
+      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.95rem' }}>Colour Scheme</Typography>
+      <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: currentColor, border: '2px solid #fff', boxShadow: '0 0 0 1px #ddd', ml: 0.5 }} />
+      <Typography variant="caption" sx={{ color: '#aaa', fontFamily: 'monospace' }}>{currentColor}</Typography>
+    </Box>
+    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+      {COLOR_PRESETS.map((p) => (
+        <Tooltip key={p.color} title={p.label} arrow>
+          <Box
+            onClick={() => onColorChange(p.color)}
+            sx={{
+              width: 32, height: 32, borderRadius: '50%', bgcolor: p.color,
+              cursor: 'pointer',
+              border: currentColor === p.color ? '3px solid #1a1a2e' : '2px solid #fff',
+              boxShadow: currentColor === p.color ? `0 0 0 2px ${p.color}40` : '0 1px 3px rgba(0,0,0,0.12)',
+              transition: 'all 0.15s',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              '&:hover': { transform: 'scale(1.15)', boxShadow: `0 0 0 3px ${p.color}30` },
+            }}
+          >
+            {currentColor === p.color && <CheckIcon sx={{ fontSize: 16, color: '#fff' }} />}
+          </Box>
+        </Tooltip>
+      ))}
+      <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+      <Tooltip title="Custom colour" arrow>
+        <Box sx={{ position: 'relative' }}>
+          <Box
+            sx={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+              cursor: 'pointer', border: '2px solid #fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+              '&:hover': { transform: 'scale(1.15)' },
+              transition: 'all 0.15s',
+            }}
+          />
+          <input
+            type="color"
+            value={currentColor}
+            onChange={(e) => onColorChange(e.target.value)}
+            style={{ position: 'absolute', top: 0, left: 0, width: 32, height: 32, opacity: 0, cursor: 'pointer', border: 'none' }}
+          />
+        </Box>
+      </Tooltip>
+    </Box>
+  </Paper>
+);
 
 export const PagesPage: React.FC = () => {
   const [apps, setApps] = useState<App[]>([]);
@@ -116,16 +225,45 @@ export const PagesPage: React.FC = () => {
   }, []);
 
   // Deep merge: patch only the keys the AI returned into the existing content
+  // null => delete key, shorter array => trim to patch length
   const deepMerge = (target: any, patch: any): any => {
     const result = { ...target };
     for (const key of Object.keys(patch)) {
+      const pVal = patch[key];
+      const tVal = result[key];
+
+      // Deletion sentinel: null or "__DELETE__" removes the key entirely
+      if (pVal === null || pVal === '__DELETE__') {
+        delete result[key];
+        continue;
+      }
+
       if (
-        patch[key] && typeof patch[key] === 'object' && !Array.isArray(patch[key]) &&
-        result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])
+        pVal && typeof pVal === 'object' && !Array.isArray(pVal) &&
+        tVal && typeof tVal === 'object' && !Array.isArray(tVal)
       ) {
-        result[key] = deepMerge(result[key], patch[key]);
+        // Both are plain objects — recurse
+        result[key] = deepMerge(tVal, pVal);
+      } else if (
+        Array.isArray(pVal) && Array.isArray(tVal) &&
+        pVal.length > 0 && typeof pVal[0] === 'object'
+      ) {
+        // Both are arrays of objects — merge by index, USE PATCH LENGTH
+        // (AI is instructed to return the complete desired array)
+        const merged: any[] = [];
+        for (let i = 0; i < pVal.length; i++) {
+          if (i < tVal.length && typeof tVal[i] === 'object' && typeof pVal[i] === 'object') {
+            merged[i] = deepMerge(tVal[i], pVal[i]);
+          } else {
+            merged[i] = pVal[i];
+          }
+        }
+        result[key] = merged;
+      } else if (Array.isArray(pVal)) {
+        // Array of primitives or empty array — replace entirely
+        result[key] = pVal;
       } else {
-        result[key] = patch[key];
+        result[key] = pVal;
       }
     }
     return result;
@@ -271,20 +409,23 @@ export const PagesPage: React.FC = () => {
   const handleSendChatMessage = async () => {
     if (!chatInput.trim() || !chatApiProvider) return;
 
+    // Capture the message before clearing the input
+    const messageText = chatInput.trim();
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: chatInput,
+      content: messageText,
       timestamp: new Date(),
     };
 
-    setChatMessages([...chatMessages, userMessage]);
+    setChatMessages((prev) => [...prev, userMessage]);
     setChatInput('');
     setChatLoading(true);
 
     try {
       const response = await axios.post(API.chat, {
-        message: chatInput,
+        message: messageText,
         apiProvider: chatApiProvider,
         model: chatApiProvider === 'openai' ? openaiModel : undefined,
         pageContent: editorContent,
@@ -294,29 +435,69 @@ export const PagesPage: React.FC = () => {
 
       if (response.data.success) {
         const aiContent = response.data.message;
+        // Strip markdown code fences that OpenAI often wraps around JSON
+        const cleanJson = aiContent
+          .replace(/^```(?:json)?\s*\n?/i, '')
+          .replace(/\n?\s*```\s*$/i, '')
+          .trim();
+
         // Auto-apply the AI patch to the preview immediately
+        let merged: any = null;
+        let patchKeys = '';
         try {
-          const patch = JSON.parse(aiContent);
+          const patch = JSON.parse(cleanJson);
           const existing = JSON.parse(editorContent);
-          const merged = deepMerge(existing, patch);
-          setEditorContent(JSON.stringify(merged, null, 2));
+          merged = deepMerge(existing, patch);
+          patchKeys = Object.keys(patch).join(', ');
+          const mergedStr = JSON.stringify(merged, null, 2);
+          setEditorContent(mergedStr);
+
+          // Auto-save to database so changes persist
+          if (contentPage) {
+            try {
+              await axios.patch(`${API.pages}/${contentPage.id}`, {
+                content_json: merged,
+              });
+              // Update contentPage in-memory so reopening this page shows the saved content
+              setContentPage({ ...contentPage, content_json: merged });
+            } catch (saveErr) {
+              console.error('Auto-save after AI edit failed:', saveErr);
+            }
+          }
         } catch {
           // If not valid JSON, just show as chat message
         }
-        const changedKeys = (() => { try { return Object.keys(JSON.parse(aiContent)).join(', '); } catch { return ''; } })();
+
         const assistantMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: changedKeys ? `Updated: ${changedKeys}` : aiContent,
+          content: merged && patchKeys
+            ? `✅ Updated: ${patchKeys}`
+            : aiContent,
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, assistantMessage]);
       } else {
-        setError(response.data.message || 'Chat failed');
+        // Show the error as a chat message so the user sees it
+        const errMsg = response.data.message || 'Chat request failed';
+        const errorMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `⚠️ ${errMsg}`,
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, errorMessage]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to send chat message:', err);
-      setError('Failed to send message. Check your API configuration.');
+      const detail = err?.response?.data?.message || err?.message || 'Unknown error';
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `⚠️ Failed to send message: ${detail}`,
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
       setChatLoading(false);
     }
@@ -409,6 +590,13 @@ export const PagesPage: React.FC = () => {
     setEditorContent(JSON.stringify(page.content_json || {}, null, 2));
     setContentEditorOpen(true);
     setEditorTabIndex(0);
+    // Reset agent state for the new page
+    setAgentMessages([]);
+    setAgentInput('');
+    setAgentLoading(false);
+    setBackendTasks([]);
+    setAgentProgress({ completed: 0, total: 0 });
+    setAgentMode('design');
   };
 
   const handleCloseContentEditor = () => {
@@ -419,6 +607,13 @@ export const PagesPage: React.FC = () => {
     setChatMessages([]);
     setChatInput('');
     setChatLoading(false);
+    // Clear agent state
+    setAgentMessages([]);
+    setAgentInput('');
+    setAgentLoading(false);
+    setBackendTasks([]);
+    setAgentProgress({ completed: 0, total: 0 });
+    setAgentMode('design');
   };
 
   const handleSaveContent = async () => {
@@ -475,7 +670,7 @@ export const PagesPage: React.FC = () => {
       const primaryColor = selectedApp?.primary_color || '#667eea';
       // Attach page_type so RenderPage can route to the correct renderer
       const pageData = { ...data, page_type: contentPage?.page_type };
-      return <RenderPage data={pageData} primaryColor={primaryColor} />;
+      return <RenderPage data={pageData} primaryColor={primaryColor} appId={selectedApp?.id} />;
     } catch (error) {
       return (
         <Typography variant="body2" sx={{ color: '#d32f2f' }}>
@@ -493,7 +688,7 @@ export const PagesPage: React.FC = () => {
           Pages
         </Typography>
         <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
-          View and manage all pages across your projects.
+          Build and manage the individual pages that make up your apps. Edit HTML, CSS, and JavaScript for each page, organise them by project, and use AI-generated templates as a starting point.
         </Typography>
       </Box>
 
@@ -527,6 +722,31 @@ export const PagesPage: React.FC = () => {
           </Select>
         </FormControl>
       </Paper>
+
+      {/* Colour Scheme Picker */}
+      {selectedProjectId && (() => {
+        const currentApp = apps.find(a => String(a.id) === selectedProjectId);
+        const currentColor = currentApp?.primary_color || '#667eea';
+
+        const handleColorChange = async (newColor: string) => {
+          setApps(prev => prev.map(a =>
+            String(a.id) === selectedProjectId ? { ...a, primary_color: newColor } : a
+          ));
+          try {
+            await axios.put(`${API.apps}/${selectedProjectId}`, { primary_color: newColor });
+            setSuccess('Colour updated');
+            setTimeout(() => setSuccess(null), 2000);
+          } catch (err) {
+            console.error('Failed to update colour:', err);
+            setError('Failed to update colour');
+            setApps(prev => prev.map(a =>
+              String(a.id) === selectedProjectId ? { ...a, primary_color: currentColor } : a
+            ));
+          }
+        };
+
+        return <ColorSchemePicker currentColor={currentColor} onColorChange={handleColorChange} />;
+      })()}
 
       {/* Pages Table */}
       {selectedProjectId && (
@@ -723,7 +943,9 @@ export const PagesPage: React.FC = () => {
                 </Box>
                 {/* Rendered preview */}
                 <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
-                  {renderPagePreview(editorContent)}
+                  <PreviewErrorBoundary>
+                    {renderPagePreview(editorContent)}
+                  </PreviewErrorBoundary>
                 </Box>
               </Box>
             </Box>
@@ -958,9 +1180,28 @@ export const PagesPage: React.FC = () => {
                               <Typography variant="caption" sx={{ fontWeight: 600, color: task.status === 'done' ? '#999' : '#1a1a2e', fontSize: '0.72rem', display: 'block', lineHeight: 1.3, textDecoration: task.status === 'done' ? 'line-through' : 'none' }}>
                                 {task.title}
                               </Typography>
-                              <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>
-                                {task.category} · {task.priority}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>
+                                  {task.category} · {task.priority}
+                                </Typography>
+                                {task.status !== 'done' && (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontSize: '0.6rem',
+                                      fontWeight: 700,
+                                      px: 0.6,
+                                      py: 0.1,
+                                      borderRadius: '4px',
+                                      ...(task.implementation
+                                        ? { color: '#e67e22', bgcolor: '#fff3e0' }
+                                        : { color: '#78909c', bgcolor: '#eceff1' }),
+                                    }}
+                                  >
+                                    {task.implementation ? '⚡ Auto' : '🔧 Manual'}
+                                  </Typography>
+                                )}
+                              </Box>
                             </Box>
                             {task.status !== 'done' && task.implementation && (
                               <Tooltip title="Auto-implement this task">
@@ -980,6 +1221,27 @@ export const PagesPage: React.FC = () => {
                     )}
 
                     {/* Agent chat messages */}
+                    {/* Quick action buttons - always visible */}
+                    <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', gap: 0.75, justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleSendAgentMessage('What backend tasks does this page need?')}
+                        disabled={agentLoading}
+                        sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
+                      >
+                        🔍 {backendTasks.length > 0 ? 'Re-scan' : 'Analyze'}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleSendAgentMessage('Implement all auto tasks')}
+                        disabled={agentLoading}
+                        sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
+                      >
+                        ⚡ Implement all
+                      </Button>
+                    </Box>
                     <Box
                       sx={{
                         flex: 1,
@@ -997,27 +1259,9 @@ export const PagesPage: React.FC = () => {
                         <Box sx={{ m: 'auto', textAlign: 'center', py: 3 }}>
                           <BuildIcon sx={{ fontSize: 36, color: '#e0e0e0', mb: 1 }} />
                           <Typography variant="body2" sx={{ color: '#999', mb: 0.5, fontSize: '0.85rem' }}>Backend Agent</Typography>
-                          <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block', mb: 1.5 }}>
+                          <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block' }}>
                             Ask what backend work this page needs, or implement tasks to make the page fully functional.
                           </Typography>
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, alignItems: 'center' }}>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => handleSendAgentMessage('What backend tasks does this page need?')}
-                              sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
-                            >
-                              🔍 Analyze this page
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => handleSendAgentMessage('Implement all auto tasks')}
-                              sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}
-                            >
-                              ⚡ Implement all auto-tasks
-                            </Button>
-                          </Box>
                         </Box>
                       ) : (
                         agentMessages.map((msg) => (

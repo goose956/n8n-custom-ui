@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 13, 2026
+**Last Updated:** February 13, 2026 (Session 4)
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -8,7 +8,7 @@
 
 ## Current State
 
-The platform is a fully functional multi-app SaaS management system with 18 backend modules and 13 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
+The platform is a fully functional multi-app SaaS management system with 19 backend modules and 15 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
 
 ### Services
 
@@ -41,6 +41,7 @@ The platform is a fully functional multi-app SaaS management system with 18 back
 | MigrationsModule | `migrations/` | Legacy db.json to multi-app schema migration |
 | ProgrammerAgentModule | `programmer-agent/` | AI code generation with orchestrator + sub-agent model routing |
 | SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
+| StripeModule | `stripe/` | Stripe products, prices, checkout sessions, webhooks, payments |
 
 ### Shared Infrastructure
 
@@ -55,19 +56,21 @@ The platform is a fully functional multi-app SaaS management system with 18 back
 
 | Page | Component | Features |
 |------|-----------|----------|
-| Projects | ProjectsPage.tsx | Card grid, create/edit/delete apps, color picker |
+| Dashboard | DashboardPage.tsx | Stats overview, quick actions, activity summary, recent projects |
+| Projects | ProjectsPage.tsx | Card grid, create/edit/delete apps, locale selector, AI page gen |
 | Pages | PagesPage.tsx | JSON editor, live preview, AI chat (partial-patch), format toolbar |
 | Workflows | WorkflowsPage.tsx | Table view, validation badges, edit/trigger/view |
-| Workflow Builder | WorkflowBuilderPage.tsx | AI chat, template sidebar, JSON viewer, node reference |
+| Workflow Builder | WorkflowBuilderPage.tsx | AI architect chat, architecture summaries, message type chips |
 | Apps | AppsPage.tsx | App planner interface |
-| Blog | BlogPage.tsx | Blog management + AI generation |
-| Research | ResearchPage.tsx | Brave + Claude research, PDF export, model picker |
+| Blog | BlogPage.tsx | Blog management, AI generation, selection-aware generate-all |
+| Research | ResearchPage.tsx | Brave + Claude/GPT research, PDF export, multi-model picker |
 | Programmer Agent | ProgrammerAgentPage.tsx | AI code gen, orchestrator/sub-agent routing, file viewer, refine |
-| Preview | AppPreviewPage.tsx | Full browser simulation, 5 page-type renderers, navigation history |
-| Social Monitor | SocialMonitorPage.tsx | Reddit monitoring, keyword management, AI draft replies, relevance scoring |
+| Preview | AppPreviewPage.tsx | Full browser simulation, 11 page-type renderers, navigation history |
+| Social Monitor | SocialMonitorPage.tsx | Reddit monitoring, keyword management, AI draft replies, post delete |
 | Analytics | AnalyticsPage.tsx | Stats cards, usage tables |
-| Templates | TemplatesPage.tsx | Template previews |
-| Settings | SettingsPage.tsx | n8n config, API keys, connection testing |
+| Templates | TemplatesPage.tsx | 9 template previews (index, thanks, members, checkout, admin, pricing, about, faq, contact) |
+| Stripe | StripePage.tsx | Product/price management, payment history, Stripe sync |
+| Settings | SettingsPage.tsx | n8n config, API keys, integration keys, Stripe tab |
 
 ### Frontend Architecture
 
@@ -76,6 +79,8 @@ The platform is a fully functional multi-app SaaS management system with 18 back
 - XSS protection via DOMPurify on all dangerouslySetInnerHTML usages
 - Design system: dark nav (#1a1a2e), gradient accents (#667eea to #764ba2), light bg (#fafbfc), Inter font
 - Shared page renderers: RenderPage exports from AppPreviewPage used by both Preview and Pages editor
+- Global search: Ctrl+K command palette via GlobalSearch component
+- Shared components: StatCard extracted to `shared/` for reuse across pages
 
 ---
 
@@ -112,9 +117,25 @@ All app data scoped by app_id for clean per-app isolation:
 
 ---
 
-## Recent Changes (Feb 12, 2026)
+## Recent Changes (Feb 13, 2026 — Session 4)
 
-### Security Fixes (8)
+### New Modules (4)
+- **StripeModule** — Product/price CRUD, Checkout sessions, webhooks, payment tracking
+- **DashboardPage** — Stats overview, quick actions, activity summary
+- **GlobalSearch** — Ctrl+K command palette across all pages
+- **StatCard shared component** — Extracted for reuse
+
+### Major Enhancements (8)
+- Workflow Builder intelligence overhaul (architecture summaries, message type chips)
+- AI-powered project creation (region selector, AI page gen, context questions)
+- 4 new page templates (Pricing, About, FAQ, Contact)
+- Research page: OpenAI models added alongside Claude
+- Blog publishing → page template sync (published posts appear on blog-page)
+- Blog generate-all respects checkbox selection
+- Social Monitor: post delete button, draft reply fix (gpt-4 → gpt-4o)
+- Settings: Stripe integration key + Stripe tab
+
+### Previous Session Security Fixes (8)
 - API key exposure - masked responses
 - n8n encrypted key bug - proper decryption in workflow-config
 - apps.service crash - undefined array guards
@@ -124,7 +145,7 @@ All app data scoped by app_id for clean per-app isolation:
 - Clone duplicates - skipDefaults parameter
 - Shutdown hooks - enableShutdownHooks()
 
-### Structural Improvements (3)
+### Previous Session Structural Improvements (3)
 - Centralized API URL config (12 frontend files migrated)
 - Shared CryptoService (removed ~120 lines of duplicate code across 8 services)
 - Shared DatabaseService (standardized db.json path, 13 services migrated)

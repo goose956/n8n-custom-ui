@@ -166,25 +166,26 @@ export function WorkflowBuilderPage() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: `**Welcome to the n8n Workflow Builder!** 🔧
+      content: `**Welcome to the n8n Workflow Architect!** 🏗️
 
-I'm your specialized assistant for creating n8n workflow JSON files. I can help you:
+I don't just chain nodes together — I **think about your data flow** and build workflows that actually work.
 
-• **Build workflows** — describe what you need and I'll generate the complete JSON
-• **Validate workflows** — paste your workflow JSON and I'll check for issues  
-• **Explain nodes** — ask about any n8n node type and how to use it
-• **Improve workflows** — I can suggest optimizations and best practices
+**What I do differently:**
+• **Data compatibility** — I check whether each node's output matches the next node's requirements
+• **Smart branching** — Independent operations run in parallel, not forced into a linear chain
+• **Validation gates** — I auto-add email validation, data extraction, and format checks where needed
+• **Follow-up questions** — If your request is ambiguous, I'll ask before building something wrong
 
-**Quick start:** Try a template from the sidebar, or just tell me what workflow you need!
+**Try me:** *"When someone submits a contact form, add them to Google Sheets and AWeber"*
 
-*Example: "Create a webhook that receives form data, validates the email field, and saves it to Google Sheets"*`,
+I'll figure out that AWeber needs a validated email extracted from the form data, while Sheets can take the raw fields — and build parallel branches with proper validation.`,
       timestamp: new Date(),
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiProvider, setApiProvider] = useState('openai');
-  const [apiModel, setApiModel] = useState('gpt-4');
+  const [apiModel, setApiModel] = useState('gpt-4o');
 
   // Workflow state
   const [currentWorkflow, setCurrentWorkflow] = useState<any>(null);
@@ -519,9 +520,77 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
             color: '#1a1a2e',
           }}
         >
+          {/* Message type indicators */}
+          {!isUser && msg.id !== 'welcome' && (() => {
+            const content = msg.content.toLowerCase();
+            const hasQuestions = /\?\s*$/m.test(msg.content) && (content.includes('before i build') || content.includes('question') || content.includes('could you clarify') || content.includes('which ') || content.includes('what ') || content.includes('do you want') || content.includes('do you need'));
+            const hasWorkflow = !!msg.workflow;
+            const hasArchitecture = content.includes('parallel') || content.includes('branch') || content.includes('validate') || content.includes('extract');
+
+            if (hasQuestions && !hasWorkflow) {
+              return (
+                <Chip
+                  size="small"
+                  label="🤔 Follow-up Questions"
+                  sx={{ mb: 1, height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2' }}
+                />
+              );
+            }
+            if (hasWorkflow && hasArchitecture) {
+              return (
+                <Chip
+                  size="small"
+                  label="🏗️ Architected Workflow"
+                  sx={{ mb: 1, height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}
+                />
+              );
+            }
+            if (hasWorkflow) {
+              return (
+                <Chip
+                  size="small"
+                  label="⚡ Generated Workflow"
+                  sx={{ mb: 1, height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: '#e3f2fd', color: '#1565c0', border: '1px solid #bbdefb' }}
+                />
+              );
+            }
+            return null;
+          })()}
           {formatContent(msg.content)}
           {msg.workflow && (
-            <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
+            <Box sx={{ mt: 1.5 }}>
+              {/* Architecture summary */}
+              {(() => {
+                const wf = msg.workflow;
+                const nodes = wf.nodes || [];
+                const conns = wf.connections || {};
+                const triggerCount = nodes.filter((n: any) => n.type?.includes('Trigger') || n.type?.includes('trigger') || n.type?.includes('webhook')).length;
+                const ifCount = nodes.filter((n: any) => n.type?.includes('.if') || n.type?.includes('.switch') || n.type?.includes('.filter')).length;
+                const transformCount = nodes.filter((n: any) => n.type?.includes('.set') || n.type?.includes('.code') || n.type?.includes('.functionItem')).length;
+                // Detect parallel branches: any connection with >1 target in same output group
+                let parallelBranches = 0;
+                for (const [, outputs] of Object.entries(conns)) {
+                  if (outputs && typeof outputs === 'object') {
+                    for (const [, dests] of Object.entries(outputs as any)) {
+                      if (Array.isArray(dests)) {
+                        for (const destGroup of dests) {
+                          if (Array.isArray(destGroup) && destGroup.length > 1) parallelBranches++;
+                        }
+                      }
+                    }
+                  }
+                }
+                return (
+                  <Box sx={{ display: 'flex', gap: 0.8, mb: 1, flexWrap: 'wrap' }}>
+                    <Chip size="small" label={`${nodes.length} nodes`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#e3f2fd', color: '#1565c0' }} />
+                    {triggerCount > 0 && <Chip size="small" label={`${triggerCount} trigger${triggerCount > 1 ? 's' : ''}`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#e8f5e9', color: '#2e7d32' }} />}
+                    {ifCount > 0 && <Chip size="small" label={`${ifCount} validation gate${ifCount > 1 ? 's' : ''}`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#fff3e0', color: '#e65100' }} />}
+                    {transformCount > 0 && <Chip size="small" label={`${transformCount} transform${transformCount > 1 ? 's' : ''}`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#f3e5f5', color: '#7b1fa2' }} />}
+                    {parallelBranches > 0 && <Chip size="small" label={`${parallelBranches} parallel branch${parallelBranches > 1 ? 'es' : ''}`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#fce4ec', color: '#c62828' }} />}
+                  </Box>
+                );
+              })()}
+              <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 size="small"
                 variant="outlined"
@@ -547,6 +616,7 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
               >
                 Copy
               </Button>
+              </Box>
             </Box>
           )}
         </Box>
@@ -675,7 +745,7 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
                 n8n Workflow Builder
               </Typography>
               <Typography sx={{ fontSize: '0.72rem', color: '#888' }}>
-                AI-powered workflow creation & validation
+                Describe what you need in plain English and AI builds the n8n workflow JSON for you. Validates nodes, connections, and credentials before export.
               </Typography>
             </Box>
           </Box>
@@ -704,10 +774,8 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
               >
                 {apiProvider === 'openai' ? (
                   [
-                    <MenuItem key="gpt-4" value="gpt-4">GPT-4</MenuItem>,
                     <MenuItem key="gpt-4o" value="gpt-4o">GPT-4o</MenuItem>,
                     <MenuItem key="gpt-4o-mini" value="gpt-4o-mini">GPT-4o Mini</MenuItem>,
-                    <MenuItem key="gpt-3.5-turbo" value="gpt-3.5-turbo">GPT-3.5 Turbo</MenuItem>,
                   ]
                 ) : (
                   [
@@ -759,7 +827,7 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
                 }}
               >
                 <CircularProgress size={16} sx={{ color: '#764ba2' }} />
-                <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>Building workflow...</Typography>
+                <Typography sx={{ fontSize: '0.85rem', color: '#888' }}>Analyzing data flow & building workflow...</Typography>
               </Box>
             </Box>
           )}
@@ -778,11 +846,11 @@ I'm your specialized assistant for creating n8n workflow JSON files. I can help 
           {messages.length <= 1 && (
             <Box sx={{ display: 'flex', gap: 0.8, mb: 1.5, flexWrap: 'wrap' }}>
               {[
-                'Create a webhook that sends a Slack notification',
+                'Contact form → Google Sheets + AWeber',
+                'Webhook to Slack and save to database',
                 'Build an AI chatbot with memory',
-                'Schedule a daily email report from an API',
-                'Form submission → Google Sheets',
-                'What node should I use for conditional logic?',
+                'Email signup with validation → Mailchimp + CRM',
+                'Schedule a report and email it weekly',
               ].map((suggestion) => (
                 <Chip
                   key={suggestion}

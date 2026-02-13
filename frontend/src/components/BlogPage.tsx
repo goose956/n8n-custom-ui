@@ -372,17 +372,27 @@ export function BlogPage() {
   }, [fetchPosts, fetchStats, fetchProjectIndex]);
 
   const handleGenerateAll = useCallback(async () => {
-    const queued = posts.filter((p) => p.status === 'queued' || p.status === 'failed');
-    if (queued.length === 0) {
-      setSnackbar({ open: true, message: 'No queued posts to generate', severity: 'info' });
+    // If items are selected, only generate those; otherwise generate all queued
+    const hasSelection = selectedIds.size > 0;
+    const toGenerate = hasSelection
+      ? posts.filter((p) => selectedIds.has(p.id) && (p.status === 'queued' || p.status === 'failed'))
+      : posts.filter((p) => p.status === 'queued' || p.status === 'failed');
+
+    if (toGenerate.length === 0) {
+      setSnackbar({ open: true, message: hasSelection ? 'No queued/failed posts in selection' : 'No queued posts to generate', severity: 'info' });
       return;
     }
 
-    setSnackbar({ open: true, message: `Generating ${queued.length} posts... This may take a while`, severity: 'info' });
-    setGenerating(new Set(queued.map((p) => p.id)));
+    setSnackbar({ open: true, message: `Generating ${toGenerate.length} post${toGenerate.length > 1 ? 's' : ''}... This may take a while`, severity: 'info' });
+    setGenerating(new Set(toGenerate.map((p) => p.id)));
 
     try {
-      const res = await fetch(`${BLOG_API}/generate-all`, { method: 'POST' });
+      const fetchOpts: RequestInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hasSelection ? { ids: Array.from(selectedIds) } : {}),
+      };
+      const res = await fetch(`${BLOG_API}/generate-all`, fetchOpts);
       const data = await res.json();
       const succeeded = data.results?.filter((r: any) => r.success).length || 0;
       const failed = data.results?.filter((r: any) => !r.success).length || 0;
@@ -394,12 +404,13 @@ export function BlogPage() {
       fetchPosts();
       fetchStats();
       fetchProjectIndex();
+      if (hasSelection) setSelectedIds(new Set());
     } catch {
       setSnackbar({ open: true, message: 'Bulk generation failed', severity: 'error' });
     } finally {
       setGenerating(new Set());
     }
-  }, [posts, fetchPosts, fetchStats, fetchProjectIndex]);
+  }, [posts, selectedIds, fetchPosts, fetchStats, fetchProjectIndex]);
 
   // â”€â”€â”€ Publish / Unpublish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -585,7 +596,7 @@ export function BlogPage() {
             Blog Manager
           </Typography>
           <Typography sx={{ fontSize: '0.9rem', color: '#888' }}>
-            AI-powered blog content generation and publishing
+            Generate, edit, and publish SEO-optimised blog posts using AI. Create content from topics or keywords, manage drafts, and build a content library for each of your projects.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -968,7 +979,7 @@ export function BlogPage() {
                 py: 1,
               }}
             >
-              {generating.size > 0 ? 'Generating...' : 'Generate All'}
+              {generating.size > 0 ? 'Generating...' : selectedIds.size > 0 ? `Generate Selected (${selectedIds.size})` : 'Generate All'}
             </Button>
           </Box>
         </Box>

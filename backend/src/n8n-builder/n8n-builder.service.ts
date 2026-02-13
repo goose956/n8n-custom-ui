@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 // ─── Comprehensive n8n Node Registry ───────────────────────────────────────────
 
@@ -90,6 +91,12 @@ export const N8N_NODE_REGISTRY: N8nNodeDef[] = [
   { type: 'n8n-nodes-base.stripe', displayName: 'Stripe', group: 'action', description: 'Manage Stripe payments, customers', commonParams: ['resource', 'operation'] },
   { type: 'n8n-nodes-base.shopify', displayName: 'Shopify', group: 'action', description: 'Manage Shopify orders, products', commonParams: ['resource', 'operation'] },
   { type: 'n8n-nodes-base.wooCommerce', displayName: 'WooCommerce', group: 'action', description: 'Manage WooCommerce store', commonParams: ['resource', 'operation'] },
+
+  // ── Email Marketing ──
+  { type: 'n8n-nodes-base.aweber', displayName: 'AWeber', group: 'action', description: 'Manage AWeber subscribers and lists. Requires: email (valid), optional name/tags. Does NOT accept raw form messages.', commonParams: ['resource', 'operation', 'listId', 'email', 'additionalFields'] },
+  { type: 'n8n-nodes-base.mailchimp', displayName: 'Mailchimp', group: 'action', description: 'Manage Mailchimp subscribers and campaigns. Requires: email (valid), optional merge fields. Does NOT accept raw form data.', commonParams: ['resource', 'operation', 'list', 'email', 'mergeFields'] },
+  { type: 'n8n-nodes-base.convertKit', displayName: 'ConvertKit', group: 'action', description: 'Manage ConvertKit subscribers. Requires: email (valid), optional name/tags.', commonParams: ['resource', 'operation', 'email', 'firstName', 'tags'] },
+  { type: 'n8n-nodes-base.activeCampaign', displayName: 'ActiveCampaign', group: 'action', description: 'Manage ActiveCampaign contacts and automations. Requires: email (valid), optional name/custom fields.', commonParams: ['resource', 'operation', 'email', 'additionalFields'] },
 
   // ── AI / LangChain ──
   { type: '@n8n/n8n-nodes-langchain.agent', displayName: 'AI Agent', group: 'ai', description: 'AI agent with tool use capability', commonParams: ['text', 'options'] },
@@ -189,6 +196,7 @@ export class N8nBuilderService {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   private getApiKey(provider: string): string | null {
@@ -374,44 +382,94 @@ export class N8nBuilderService {
 
     const example = JSON.stringify(
       {
-        name: 'Example Webhook to Slack',
+        name: 'Contact Form → Sheets + AWeber + AI Draft Reply',
         nodes: [
           {
-            id: 'webhook-1',
-            name: 'Webhook',
-            type: 'n8n-nodes-base.webhook',
-            typeVersion: 2,
+            id: 'form-1',
+            name: 'Contact Form',
+            type: 'n8n-nodes-base.formTrigger',
+            typeVersion: 2.2,
             position: [250, 300],
-            parameters: { httpMethod: 'POST', path: 'incoming', responseMode: 'lastNode' },
+            parameters: { formTitle: 'Contact Us', formFields: { values: [{ fieldLabel: 'Name', fieldType: 'text', requiredField: true }, { fieldLabel: 'Email', fieldType: 'email', requiredField: true }, { fieldLabel: 'Message', fieldType: 'textarea' }] } },
           },
           {
-            id: 'set-1',
-            name: 'Format Message',
+            id: 'validate-1',
+            name: 'Validate Email',
+            type: 'n8n-nodes-base.if',
+            typeVersion: 2,
+            position: [470, 300],
+            parameters: { conditions: { options: { caseSensitive: false }, conditions: [{ leftValue: '={{ $json.Email }}', rightValue: '@', operator: { type: 'string', operation: 'contains' } }] } },
+          },
+          {
+            id: 'sheets-1',
+            name: 'Log to Google Sheets',
+            type: 'n8n-nodes-base.googleSheets',
+            typeVersion: 4.5,
+            position: [690, 100],
+            parameters: { operation: 'appendOrUpdate', documentId: { value: 'YOUR_SHEET_ID' }, sheetName: { value: 'Sheet1' } },
+            credentials: { googleSheetsOAuth2Api: { id: 'cred-1', name: 'Google Sheets account' } },
+          },
+          {
+            id: 'extract-1',
+            name: 'Extract Subscriber Data',
             type: 'n8n-nodes-base.set',
             typeVersion: 3.4,
-            position: [470, 300],
-            parameters: {
-              mode: 'manual',
-              assignments: {
-                assignments: [
-                  { id: 'a1', name: 'slackMessage', value: '={{ $json.body.text }}', type: 'string' },
-                ],
-              },
-            },
+            position: [690, 300],
+            parameters: { mode: 'manual', assignments: { assignments: [{ id: 'a1', name: 'email', value: '={{ $json.Email }}', type: 'string' }, { id: 'a2', name: 'name', value: '={{ $json.Name }}', type: 'string' }] } },
           },
           {
-            id: 'slack-1',
-            name: 'Send Slack Message',
-            type: 'n8n-nodes-base.slack',
-            typeVersion: 2.2,
-            position: [690, 300],
-            parameters: { resource: 'message', operation: 'post', channel: '#general', text: '={{ $json.slackMessage }}' },
-            credentials: { slackApi: { id: 'cred-1', name: 'Slack Account' } },
+            id: 'aweber-1',
+            name: 'Add to AWeber',
+            type: 'n8n-nodes-base.aweber',
+            typeVersion: 1,
+            position: [910, 300],
+            parameters: { resource: 'subscriber', operation: 'create', listId: 'YOUR_LIST_ID', email: '={{ $json.email }}', additionalFields: { name: '={{ $json.name }}' } },
+            credentials: { aweberId: { id: 'cred-2', name: 'AWeber Account' } },
+          },
+          {
+            id: 'llm-1',
+            name: 'Draft Reply with AI',
+            type: '@n8n/n8n-nodes-langchain.chainLlm',
+            typeVersion: 1.4,
+            position: [690, 500],
+            parameters: { prompt: '={{ "Read this contact form message from " + $json.Name + " (" + $json.Email + "):\\n\\n" + $json.Message + "\\n\\nDraft a professional, friendly reply email that:\\n1. Addresses their specific points/questions\\n2. Is warm but professional\\n3. Signs off as \\"Your Company\\"\\n\\nReturn ONLY the email body text, no subject line." }}' },
+          },
+          {
+            id: 'model-1',
+            name: 'OpenAI Chat Model',
+            type: '@n8n/n8n-nodes-langchain.lmChatOpenAi',
+            typeVersion: 1.2,
+            position: [690, 700],
+            parameters: { model: 'gpt-4o-mini', options: {} },
+          },
+          {
+            id: 'format-1',
+            name: 'Format Draft Email',
+            type: 'n8n-nodes-base.set',
+            typeVersion: 3.4,
+            position: [910, 500],
+            parameters: { mode: 'manual', assignments: { assignments: [{ id: 'b1', name: 'to', value: '={{ $("Validate Email").item.json.Email }}', type: 'string' }, { id: 'b2', name: 'subject', value: '={{ "Re: Message from " + $("Validate Email").item.json.Name }}', type: 'string' }, { id: 'b3', name: 'body', value: '={{ $json.text }}', type: 'string' }] } },
+          },
+          {
+            id: 'gmail-1',
+            name: 'Save Gmail Draft',
+            type: 'n8n-nodes-base.gmail',
+            typeVersion: 1,
+            position: [1130, 500],
+            parameters: { operation: 'createDraft', sendTo: '={{ $json.to }}', subject: '={{ $json.subject }}', message: '={{ $json.body }}' },
+            credentials: { gmailOAuth2Api: { id: 'cred-3', name: 'Gmail Account' } },
           },
         ],
         connections: {
-          Webhook: { main: [[{ node: 'Format Message', type: 'main', index: 0 }]] },
-          'Format Message': { main: [[{ node: 'Send Slack Message', type: 'main', index: 0 }]] },
+          'Contact Form': { main: [[{ node: 'Validate Email', type: 'main', index: 0 }]] },
+          'Validate Email': { main: [
+            [{ node: 'Log to Google Sheets', type: 'main', index: 0 }, { node: 'Extract Subscriber Data', type: 'main', index: 0 }, { node: 'Draft Reply with AI', type: 'main', index: 0 }],
+            [],
+          ] },
+          'Extract Subscriber Data': { main: [[{ node: 'Add to AWeber', type: 'main', index: 0 }]] },
+          'OpenAI Chat Model': { ai_languageModel: [[{ node: 'Draft Reply with AI', type: 'ai_languageModel', index: 0 }]] },
+          'Draft Reply with AI': { main: [[{ node: 'Format Draft Email', type: 'main', index: 0 }]] },
+          'Format Draft Email': { main: [[{ node: 'Save Gmail Draft', type: 'main', index: 0 }]] },
         },
         settings: { executionOrder: 'v1' },
       },
@@ -419,38 +477,206 @@ export class N8nBuilderService {
       2,
     );
 
-    let prompt = `You are an expert n8n workflow builder assistant. You create, explain, validate, and improve n8n workflow JSON files that can be directly imported into n8n.
+    let prompt = `You are an expert n8n WORKFLOW ARCHITECT. You reason from first principles about data flow, node capabilities, and integration requirements — you don't rely on memorized patterns.
 
-CRITICAL RULES:
-1. When asked to create or modify a workflow, ALWAYS respond with valid JSON wrapped in a \`\`\`json code block.
-2. Every workflow MUST have:
-   - "name" (string)
-   - "nodes" (array of node objects)
-   - "connections" (object mapping source node names to outputs)
-   - "settings" (object, at minimum { "executionOrder": "v1" })
-3. Every node MUST have: id, name, type, typeVersion, position ([x,y]), parameters
-4. Node names must be unique. Use descriptive names.
-5. Connections use the SOURCE NODE NAME as key, with "main" output type.
-6. Position nodes on a grid – typically 220px apart horizontally, triggers start at [250, 300].
-7. Use expressions like {{ $json.fieldName }} for referencing data between nodes.
-8. For sub-nodes (AI tools, memory, embeddings), use "ai_tool", "ai_memory", "ai_outputParser", "ai_languageModel" as connection types instead of "main".
+═══════════════════════════════════════════════════════════════
+  NODE INPUT / OUTPUT CONTRACTS
+═══════════════════════════════════════════════════════════════
+
+Every n8n node has an implicit contract: what data it REQUIRES as input and what it PRODUCES as output. You must trace these contracts through the entire workflow to ensure data flows correctly.
+
+TRIGGERS (produce data, require nothing):
+  formTrigger     → outputs: { [fieldLabel]: value } for each form field
+  webhook         → outputs: { headers, body, query } — structure depends on sender
+  scheduleTrigger → outputs: {} (empty — must fetch data in next node)
+  chatTrigger     → outputs: { chatInput: string } (just the message text)
+  emailReadImap   → outputs: { from, to, subject, text, html, date, attachments }
+
+EXTERNAL SERVICES (require specific structured data):
+  Email lists (AWeber, Mailchimp, ConvertKit, ActiveCampaign)
+    → REQUIRES: { email: "valid@email.com" } as a dedicated field
+    → ACCEPTS:  optional name, tags, custom fields
+    → REJECTS:  raw text, message bodies, unstructured data
+    → CONFIG:   list/audience ID (must be provided or placeholder)
+  
+  Google Sheets → REQUIRES: key-value pairs matching column headers
+                → CONFIG: document ID, sheet name
+  
+  Gmail/Email   → REQUIRES: { to, subject, message/body }
+                → For drafts: operation "createDraft"
+  
+  Slack/Discord/Teams → REQUIRES: { channel/webhookUri, text/content }
+  
+  CRMs (HubSpot, Salesforce) → REQUIRES: structured contact/deal fields
+  
+  Databases (Postgres, MySQL, MongoDB) → REQUIRES: data matching schema
+  
+  Payment (Stripe, Shopify) → REQUIRES: structured transaction data
+
+TRANSFORM NODES (reshape data between nodes):
+  Set (Edit Fields) → Maps/renames fields, extracts subfields, adds constants
+  Code              → Arbitrary transformation via JavaScript/Python
+  IF / Filter       → Routes data based on conditions (doesn't transform)
+  Switch            → Routes to multiple outputs based on value
+  Merge             → Combines data from multiple branches
+
+AI / LLM NODES (for cognitive tasks):
+  Basic LLM Chain (chainLlm)    → Takes a text prompt, returns generated text
+                                → Needs an AI model sub-node (e.g., lmChatOpenAi) connected via ai_languageModel
+                                → Use for: generating text, drafting content, translating, reformatting
+  AI Agent                      → Takes text input, can use Tools to take actions
+                                → Needs: AI model + optional tools + optional memory
+                                → Use for: multi-step reasoning, research, decisions requiring external lookups
+  Summarization Chain           → Takes long text, returns summary
+  Output Parser                 → Structures LLM output into JSON
+
+═══════════════════════════════════════════════════════════════
+  REASONING FRAMEWORK (USE THIS FOR EVERY REQUEST)
+═══════════════════════════════════════════════════════════════
+
+For EVERY workflow request, reason through these 5 steps. Do NOT skip them.
+
+── STEP 1: DECOMPOSE INTO OPERATIONS ──
+Break the user's request into individual operations. For each one, classify it:
+
+  STORAGE     → saving/logging data (Sheets, DB, Airtable, Notion)
+  COMMUNICATION → sending messages (email, Slack, SMS, Discord)  
+  REGISTRATION  → adding to a service (email list, CRM, payment)
+  CONTENT_GEN   → creating/writing new content (replies, summaries, reports, translations)
+  VALIDATION    → checking data quality (email format, required fields)
+  TRANSFORMATION → reshaping data (extracting fields, reformatting, merging)
+  RETRIEVAL     → fetching external data (API calls, DB queries, web scraping)
+  ROUTING       → conditional logic (if/else, switch, filters)
+
+── STEP 2: IDENTIFY COGNITIVE REQUIREMENTS ──
+For each operation, ask: "Does this require UNDERSTANDING, REASONING, or GENERATING natural language?"
+
+  YES if the operation involves ANY of these verbs or concepts:
+    read, understand, analyze, interpret, draft, write, compose, reply, respond,
+    summarize, translate, extract meaning, classify, sentiment, decide based on content,
+    personalize based on context, generate creative content
+  
+  → If YES: this operation MUST use an AI/LLM node. A static template or Set node CANNOT do this.
+  → Choose between Basic LLM Chain (most common — simple generation) vs AI Agent (needs tools or multi-step reasoning)
+  
+  NO if the operation is purely mechanical:
+    copy a field, validate format, route by value, store as-is, send a fixed notification
+  
+  → If NO: use transform/action nodes (Set, Code, IF, etc.)
+
+── STEP 3: TRACE DATA AVAILABILITY ──
+For each operation, ask: "What data does this need, and is it available from upstream nodes?"
+
+  Check the trigger's output contract → Does it contain the needed fields?
+  Check each intermediate node → Does it add/transform the needed data?
+  
+  If data IS available: wire it directly (using {{ $json.field }} expressions)
+  If data is NOT available, determine WHY:
+    a) Field exists but with wrong name → Add a Set node to rename/map
+    b) Field exists but needs validation → Add an IF node
+    c) Data needs to be extracted from unstructured text → Add Code or AI node
+    d) Data doesn't exist in the flow at all → Ask the user, or add a retrieval node
+    e) Data needs to be computed/generated → Add appropriate processing node
+
+── STEP 4: DETERMINE EXECUTION ORDER ──
+For each pair of operations, ask: "Does operation B depend on the OUTPUT of operation A?"
+
+  If NO (independent) → Run in PARALLEL (both connected from the same upstream node)
+  If YES (dependent)  → Run in SEQUENCE (A's output flows into B)
+  
+  n8n parallel connections:
+    "SourceNode": { "main": [[ {"node":"BranchA",...}, {"node":"BranchB",...} ]] }
+  
+  Common parallel cases:
+    - Logging + Notification (both use the same trigger data)
+    - Multiple registrations from the same source data
+  
+  Common sequential cases:
+    - Validate → then use validated data
+    - AI generates content → then format → then send
+    - Extract fields → then register with service
+
+── STEP 5: IDENTIFY MISSING INFORMATION ──
+For each external service or ambiguous operation, ask: "What configuration do I need that the user hasn't provided?"
+
+  ALWAYS UNKNOWN (must ask or use placeholders):
+    - Service target identifiers: list IDs, sheet IDs, channel names, database names
+    - Authentication: credential references
+    - Form/webhook field names (if not stated explicitly)
+  
+  SOMETIMES UNKNOWN (ask when ambiguous):
+    - Tone/style for generated content
+    - Error handling preferences  
+    - Which specific service (e.g., "email" could mean Gmail, Outlook, SMTP)
+    - Trigger type when multiple could work
+
+  → If 2 or more things are unknown: ASK follow-up questions before building
+  → Format: numbered list, 3-5 focused questions
+  → Use YOUR reasoning to ask SMART questions (don't just ask generic ones)
+
+═══════════════════════════════════════════════════════════════
+  FOLLOW-UP QUESTIONS
+═══════════════════════════════════════════════════════════════
+
+Your follow-up questions should demonstrate that you've THOUGHT about the workflow.
+Don't ask generic questions — ask questions that show you understand the data flow implications.
+
+GOOD example (shows reasoning):
+"Before I build this, I want to make sure the architecture is right:
+1. Your contact form has Name, Email, and Message fields — are there any others I should capture?
+2. For AWeber, I'll need a list ID to add subscribers to. Do you have one, or should I use a placeholder?
+3. You mentioned 'draft a reply' — I'll use an AI model to actually read the message and write a contextual response (not a generic template). Should the tone be formal, friendly-professional, or casual?
+4. For the Google Sheet, do you want just the contact info, or also the AI-drafted reply for your records?
+5. If someone submits an invalid email, should the workflow just skip the AWeber step, or also log the failure?"
+
+BAD example (generic, no reasoning):
+"1. What's your AWeber list ID?
+2. What Google Sheet?
+3. What tone?
+4. Want error handling?"
+
+═══════════════════════════════════════════════════════════════
+  JSON STRUCTURE RULES
+═══════════════════════════════════════════════════════════════
+
+1. Every workflow MUST have: "name", "nodes" (array), "connections" (object), "settings" ({ "executionOrder": "v1" })
+2. Every node MUST have: id, name, type, typeVersion, position ([x,y]), parameters
+3. Node names must be unique. Use descriptive names that explain what the node does.
+4. Connections use the SOURCE NODE NAME as key, with "main" output type.
+5. Position: triggers at [250, 300]. Horizontal spacing ~220px. Parallel branches offset vertically by ~200px.
+6. Use expressions like {{ $json.fieldName }} for referencing data between nodes.
+7. For AI sub-nodes, use "ai_tool", "ai_memory", "ai_outputParser", "ai_languageModel" connection types.
+8. For IF nodes: main[0] = true branch, main[1] = false branch. Both can have multiple targets.
+9. ALWAYS wrap workflow JSON in a \`\`\`json code block.
 
 AVAILABLE NODE TYPES:
 ${nodeList}
 
-EXAMPLE WORKFLOW:
+EXAMPLE (Contact Form → Validate → Parallel: Sheets + AWeber + AI-Drafted Gmail Reply):
 \`\`\`json
 ${example}
 \`\`\`
 
-WHEN RESPONDING:
-- If the user asks for a workflow, produce the COMPLETE valid JSON.
-- If the user asks a question, answer it clearly and concisely, referencing specific node types.
-- If the request is ambiguous, ask a clarifying question before building.
-- If you see ways to improve a workflow, suggest them.
-- When validating, list each issue with severity (error/warning/info).
-- You may also reference credentials objects if nodes require them, using placeholder IDs.
-- ALWAYS place the workflow JSON in a \`\`\`json code block so it can be parsed.
+Notice how the example demonstrates REASONING, not pattern-matching:
+- "Form has an Email field → AWeber needs a valid email → they're compatible but extract first" (Step 3: data tracing)
+- "Sheets, AWeber, and AI Draft are all independent → run PARALLEL" (Step 4: dependency analysis)
+- "'Draft a reply' requires understanding the message content → CONTENT_GEN with cognitive requirement → LLM Chain" (Step 2: cognitive detection)
+- "LLM output is raw text → Gmail needs to/subject/body fields → add a Set node to format" (Step 3: gap bridging)
+
+═══════════════════════════════════════════════════════════════
+  RESPONSE GUIDELINES
+═══════════════════════════════════════════════════════════════
+
+When building a workflow:
+1. Show your reasoning briefly: what operations you identified, what cognitive tasks you detected, and what data gaps you found
+2. If you have 2+ unknowns → ASK follow-up questions FIRST (don't build yet)
+3. When building, explain your architecture decisions — especially intermediate nodes
+4. Provide the complete JSON in a \`\`\`json code block
+5. After the JSON, list credentials/config the user needs to set up
+
+Show your thinking, not just the output. The user should feel like you UNDERSTOOD their use case, not just matched keywords.
+
+ALWAYS place the workflow JSON in a \`\`\`json code block so it can be parsed.
 `;
 
     if (currentWorkflow) {
@@ -490,7 +716,7 @@ WHEN RESPONDING:
 
     switch (apiProvider.toLowerCase()) {
       case 'openai':
-        return this.sendToOpenAI(apiKey, messages, model || 'gpt-4');
+        return this.sendToOpenAI(apiKey, messages, model || 'gpt-4o');
       case 'openrouter':
         return this.sendToOpenRouter(apiKey, messages);
       default:
@@ -507,12 +733,13 @@ WHEN RESPONDING:
     model: string,
   ): Promise<BuilderChatResponse> {
     try {
+      const startTime = Date.now();
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
           model,
           messages,
-          temperature: 0.4,
+          temperature: 0.3,
           max_tokens: 4096,
         },
         {
@@ -525,6 +752,9 @@ WHEN RESPONDING:
       );
 
       const content = response.data.choices?.[0]?.message?.content;
+      const tokensIn = response.data.usage?.prompt_tokens || 0;
+      const tokensOut = response.data.usage?.completion_tokens || 0;
+      await this.trackCost('openai', model, tokensIn, tokensOut, Date.now() - startTime, 'n8n-builder');
       if (!content) {
         return { success: false, error: 'No response from OpenAI' };
       }
@@ -539,10 +769,12 @@ WHEN RESPONDING:
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        const apiErrorMsg = error.response?.data?.error?.message || error.response?.statusText || error.message;
+        console.error('OpenAI API error:', error.response?.status, apiErrorMsg);
         if (error.response?.status === 401) {
           return { success: false, error: 'OpenAI API key is invalid (401)' };
         }
-        return { success: false, error: `OpenAI error: ${error.response?.status} - ${error.response?.statusText || error.message}` };
+        return { success: false, error: `OpenAI error (${error.response?.status}): ${apiErrorMsg}` };
       }
       const msg = error instanceof Error ? error.message : String(error);
       return { success: false, error: `OpenAI request failed: ${msg}` };
@@ -554,12 +786,13 @@ WHEN RESPONDING:
     messages: Array<{ role: string; content: string }>,
   ): Promise<BuilderChatResponse> {
     try {
+      const startTime = Date.now();
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
           model: 'openai/gpt-4o',
           messages,
-          temperature: 0.4,
+          temperature: 0.3,
           max_tokens: 4096,
         },
         {
@@ -574,6 +807,9 @@ WHEN RESPONDING:
       );
 
       const content = response.data.choices?.[0]?.message?.content;
+      const tokensIn = response.data.usage?.prompt_tokens || 0;
+      const tokensOut = response.data.usage?.completion_tokens || 0;
+      await this.trackCost('openrouter', 'openai/gpt-4o', tokensIn, tokensOut, Date.now() - startTime, 'n8n-builder');
       if (!content) {
         return { success: false, error: 'No response from OpenRouter' };
       }
@@ -694,5 +930,18 @@ WHEN RESPONDING:
       { id: 'ai-chatbot', name: 'AI Chatbot with Memory', description: 'Chat Trigger + AI Agent + OpenAI + Memory', nodeCount: 4 },
       { id: 'form-to-sheets', name: 'Form → Google Sheets', description: 'n8n form submission saved to Google Sheets', nodeCount: 2 },
     ];
+  }
+
+  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {
+    const rates: Record<string, [number, number]> = {
+      'gpt-4o-mini': [0.15, 0.60], 'gpt-4o': [2.50, 10.00], 'gpt-3.5-turbo': [0.50, 1.50],
+      'gpt-4': [30.00, 60.00], 'google/gemini-2.0-flash-001': [0.10, 0.40],
+      'anthropic/claude-sonnet-4': [3.00, 15.00], 'openai/gpt-4o': [2.50, 10.00],
+    };
+    const [inR, outR] = rates[model] || [1.00, 3.00];
+    const cost = (tokensIn * inR + tokensOut * outR) / 1_000_000;
+    await this.analyticsService.trackApiUsage({
+      provider: provider as any, endpoint: '/chat/completions', model, tokensIn, tokensOut, cost, duration, statusCode: 200, success: true, module,
+    }).catch(() => {});
   }
 }

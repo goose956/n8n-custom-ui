@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Implementation Checklist
 
-**Last Updated:** February 12, 2026
+**Last Updated:** February 13, 2026 (Session 4)
 
 ---
 
@@ -39,10 +39,15 @@
 - [x] Card-based project grid with avatars
 - [x] Live browser preview for pages
 - [x] Format toolbar (bold, italic, lists, code, links)
-- [x] Template previews with rich content
+- [x] Template previews with rich content (9 page types)
 - [x] Analytics dashboard with stat cards
 - [x] PDF export for research reports
 - [x] Responsive dialogs with scrolling fixes
+- [x] Dashboard page with stats, quick actions, activity summary
+- [x] Global search / command palette (Ctrl+K)
+- [x] Shared StatCard component
+- [x] Custom favicon (gradient lightning bolt)
+- [x] Region/locale selector on project creation (UK/USA)
 
 ## Phase 4: Security & Architecture - COMPLETE
 
@@ -58,7 +63,20 @@
 - [x] Graceful shutdown hooks
 - [x] VITE_API_URL environment variable support
 
-## Phase 5: Export & Deployment - PLANNED
+## Phase 5: Payments & Blog Pipeline - COMPLETE
+
+- [x] Stripe payments module (products, prices, checkout, webhooks)
+- [x] Stripe product/payment management UI
+- [x] Stripe integration key in Settings
+- [x] Blog publish → page template sync (published posts auto-populate blog-page)
+- [x] Blog generate-all respects checkbox selection
+- [x] Social monitor post delete button
+- [x] Social monitor draft reply fix (gpt-4 → gpt-4o)
+- [x] Workflow Builder intelligence overhaul (architecture summaries, message types)
+- [x] AI-powered project creation with context questions
+- [x] Research page: OpenAI + Claude multi-model support
+
+## Phase 6: Export & Deployment - PLANNED
 
 - [ ] Export Module (standalone Next.js project generation)
 - [ ] Supabase migration (PostgreSQL + auth + RLS)
@@ -67,7 +85,7 @@
 - [ ] RBAC (role-based access control)
 - [ ] Audit logging
 
-## Phase 6: Platform Conversion - PLANNED
+## Phase 7: Platform Conversion - PLANNED
 
 - [ ] Convert/Export page UI (select app → pick target platform → generate)
 - [ ] Shopify App export (App Bridge scaffold, OAuth, embedded iframe wrapper)

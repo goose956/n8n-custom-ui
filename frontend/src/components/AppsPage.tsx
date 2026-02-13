@@ -315,7 +315,7 @@ export function AppsPage() {
             App Planner
           </Typography>
           <Typography sx={{ fontSize: '0.9rem', color: '#888' }}>
-            Plan, organize, and track your app projects
+            Plan, organise, and track your app ideas from concept to launch. Break each app into features, set priorities, and monitor progress — your roadmap for turning ideas into shipped products.
           </Typography>
         </Box>
         <Button

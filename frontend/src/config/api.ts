@@ -21,4 +21,5 @@ export const API = {
   programmerAgent: `${API_BASE_URL}/api/programmer-agent`,
   health: `${API_BASE_URL}/api/health`,
   socialMonitor: `${API_BASE_URL}/api/social-monitor`,
+  stripe: `${API_BASE_URL}/api/stripe`,
 } as const;

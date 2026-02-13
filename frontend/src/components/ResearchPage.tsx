@@ -26,6 +26,7 @@ import {
   Checkbox,
   Collapse,
   CircularProgress,
+  Divider,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -135,10 +136,13 @@ const DEPTH_OPTIONS = [
 ];
 
 const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', desc: 'Best balance of speed & quality' },
-  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', desc: 'Previous gen, reliable' },
-  { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku', desc: 'Fastest, lower cost' },
-  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', desc: 'Most capable, slower' },
+  { value: 'gpt-4', label: 'GPT-4', desc: 'OpenAI — most capable', provider: 'openai' },
+  { value: 'gpt-4o', label: 'GPT-4o', desc: 'OpenAI — fast & capable', provider: 'openai' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini', desc: 'OpenAI — fastest, low cost', provider: 'openai' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', desc: 'Best balance of speed & quality', provider: 'claude' },
+  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', desc: 'Previous gen, reliable', provider: 'claude' },
+  { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku', desc: 'Fastest, lower cost', provider: 'claude' },
+  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', desc: 'Most capable, slower', provider: 'claude' },
 ];
 
 // â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -160,7 +164,7 @@ export function ResearchPage() {
   // New research input
   const [queryInput, setQueryInput] = useState('');
   const [researchName, setResearchName] = useState('');
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-20250514');
+  const [selectedModel, setSelectedModel] = useState('gpt-4o');
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -174,7 +178,7 @@ export function ResearchPage() {
     defaultProjectId: null,
     searchCount: 10,
     analysisDepth: 'standard',
-    claudeModel: 'claude-sonnet-4-20250514',
+    claudeModel: 'gpt-4o',
   });
 
   // Delete confirm
@@ -517,7 +521,7 @@ export function ResearchPage() {
             Research
           </Typography>
           <Typography sx={{ fontSize: '0.9rem', color: '#888' }}>
-            Search the web with Brave and analyze results with Claude
+            Search the web using Brave Search and analyse results with Claude AI. Research competitors, validate ideas, and gather market insights — all saved to your projects for future reference.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -664,14 +668,16 @@ export function ResearchPage() {
                 onChange={(e) => setSelectedModel(e.target.value)}
                 sx={{ borderRadius: 2, fontSize: '0.82rem' }}
               >
-                {MODEL_OPTIONS.map((m) => (
+                {MODEL_OPTIONS.map((m, i) => [
+                  // Add divider between OpenAI and Claude groups
+                  i > 0 && MODEL_OPTIONS[i - 1].provider !== m.provider ? <Divider key={`div-${i}`} sx={{ my: 0.5 }} /> : null,
                   <MenuItem key={m.value} value={m.value}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography sx={{ fontSize: '0.82rem', fontWeight: 600 }}>{m.label}</Typography>
                       <Typography sx={{ fontSize: '0.68rem', color: '#999' }}>{m.desc}</Typography>
                     </Box>
-                  </MenuItem>
-                ))}
+                  </MenuItem>,
+                ])}
               </Select>
             </FormControl>
           </Box>
@@ -995,10 +1001,10 @@ export function ResearchPage() {
               </Select>
             </FormControl>
             <FormControl fullWidth>
-              <InputLabel>Default Claude Model</InputLabel>
+              <InputLabel>Default AI Model</InputLabel>
               <Select
                 value={settingsForm.claudeModel}
-                label="Default Claude Model"
+                label="Default AI Model"
                 onChange={(e) => setSettingsForm((f) => ({ ...f, claudeModel: e.target.value }))}
                 sx={{ borderRadius: 2 }}
               >

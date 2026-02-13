@@ -219,7 +219,7 @@ export function WorkflowsPage() {
               Workflows
             </Typography>
             <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
-              Manage, test, and trigger your n8n workflows directly from the dashboard.
+              View, manage, and trigger your n8n workflows without leaving Surface. Monitor execution status, toggle workflows on and off, and quickly test automations — all synced live with your n8n instance.
             </Typography>
           </Box>
           <Button

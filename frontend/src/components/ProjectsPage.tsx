@@ -19,6 +19,8 @@ import {
   Grid,
   IconButton,
   Tooltip,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -26,6 +28,8 @@ import {
   Delete as DeleteIcon,
   Folder as FolderIcon,
   CalendarToday as CalendarIcon,
+  AutoAwesome as AIIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -35,6 +39,7 @@ interface App {
   slug: string;
   description?: string;
   primary_color?: string;
+  locale?: 'en-GB' | 'en-US';
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +49,7 @@ interface CreateAppDto {
   slug: string;
   description?: string;
   primary_color?: string;
+  locale?: 'en-GB' | 'en-US';
 }
 
 export function ProjectsPage() {
@@ -64,8 +70,12 @@ export function ProjectsPage() {
     slug: '',
     description: '',
     primary_color: '#1976d2',
+    locale: 'en-GB',
   });
   const [formLoading, setFormLoading] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [showExtraQuestions, setShowExtraQuestions] = useState(false);
+  const [extraQuestions, setExtraQuestions] = useState({ targetAudience: '', keyProblem: '', uniqueValue: '' });
 
   useEffect(() => {
     loadApps();
@@ -96,6 +106,7 @@ export function ProjectsPage() {
         slug: app.slug,
         description: app.description || '',
         primary_color: app.primary_color || '#1976d2',
+        locale: app.locale || 'en-GB',
       });
     } else {
       setEditingApp(null);
@@ -104,6 +115,7 @@ export function ProjectsPage() {
         slug: '',
         description: '',
         primary_color: '#1976d2',
+        locale: 'en-GB',
       });
     }
     setOpenDialog(true);
@@ -117,7 +129,10 @@ export function ProjectsPage() {
       slug: '',
       description: '',
       primary_color: '#1976d2',
+      locale: 'en-GB',
     });
+    setExtraQuestions({ targetAudience: '', keyProblem: '', uniqueValue: '' });
+    setShowExtraQuestions(false);
   };
 
   const handleSaveApp = async () => {
@@ -148,9 +163,29 @@ export function ProjectsPage() {
         // Create new app
         const response = await axios.post(API.apps, formData);
         if (response.data.success) {
+          const newApp = response.data.data;
           setSuccess('Project created successfully');
           await loadApps();
           handleCloseDialog();
+
+          // If description provided, trigger AI page content generation in background
+          if (formData.description && formData.description.trim().length >= 5 && newApp?.id) {
+            setAiGenerating(true);
+            try {
+              const genBody: Record<string, string> = {};
+              if (extraQuestions.targetAudience.trim()) genBody.targetAudience = extraQuestions.targetAudience.trim();
+              if (extraQuestions.keyProblem.trim()) genBody.keyProblem = extraQuestions.keyProblem.trim();
+              if (extraQuestions.uniqueValue.trim()) genBody.uniqueValue = extraQuestions.uniqueValue.trim();
+              const genRes = await axios.post(`${API.apps}/${newApp.id}/generate-pages`, genBody);
+              if (genRes.data.success && genRes.data.data?.pagesUpdated > 0) {
+                setSuccess(`Project created — AI customised ${genRes.data.data.pagesUpdated} pages based on your description`);
+              }
+            } catch {
+              // Silently fail — pages still have default content
+            } finally {
+              setAiGenerating(false);
+            }
+          }
         } else {
           setError(response.data.message || 'Failed to create project');
         }
@@ -176,13 +211,13 @@ export function ProjectsPage() {
       setSuccess(null);
 
       const response = await axios.delete(`${API.apps}/${appToDelete.id}`);
-      if (response.data.success) {
+      if (response.status === 204 || response.data?.success) {
         setSuccess('Project deleted successfully');
         await loadApps();
         setDeleteConfirmDialog(false);
         setAppToDelete(null);
       } else {
-        setError(response.data.message || 'Failed to delete project');
+        setError(response.data?.message || 'Failed to delete project');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -219,7 +254,7 @@ export function ProjectsPage() {
               Projects
             </Typography>
             <Typography variant="body1" sx={{ color: '#888', lineHeight: 1.7 }}>
-              Create and manage your SaaS applications. Each project can have its own pages, workflows, and settings.
+              Your central hub for all SaaS applications. Create new projects, manage existing ones, and track their progress. Each project gets its own pages, workflows, blog, and settings — everything you need in one place.
             </Typography>
           </Box>
           <Button
@@ -241,6 +276,16 @@ export function ProjectsPage() {
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
+      {aiGenerating && (
+        <Alert icon={<AIIcon />} severity="info" sx={{ mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <CircularProgress size={16} />
+            <Typography sx={{ fontSize: '0.85rem' }}>
+              AI is customising your page content based on the project description — this takes about 30 seconds...
+            </Typography>
+          </Box>
+        </Alert>
+      )}
 
       {apps.length === 0 ? (
         <Paper elevation={0} sx={{ p: 6, textAlign: 'center', border: '2px dashed #e0e0e0' }}>
@@ -361,15 +406,80 @@ export function ProjectsPage() {
               placeholder="e.g., my-awesome-app"
               helperText="Lowercase letters, numbers, and hyphens only"
             />
+            <Box>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#555' }}>
+                Region
+              </Typography>
+              <ToggleButtonGroup
+                value={formData.locale || 'en-GB'}
+                exclusive
+                onChange={(_, val) => { if (val) setFormData({ ...formData, locale: val }); }}
+                size="small"
+                sx={{ '& .MuiToggleButton-root': { textTransform: 'none', fontWeight: 600, px: 2.5, borderRadius: 2 }, '& .Mui-selected': { bgcolor: '#667eea !important', color: '#fff !important' } }}
+              >
+                <ToggleButton value="en-GB">🇬🇧 UK</ToggleButton>
+                <ToggleButton value="en-US">🇺🇸 USA</ToggleButton>
+              </ToggleButtonGroup>
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#999' }}>
+                Affects currency (£/\$) and spellings in generated pages
+              </Typography>
+            </Box>
             <TextField
               label="Description"
               fullWidth
               multiline
-              rows={2}
+              rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Optional description of your project"
+              placeholder="e.g., A fitness tracking app that helps personal trainers manage clients, create workout plans, and track progress with analytics dashboards"
+              helperText="Describe what your app does — AI will use this to pre-fill your pages with relevant content"
             />
+            {/* Optional AI context questions */}
+            {!editingApp && (
+              <Box>
+                <Button
+                  size="small"
+                  onClick={() => setShowExtraQuestions(!showExtraQuestions)}
+                  endIcon={<ExpandMoreIcon sx={{ transform: showExtraQuestions ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.3s' }} />}
+                  startIcon={<AIIcon sx={{ fontSize: 16 }} />}
+                  sx={{ color: '#667eea', textTransform: 'none', fontWeight: 600, mb: showExtraQuestions ? 1 : 0 }}
+                >
+                  Help AI write better pages (optional)
+                </Button>
+                {showExtraQuestions && (
+                  <Stack spacing={2} sx={{ mt: 1, pl: 1, borderLeft: '3px solid #667eea22', ml: 0.5 }}>
+                    <TextField
+                      label="Who is your target audience?"
+                      fullWidth
+                      size="small"
+                      value={extraQuestions.targetAudience}
+                      onChange={(e) => setExtraQuestions({ ...extraQuestions, targetAudience: e.target.value })}
+                      placeholder="e.g., Small business owners, freelance designers, fitness coaches"
+                      helperText="Describe who your ideal customers are"
+                    />
+                    <TextField
+                      label="What key problem does your app solve?"
+                      fullWidth
+                      size="small"
+                      value={extraQuestions.keyProblem}
+                      onChange={(e) => setExtraQuestions({ ...extraQuestions, keyProblem: e.target.value })}
+                      placeholder="e.g., Managing client bookings is chaotic and time-consuming"
+                      helperText="The main pain point your app addresses"
+                    />
+                    <TextField
+                      label="What makes your app unique?"
+                      fullWidth
+                      size="small"
+                      value={extraQuestions.uniqueValue}
+                      onChange={(e) => setExtraQuestions({ ...extraQuestions, uniqueValue: e.target.value })}
+                      placeholder="e.g., AI-powered scheduling that learns client preferences"
+                      helperText="Your competitive advantage or unique selling point"
+                    />
+                  </Stack>
+                )}
+              </Box>
+            )}
+
             <Box>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#555' }}>
                 Brand Colour

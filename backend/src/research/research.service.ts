@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ export class ResearchService {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   private readDb(): any {
@@ -172,15 +174,23 @@ export class ResearchService {
 
   // ─── Run Research (Search + Analyze) ─────────────────────────────────────────
 
+  private isOpenAIModel(model: string): boolean {
+    return model.startsWith('gpt-');
+  }
+
   async runResearch(id: string, modelOverride?: string): Promise<{ success: boolean; data?: ResearchProject; message: string }> {
     const braveKey = this.getApiKey('brave');
-    const claudeKey = this.getApiKey('claude');
+    const effectiveModel = modelOverride || this.getSettings().claudeModel;
+    const useOpenAI = this.isOpenAIModel(effectiveModel);
+    const aiKey = useOpenAI ? this.getApiKey('openai') : this.getApiKey('claude');
 
     if (!braveKey) {
       return { success: false, message: 'Brave Search API key not found. Add one named "brave" in Settings > Integrations.' };
     }
-    if (!claudeKey) {
-      return { success: false, message: 'Claude API key not found. Add one named "claude" in Settings > Integrations.' };
+    if (!aiKey) {
+      const provider = useOpenAI ? 'OpenAI' : 'Claude';
+      const keyName = useOpenAI ? 'openai' : 'claude';
+      return { success: false, message: `${provider} API key not found. Add one named "${keyName}" in Settings > Integrations.` };
     }
 
     const projects = this.getResearchProjects();
@@ -228,22 +238,14 @@ export class ResearchService {
       };
       this.saveResearchProjects(projects);
 
-      // Step 2: Analyze with Claude
+      // Step 2: Analyze with AI (Claude or OpenAI)
       const depthGuide = {
         brief: 'Provide a concise 2-3 paragraph summary.',
         standard: 'Provide a thorough analysis with sections, key findings, and actionable insights.',
         deep: 'Provide an in-depth comprehensive analysis with detailed sections, data points, comparisons, key findings, recommendations, and potential opportunities.',
       };
 
-      const claudeResponse = await axios.post(
-        'https://api.anthropic.com/v1/messages',
-        {
-          model: settings.claudeModel,
-          max_tokens: settings.analysisDepth === 'deep' ? 4096 : settings.analysisDepth === 'standard' ? 2048 : 1024,
-          messages: [
-            {
-              role: 'user',
-              content: `Research Query: "${project.query}"
+      const analysisPrompt = `Research Query: "${project.query}"
 
 Here are the search results I found:
 
@@ -258,21 +260,77 @@ Return your response as valid JSON with these fields:
 - "summary": A clear executive summary (2-4 sentences)
 - "analysis": Full analysis in HTML format using <h3>, <p>, <ul>, <li>, <strong>, <em> tags. No <html>/<head>/<body> wrappers.
 - "keyFindings": Array of 3-8 key findings (short strings)
-- "sources": Array of the most relevant sources, each with "title", "url", and "relevance" (one-line explanation of why it's relevant)`,
-            },
-          ],
-        },
-        {
-          headers: {
-            'x-api-key': claudeKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json',
-          },
-          timeout: 120000,
-        },
-      );
+- "sources": Array of the most relevant sources, each with "title", "url", and "relevance" (one-line explanation of why it's relevant)`;
 
-      const responseText = claudeResponse.data.content?.[0]?.text || '';
+      let responseText = '';
+      const maxTokens = settings.analysisDepth === 'deep' ? 4096 : settings.analysisDepth === 'standard' ? 2048 : 1024;
+
+      if (useOpenAI) {
+        // OpenAI path
+        const openaiResponse = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: effectiveModel,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'system', content: 'You are a research analyst. Respond with valid JSON only, no markdown fences.' },
+              { role: 'user', content: analysisPrompt },
+            ],
+            temperature: 0.5,
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${aiKey}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 120000,
+          },
+        );
+
+        const oTokIn = openaiResponse.data.usage?.prompt_tokens || 0;
+        const oTokOut = openaiResponse.data.usage?.completion_tokens || 0;
+        const oRates: Record<string, [number,number]> = { 'gpt-4': [30,60], 'gpt-4o': [2.5,10], 'gpt-4o-mini': [0.15,0.6] };
+        const [oIn, oOut] = oRates[effectiveModel] || [2.5,10];
+        await this.analyticsService.trackApiUsage({
+          provider: 'openai' as any, endpoint: '/chat/completions', model: effectiveModel,
+          tokensIn: oTokIn, tokensOut: oTokOut, cost: (oTokIn * oIn + oTokOut * oOut) / 1_000_000,
+          duration: 0, statusCode: 200, success: true, module: 'research',
+        }).catch(() => {});
+
+        responseText = openaiResponse.data.choices?.[0]?.message?.content || '';
+      } else {
+        // Claude path
+        const claudeResponse = await axios.post(
+          'https://api.anthropic.com/v1/messages',
+          {
+            model: settings.claudeModel,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'user', content: analysisPrompt },
+            ],
+          },
+          {
+            headers: {
+              'x-api-key': aiKey,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            timeout: 120000,
+          },
+        );
+
+        const cTokIn = claudeResponse.data.usage?.input_tokens || 0;
+        const cTokOut = claudeResponse.data.usage?.output_tokens || 0;
+        const cRates: Record<string, [number,number]> = { 'claude-sonnet-4-20250514': [3,15], 'claude-3-5-sonnet-20241022': [3,15] };
+        const [cIn, cOut] = cRates[settings.claudeModel] || [3,15];
+        await this.analyticsService.trackApiUsage({
+          provider: 'anthropic' as any, endpoint: '/messages', model: settings.claudeModel,
+          tokensIn: cTokIn, tokensOut: cTokOut, cost: (cTokIn * cIn + cTokOut * cOut) / 1_000_000,
+          duration: 0, statusCode: 200, success: true, module: 'research',
+        }).catch(() => {});
+
+        responseText = claudeResponse.data.content?.[0]?.text || '';
+      }
       // Extract JSON from response (might be wrapped in ```json blocks)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

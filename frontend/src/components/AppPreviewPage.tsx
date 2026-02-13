@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import { API } from '../config/api';
 import {
   Box,
@@ -32,8 +32,47 @@ import {
   Celebration as CelebrationIcon,
   Circle as CircleIcon,
   Email as EmailIcon,
+  MonetizationOn as PricingIcon,
+  Info as AboutIcon,
+  QuestionAnswer as FaqIcon,
+  ContactMail as ContactIcon,
+  Phone as PhoneIcon,
+  LocationOn as LocationIcon,
+  ExpandMore as ExpandMoreIcon,
+  ViewStream as ViewStreamIcon,
+  WebAsset as SinglePageIcon,
 } from '@mui/icons-material';
+import { Grid, Avatar, Divider, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Stack, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import axios from 'axios';
+
+// Error boundary to catch render-phase crashes in page previews
+class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; errorMessage: string }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error?.message || 'Unknown render error' };
+  }
+  componentDidUpdate(prevProps: any) {
+    if (prevProps.children !== this.props.children && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ p: 4, textAlign: 'center' }}>
+          <Typography sx={{ color: '#e74c3c', fontWeight: 700, mb: 1 }}>Preview crashed</Typography>
+          <Typography variant="body2" sx={{ color: '#999' }}>
+            This page has content that can't be rendered. Edit the page content to fix it.
+          </Typography>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface App {
   id: number;
@@ -49,6 +88,42 @@ interface Page {
   page_type: string;
   title: string;
   content_json?: Record<string, unknown>;
+}
+
+// CSS properties the AI design chat may inject into styled-text objects
+const CSS_STYLE_KEYS = new Set(['color', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'backgroundColor', 'textTransform', 'letterSpacing', 'opacity', 'textAlign']);
+
+/**
+ * Recursively walk JSON data and convert AI styled-text objects
+ * (e.g. {text: "Our Story", color: "orange"}) into <span> elements
+ * with inline styles so the preview renderers can display them.
+ * Only matches objects where ALL non-text keys are known CSS properties.
+ */
+function resolveStyledText(obj: any): any {
+  if (obj == null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(resolveStyledText);
+  // React element – leave as-is
+  if (obj.$$typeof) return obj;
+
+  const keys = Object.keys(obj);
+
+  // Detect styled-text: has string 'text' + at least one CSS key, and every
+  // non-text key is a known CSS property (avoids false-positives on CTAs etc.)
+  if (typeof obj.text === 'string' && keys.length >= 2) {
+    const nonTextKeys = keys.filter(k => k !== 'text');
+    if (nonTextKeys.length > 0 && nonTextKeys.every(k => CSS_STYLE_KEYS.has(k))) {
+      const style: Record<string, any> = {};
+      for (const k of nonTextKeys) style[k] = obj[k];
+      return <span style={style}>{obj.text}</span>;
+    }
+  }
+
+  // Recurse into regular objects
+  const result: Record<string, any> = {};
+  for (const key of keys) {
+    result[key] = resolveStyledText(obj[key]);
+  }
+  return result;
 }
 
 // Icon resolver for template content
@@ -73,6 +148,10 @@ const getPageIcon = (type: string) => {
     case 'admin': return <DashboardIcon sx={{ fontSize: 16 }} />;
     case 'members': return <PersonIcon sx={{ fontSize: 16 }} />;
     case 'thanks': return <CelebrationIcon sx={{ fontSize: 16 }} />;
+    case 'pricing': return <PricingIcon sx={{ fontSize: 16 }} />;
+    case 'about': return <AboutIcon sx={{ fontSize: 16 }} />;
+    case 'faq': return <FaqIcon sx={{ fontSize: 16 }} />;
+    case 'contact': return <ContactIcon sx={{ fontSize: 16 }} />;
     default: return <HomeIcon sx={{ fontSize: 16 }} />;
   }
 };
@@ -88,8 +167,8 @@ function RenderIndexPage({ data, primaryColor }: { data: any; primaryColor: stri
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #eee' }}>
           <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a1a2e' }}>{data.nav.brand}</Typography>
           <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'center' }}>
-            {data.nav.links?.map((link: string, i: number) => (
-              <Typography key={i} sx={{ fontSize: '0.85rem', color: '#555', cursor: 'pointer', '&:hover': { color: primaryColor } }}>{link}</Typography>
+            {data.nav.links?.map((link: any, i: number) => (
+              <Typography key={i} sx={{ fontSize: '0.85rem', color: '#555', cursor: 'pointer', '&:hover': { color: primaryColor } }}>{typeof link === 'string' ? link : link.label}</Typography>
             ))}
             <Button size="small" variant="contained" sx={{ background: gradient, fontWeight: 700, fontSize: '0.8rem', borderRadius: 2, px: 2 }}>
               {data.nav.cta || 'Get Started'}
@@ -239,6 +318,8 @@ function RenderIndexPage({ data, primaryColor }: { data: any; primaryColor: stri
           <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700 }}>{data.ctaButton || 'Get Started'}</Button>
         </Box>
       )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['stats', 'testimonials', 'cta_footer', 'cta']} />
     </Box>
   );
 }
@@ -380,8 +461,30 @@ function RenderMembersPage({ data, primaryColor }: { data: any; primaryColor: st
   );
 }
 
-function RenderCheckoutPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+function RenderCheckoutPage({ data, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
   const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+
+  const handleStripeCheckout = async (plan: any) => {
+    if (!plan.stripe_price_id || !appId) return;
+    setCheckoutLoading(plan.stripe_price_id);
+    try {
+      const res = await axios.post(`${API.stripe}/checkout`, {
+        app_id: appId,
+        price_id: plan.stripe_price_id,
+        success_url: window.location.origin + '?checkout=success',
+        cancel_url: window.location.origin + '?checkout=cancelled',
+      });
+      if (res.data.success && res.data.url) {
+        window.open(res.data.url, '_blank');
+      }
+    } catch (err) {
+      console.error('Stripe checkout failed:', err);
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
   return (
     <Box sx={{ px: 4, py: 4 }}>
       {/* Headline */}
@@ -415,10 +518,12 @@ function RenderCheckoutPage({ data, primaryColor }: { data: any; primaryColor: s
               <Button
                 variant={plan.popular ? 'contained' : 'outlined'}
                 fullWidth
-                disabled={plan.disabled}
+                disabled={plan.disabled || checkoutLoading === plan.stripe_price_id}
+                onClick={() => plan.stripe_price_id ? handleStripeCheckout(plan) : undefined}
                 sx={{ mt: 1, fontWeight: 700, background: plan.popular ? gradient : undefined, borderColor: !plan.popular ? '#ddd' : undefined }}
               >
-                {plan.cta || 'Choose Plan'}
+                {checkoutLoading === plan.stripe_price_id ? 'Loading...' : (plan.cta || 'Choose Plan')}
+                {plan.stripe_price_id && !checkoutLoading && ' →'}
               </Button>
             </Paper>
           ))}
@@ -581,6 +686,342 @@ function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: stri
   );
 }
 
+// ─── Pricing Page ───────────────────────────────────────────────────────────
+function RenderPricingPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  return (
+    <Box sx={{ px: 3, py: 3 }}>
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ color: '#888', maxWidth: 500, mx: 'auto' }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      {/* Billing Toggle */}
+      {data.billing_toggle && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1.5, mb: 4 }}>
+          <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>{data.billing_toggle.options?.[0]}</Typography>
+          <Box sx={{ width: 44, height: 24, borderRadius: 12, bgcolor: primaryColor, position: 'relative', cursor: 'pointer' }}>
+            <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#fff', position: 'absolute', top: 2, right: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+          </Box>
+          <Typography variant="body2" sx={{ color: primaryColor, fontWeight: 700 }}>
+            {data.billing_toggle.options?.[1]}
+            {data.billing_toggle.discount && (
+              <Chip label={data.billing_toggle.discount} size="small" sx={{ ml: 0.5, height: 20, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#e8f5e9', color: '#27ae60' }} />
+            )}
+          </Typography>
+        </Box>
+      )}
+
+      {/* Plans */}
+      {Array.isArray(data.plans) && (
+        <Grid container spacing={2.5} justifyContent="center" sx={{ mb: 4 }}>
+          {data.plans.map((plan: any, i: number) => (
+            <Grid item xs={12} sm={4} key={i}>
+              <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: plan.popular ? `2px solid ${primaryColor}` : '1px solid #eee', position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {plan.popular && (
+                  <Chip label="Most Popular" size="small" sx={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', bgcolor: primaryColor, color: '#fff', fontWeight: 700, fontSize: '0.7rem' }} />
+                )}
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5 }}>{plan.name}</Typography>
+                <Typography variant="body2" sx={{ color: '#888', mb: 2, minHeight: 40 }}>{plan.description}</Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="h3" component="span" sx={{ fontWeight: 800, color: '#1a1a2e' }}>{plan.price_monthly || plan.price}</Typography>
+                  <Typography component="span" sx={{ color: '#999' }}>{plan.period}</Typography>
+                </Box>
+                <Divider sx={{ mb: 2 }} />
+                <Box sx={{ flex: 1, mb: 2 }}>
+                  {plan.features?.map((f: string, fi: number) => (
+                    <Box key={fi} sx={{ display: 'flex', gap: 1, mb: 0.75, alignItems: 'center' }}>
+                      <CheckIcon sx={{ fontSize: 16, color: '#27ae60' }} />
+                      <Typography variant="body2" sx={{ color: '#555' }}>{f}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+                <Button variant={plan.popular ? 'contained' : 'outlined'} fullWidth sx={{ fontWeight: 700, borderRadius: 2, textTransform: 'none', ...(plan.popular ? { background: `linear-gradient(135deg, ${primaryColor}, #764ba2)` } : { borderColor: '#ddd', color: '#555' }) }}>
+                  {plan.cta}
+                </Button>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+
+      {/* Comparison Table */}
+      {data.comparison && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>{data.comparison.title}</Typography>
+          <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #eee', borderRadius: 3 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#fafbfc' }}>
+                  <TableCell sx={{ fontWeight: 700, color: '#1a1a2e' }}>Feature</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, color: '#888' }}>Starter</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, color: primaryColor }}>Professional</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, color: '#888' }}>Enterprise</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.comparison.rows?.map((row: any, i: number) => (
+                  <TableRow key={i}>
+                    <TableCell sx={{ color: '#555', fontWeight: 500 }}>{row.feature}</TableCell>
+                    <TableCell align="center" sx={{ color: row.starter === '✓' ? '#27ae60' : row.starter === '—' ? '#ccc' : '#555', fontWeight: 600 }}>{row.starter}</TableCell>
+                    <TableCell align="center" sx={{ color: row.pro === '✓' ? '#27ae60' : row.pro === '—' ? '#ccc' : primaryColor, fontWeight: 600 }}>{row.pro}</TableCell>
+                    <TableCell align="center" sx={{ color: row.enterprise === '✓' ? '#27ae60' : row.enterprise === '—' ? '#ccc' : '#555', fontWeight: 600 }}>{row.enterprise}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
+      {/* Trust Badges */}
+      {Array.isArray(data.trust_badges) && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 4, flexWrap: 'wrap' }}>
+          {data.trust_badges.map((badge: string, i: number) => (
+            <Typography key={i} variant="body2" sx={{ color: '#888', fontWeight: 600, fontSize: '0.82rem' }}>{badge}</Typography>
+          ))}
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['stats', 'faq']} />
+    </Box>
+  );
+}
+
+// ─── About Page ─────────────────────────────────────────────────────────────
+function RenderAboutPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  return (
+    <Box>
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ background: `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`, color: '#fff', py: 6, px: 4, textAlign: 'center' }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1.5 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ fontSize: '1.05rem', opacity: 0.9, maxWidth: 560, mx: 'auto', lineHeight: 1.7 }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      {/* Story */}
+      {data.story && (
+        <Box sx={{ px: 4, py: 5 }}>
+          <Grid container spacing={4} alignItems="center">
+            <Grid item xs={12} sm={6}>
+              <Typography variant="overline" sx={{ color: primaryColor, fontWeight: 700, letterSpacing: 1.5 }}>{data.story.overline}</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 2, mt: 1 }}>{data.story.headline}</Typography>
+              {data.story.paragraphs?.map((p: string, i: number) => (
+                <Typography key={i} variant="body2" sx={{ color: '#666', lineHeight: 1.8, mb: 2 }}>{p}</Typography>
+              ))}
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Paper elevation={0} sx={{ height: 200, borderRadius: 3, background: 'linear-gradient(135deg, #eef0ff 0%, #f3e5f5 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Typography sx={{ fontSize: '3rem' }}>🚀</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
+
+      {/* Values */}
+      {Array.isArray(data.values) && (
+        <Box sx={{ px: 4, py: 4, bgcolor: '#fafbfc' }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>Our Values</Typography>
+          <Grid container spacing={2.5}>
+            {data.values.map((v: any, i: number) => (
+              <Grid item xs={12} sm={6} key={i}>
+                <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee', height: '100%' }}>
+                  <Typography sx={{ fontSize: '1.5rem', mb: 1 }}>{v.emoji}</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#1a1a2e', mb: 0.5 }}>{v.title}</Typography>
+                  <Typography variant="body2" sx={{ color: '#777', lineHeight: 1.6 }}>{v.description}</Typography>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      )}
+
+      {/* Team */}
+      {Array.isArray(data.team) && (
+        <Box sx={{ px: 4, py: 5 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 1, color: '#1a1a2e' }}>Meet the Team</Typography>
+          <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 4 }}>The people behind the product</Typography>
+          <Grid container spacing={3} justifyContent="center">
+            {data.team.map((member: any, i: number) => (
+              <Grid item xs={6} sm={3} key={i}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Avatar src={member.avatar} sx={{ width: 72, height: 72, mx: 'auto', mb: 1.5, border: '3px solid #eef0ff' }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>{member.name}</Typography>
+                  <Typography variant="caption" sx={{ color: '#888' }}>{member.role}</Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      )}
+
+      {/* Timeline */}
+      {Array.isArray(data.timeline) && (
+        <Box sx={{ px: 4, py: 4, bgcolor: '#fafbfc' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>Our Journey</Typography>
+          {data.timeline.map((item: any, i: number) => (
+            <Box key={i} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+              <Chip label={item.year} size="small" sx={{ fontWeight: 700, bgcolor: primaryColor, color: '#fff', minWidth: 50 }} />
+              <Typography variant="body2" sx={{ color: '#555' }}>{item.event}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* CTA */}
+      {data.cta && (
+        <Box sx={{ py: 5, textAlign: 'center', px: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#1a1a2e' }}>{data.cta.headline}</Typography>
+          <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>{data.cta.subheading}</Typography>
+          <Button variant="contained" sx={{ borderRadius: 3, px: 4, background: `linear-gradient(135deg, ${primaryColor}, #764ba2)`, textTransform: 'none', fontWeight: 700 }}>
+            {data.cta.button_text}
+          </Button>
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['stats', 'cta']} />
+    </Box>
+  );
+}
+
+// ─── FAQ Page ───────────────────────────────────────────────────────────────
+function RenderFaqPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  return (
+    <Box sx={{ px: 3, py: 3 }}>
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ color: '#888', maxWidth: 500, mx: 'auto' }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      {/* FAQ Categories */}
+      {Array.isArray(data.categories) && data.categories.map((section: any, si: number) => (
+        <Box key={si} sx={{ mb: 4 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: primaryColor, mb: 2, pl: 1 }}>{section.title}</Typography>
+          {section.questions?.map((faq: any, qi: number) => (
+            <Paper key={qi} elevation={0} sx={{ mb: 1.5, border: '1px solid #eee', borderRadius: 2, overflow: 'hidden' }}>
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', '&:hover': { bgcolor: '#fafbfc' } }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{faq.question}</Typography>
+                <ExpandMoreIcon sx={{ fontSize: 20, color: '#999' }} />
+              </Box>
+              <Box sx={{ px: 2, pb: 2 }}>
+                <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.7 }}>{faq.answer}</Typography>
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      ))}
+
+      {/* Support CTA */}
+      {data.support_cta && (
+        <Box sx={{ p: 3, borderRadius: 3, background: `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`, color: '#fff', textAlign: 'center' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>{data.support_cta.headline}</Typography>
+          <Typography variant="body2" sx={{ opacity: 0.9, mb: 2 }}>{data.support_cta.subheading}</Typography>
+          <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700, textTransform: 'none', borderRadius: 2 }}>
+            {data.support_cta.button_text}
+          </Button>
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['faq']} />
+    </Box>
+  );
+}
+
+// ─── Contact Page ───────────────────────────────────────────────────────────
+function RenderContactPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  const iconMap: Record<string, React.ReactNode> = {
+    email: <EmailIcon />,
+    phone: <PhoneIcon />,
+    location: <LocationIcon />,
+  };
+  return (
+    <Box sx={{ px: 3, py: 3 }}>
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ color: '#888', maxWidth: 500, mx: 'auto' }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      <Grid container spacing={4}>
+        {/* Contact Form */}
+        {data.form && (
+          <Grid item xs={12} sm={7}>
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>{data.form.title}</Typography>
+              <Grid container spacing={2}>
+                {data.form.fields?.map((field: any, fi: number) => (
+                  <Grid item xs={field.half ? 6 : 12} key={fi}>
+                    {field.type === 'select' ? (
+                      <FormControl fullWidth size="small">
+                        <InputLabel>{field.label}</InputLabel>
+                        <Select label={field.label} defaultValue="" sx={{ borderRadius: 2 }}>
+                          {field.options?.map((opt: string, oi: number) => (
+                            <MenuItem key={oi} value={opt}>{opt}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    ) : field.type === 'textarea' ? (
+                      <TextField fullWidth multiline rows={field.rows || 4} label={field.label} variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    ) : (
+                      <TextField fullWidth size="small" label={field.label} variant="outlined" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+                    )}
+                  </Grid>
+                ))}
+                <Grid item xs={12}>
+                  <Button variant="contained" fullWidth sx={{ background: `linear-gradient(135deg, ${primaryColor}, #764ba2)`, fontWeight: 700, textTransform: 'none', borderRadius: 2, py: 1.2 }}>
+                    {data.form.submit_text}
+                  </Button>
+                </Grid>
+              </Grid>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Contact Info */}
+        {Array.isArray(data.contact_info) && (
+          <Grid item xs={12} sm={5}>
+            <Stack spacing={2.5}>
+              {data.contact_info.map((info: any, i: number) => (
+                <Paper key={i} elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #eee' }}>
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                    <Avatar sx={{ bgcolor: info.icon === 'email' ? '#eef0ff' : info.icon === 'phone' ? '#e8f5e9' : '#fce4ec', color: info.icon === 'email' ? primaryColor : info.icon === 'phone' ? '#27ae60' : '#e74c3c', width: 40, height: 40 }}>
+                      {iconMap[info.icon] || <EmailIcon />}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1a1a2e' }}>{info.title}</Typography>
+                      <Typography variant="body2" sx={{ color: info.icon === 'email' ? primaryColor : '#555' }}>{info.value}</Typography>
+                      <Typography variant="caption" sx={{ color: '#888' }}>{info.detail}</Typography>
+                    </Box>
+                  </Box>
+                </Paper>
+              ))}
+
+              {/* Map Placeholder */}
+              <Paper elevation={0} sx={{ height: 120, borderRadius: 3, border: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5' }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <LocationIcon sx={{ fontSize: 28, color: '#ccc' }} />
+                  <Typography variant="caption" sx={{ display: 'block', color: '#bbb' }}>Map placeholder</Typography>
+                </Box>
+              </Paper>
+            </Stack>
+          </Grid>
+        )}
+      </Grid>
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['contact_form']} />
+    </Box>
+  );
+}
+
 // Generic fallback renderer
 function RenderGenericPage({ data }: { data: any }) {
   return (
@@ -597,22 +1038,358 @@ function RenderGenericPage({ data }: { data: any }) {
   );
 }
 
+// ─── Nav Bar (shared) ────────────────────────────────────────────────────────
+function RenderNav({ data, primaryColor }: { data: any; primaryColor: string }) {
+  if (!data.nav) return null;
+  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #eee' }}>
+      <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a1a2e' }}>{data.nav.brand}</Typography>
+      <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'center' }}>
+        {data.nav.links?.map((link: any, i: number) => (
+          <Typography key={i} sx={{ fontSize: '0.85rem', color: '#555', cursor: 'pointer', '&:hover': { color: primaryColor } }}>{typeof link === 'string' ? link : link.label}</Typography>
+        ))}
+        <Button size="small" variant="contained" sx={{ background: gradient, fontWeight: 700, fontSize: '0.8rem', borderRadius: 2, px: 2 }}>
+          {data.nav.cta || 'Get Started'}
+        </Button>
+      </Box>
+    </Box>
+  );
+}
+
+// ─── Extra Sections (shared) ────────────────────────────────────────────────
+// Renders common AI-injected sections that may appear on ANY page type.
+// Pass `exclude` to skip sections already rendered by the page-specific renderer.
+function RenderExtraSections({ data, primaryColor, exclude = [] }: { data: any; primaryColor: string; exclude?: string[] }) {
+  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  return (
+    <>
+      {/* Contact Form */}
+      {!exclude.includes('contact_form') && data.contact_form && (
+        <Box sx={{ px: 4, py: 5, bgcolor: '#fafbfc' }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 1, color: '#1a1a2e' }}>
+            {data.contact_form.headline || 'Get in Touch'}
+          </Typography>
+          {data.contact_form.subheading && (
+            <Typography variant="body2" sx={{ textAlign: 'center', color: '#888', mb: 3 }}>{data.contact_form.subheading}</Typography>
+          )}
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #eee', maxWidth: 500, mx: 'auto' }}>
+            {data.contact_form.fields?.map((field: any, i: number) => (
+              field.type === 'textarea' ? (
+                <TextField key={i} fullWidth multiline rows={field.rows || 4} label={field.label} placeholder={field.placeholder || ''} variant="outlined" size="small" sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+              ) : (
+                <TextField key={i} fullWidth label={field.label} placeholder={field.placeholder || ''} type={field.type || 'text'} variant="outlined" size="small" sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+              )
+            ))}
+            <Button variant="contained" fullWidth sx={{ mt: 1, background: gradient, fontWeight: 700, textTransform: 'none', borderRadius: 2, py: 1.2 }}>
+              {data.contact_form.submit_text || data.contact_form.button_text || 'Send Message'}
+            </Button>
+          </Paper>
+        </Box>
+      )}
+
+      {/* Newsletter */}
+      {!exclude.includes('newsletter') && data.newsletter && (
+        <Box sx={{ background: gradient, color: '#fff', px: 4, py: 5, textAlign: 'center' }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>{data.newsletter.headline}</Typography>
+          <Typography sx={{ opacity: 0.9, mb: 3, maxWidth: 500, mx: 'auto', fontSize: '0.95rem' }}>{data.newsletter.subheading}</Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', maxWidth: 440, mx: 'auto' }}>
+            <TextField size="small" placeholder={data.newsletter.placeholder || 'Enter your email'}
+              sx={{ flex: 1, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2, input: { color: '#fff', '&::placeholder': { color: 'rgba(255,255,255,0.6)' } }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.25)' } }}
+            />
+            <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700, px: 3, borderRadius: 2, textTransform: 'none', '&:hover': { bgcolor: '#f0f0f0' } }}>
+              {data.newsletter.button_text || 'Subscribe'}
+            </Button>
+          </Box>
+        </Box>
+      )}
+
+      {/* Testimonials */}
+      {!exclude.includes('testimonials') && Array.isArray(data.testimonials) && (
+        <Box sx={{ px: 4, py: 4 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 3 }}>What People Say</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 2 }}>
+            {data.testimonials.map((t: any, i: number) => (
+              <Paper key={i} elevation={0} sx={{ p: 2.5, borderLeft: `4px solid ${primaryColor}`, border: '1px solid #eee' }}>
+                <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#555', mb: 2, lineHeight: 1.7 }}>"{t.quote}"</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {t.avatar && <Box sx={{ fontSize: '20px' }}>{t.avatar}</Box>}
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{t.author}</Typography>
+                    {t.title && <Typography variant="caption" sx={{ color: '#999' }}>{t.title}</Typography>}
+                  </Box>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* FAQ section */}
+      {!exclude.includes('faq') && Array.isArray(data.faq) && (
+        <Box sx={{ px: 4, py: 4 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>
+            {data.faq_headline || 'Frequently Asked Questions'}
+          </Typography>
+          {data.faq.map((item: any, i: number) => (
+            <Paper key={i} elevation={0} sx={{ mb: 1.5, border: '1px solid #eee', borderRadius: 2, overflow: 'hidden' }}>
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a2e' }}>{item.question || item.q}</Typography>
+                <ExpandMoreIcon sx={{ fontSize: 20, color: '#999' }} />
+              </Box>
+              <Box sx={{ px: 2, pb: 2 }}>
+                <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.7 }}>{item.answer || item.a}</Typography>
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      {/* Stats */}
+      {!exclude.includes('stats') && Array.isArray(data.stats) && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 5, py: 4, bgcolor: '#f9fafb' }}>
+          {data.stats.map((s: any, i: number) => (
+            <Box key={i} sx={{ textAlign: 'center' }}>
+              <Typography sx={{ fontSize: '2rem', fontWeight: 800, color: primaryColor }}>{s.value}</Typography>
+              <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>{s.label}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* CTA Footer */}
+      {!exclude.includes('cta_footer') && data.cta_footer && (
+        <Box sx={{ background: gradient, color: '#fff', px: 4, py: 5, textAlign: 'center', mt: 2 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>{data.cta_footer.headline}</Typography>
+          <Typography sx={{ opacity: 0.9, mb: 3, maxWidth: 550, mx: 'auto' }}>{data.cta_footer.subheading}</Typography>
+          <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700, px: 4 }}>
+            {data.cta_footer.button_text || 'Get Started'}
+          </Button>
+        </Box>
+      )}
+
+      {/* CTA (object variant) */}
+      {!exclude.includes('cta') && data.cta && typeof data.cta === 'object' && data.cta.headline && (
+        <Box sx={{ py: 5, textAlign: 'center', px: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#1a1a2e' }}>{data.cta.headline}</Typography>
+          {data.cta.subheading && <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>{data.cta.subheading}</Typography>}
+          <Button variant="contained" sx={{ borderRadius: 3, px: 4, background: gradient, textTransform: 'none', fontWeight: 700 }}>
+            {data.cta.button_text || 'Get Started'}
+          </Button>
+        </Box>
+      )}
+    </>
+  );
+}
+
+// ─── Features Page ──────────────────────────────────────────────────────────
+function RenderFeaturesPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  return (
+    <Box>
+      <RenderNav data={data} primaryColor={primaryColor} />
+
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ background: gradient, color: '#fff', px: 5, py: 6, textAlign: 'center' }}>
+          {data.hero.badge && (
+            <Chip label={data.hero.badge} sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 600, fontSize: '0.8rem', mb: 2 }} />
+          )}
+          <Typography variant="h3" sx={{ fontWeight: 800, mb: 1.5, lineHeight: 1.2 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ fontSize: '1.1rem', opacity: 0.92, mb: 3, maxWidth: 650, mx: 'auto', lineHeight: 1.6 }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      {/* Feature Categories */}
+      {Array.isArray(data.feature_categories) && data.feature_categories.map((cat: any, ci: number) => (
+        <Box key={ci} sx={{ px: 4, py: 4, bgcolor: ci % 2 === 1 ? '#fafbfc' : '#fff' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, color: primaryColor, mb: 3, textAlign: 'center' }}>{cat.category}</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3 }}>
+            {cat.items?.map((f: any, i: number) => (
+              <Paper key={i} elevation={0} sx={{ p: 3, border: '1px solid #eee', borderRadius: 3, textAlign: 'center', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' } }}>
+                <Box sx={{ mb: 1.5 }}>{getIcon(f.icon, primaryColor)}</Box>
+                <Typography sx={{ fontWeight: 700, mb: 0.5, color: '#1a1a2e' }}>{f.title}</Typography>
+                <Typography variant="body2" sx={{ color: '#888', lineHeight: 1.6 }}>{f.description}</Typography>
+              </Paper>
+            ))}
+          </Box>
+        </Box>
+      ))}
+
+      {/* Comparison Table */}
+      {data.comparison && (
+        <Box sx={{ px: 4, py: 4 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, textAlign: 'center', mb: 3, color: '#1a1a2e' }}>{data.comparison.headline}</Typography>
+          <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #eee', borderRadius: 3 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#fafbfc' }}>
+                  {data.comparison.columns?.map((col: string, i: number) => (
+                    <TableCell key={i} align={i > 0 ? 'center' : 'left'} sx={{ fontWeight: 700, color: i === 1 ? primaryColor : '#1a1a2e' }}>{col}</TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.comparison.rows?.map((row: any, i: number) => (
+                  <TableRow key={i}>
+                    {(Array.isArray(row) ? row : [row.feature, row.us, row.competitor_a, row.competitor_b]).map((cell: string, ci: number) => (
+                      <TableCell key={ci} align={ci > 0 ? 'center' : 'left'} sx={{ fontWeight: ci === 0 ? 500 : 600, color: cell === '✅' ? '#27ae60' : cell === '❌' ? '#e74c3c' : ci === 1 ? primaryColor : '#555' }}>{cell}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
+      {/* CTA Footer */}
+      {data.cta_footer && (
+        <Box sx={{ background: gradient, color: '#fff', px: 4, py: 5, textAlign: 'center', mt: 2 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>{data.cta_footer.headline}</Typography>
+          <Typography sx={{ opacity: 0.9, mb: 3, maxWidth: 550, mx: 'auto' }}>{data.cta_footer.subheading}</Typography>
+          <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700, px: 4 }}>
+            {data.cta_footer.button_text || 'Get Started'}
+          </Button>
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['cta_footer']} />
+    </Box>
+  );
+}
+
+// ─── Blog Page ──────────────────────────────────────────────────────────────
+function RenderBlogPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  return (
+    <Box>
+      <RenderNav data={data} primaryColor={primaryColor} />
+
+      {/* Hero */}
+      {data.hero && (
+        <Box sx={{ background: gradient, color: '#fff', px: 5, py: 5, textAlign: 'center' }}>
+          <Typography variant="h3" sx={{ fontWeight: 800, mb: 1.5, lineHeight: 1.2 }}>{data.hero.headline}</Typography>
+          <Typography sx={{ fontSize: '1.1rem', opacity: 0.92, maxWidth: 600, mx: 'auto', lineHeight: 1.6 }}>{data.hero.subheading}</Typography>
+        </Box>
+      )}
+
+      {/* Category Pills */}
+      {Array.isArray(data.categories) && (
+        <Box sx={{ display: 'flex', gap: 1, px: 4, py: 2.5, flexWrap: 'wrap', borderBottom: '1px solid #eee' }}>
+          {data.categories.map((cat: string, i: number) => (
+            <Chip key={i} label={cat} size="small" variant={i === 0 ? 'filled' : 'outlined'}
+              sx={{ fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer', ...(i === 0 ? { bgcolor: primaryColor, color: '#fff' } : { borderColor: '#ddd', '&:hover': { borderColor: primaryColor, color: primaryColor } }) }}
+            />
+          ))}
+        </Box>
+      )}
+
+      {/* Featured Post */}
+      {data.featured_post && (
+        <Box sx={{ px: 4, py: 3 }}>
+          <Paper elevation={0} sx={{ border: '1px solid #eee', borderRadius: 3, overflow: 'hidden', display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { boxShadow: '0 8px 24px rgba(0,0,0,0.08)' } }}>
+            {/* Image placeholder */}
+            <Box sx={{ width: { xs: '100%', sm: 280 }, minHeight: 200, background: 'linear-gradient(135deg, #eef0ff 0%, #f3e5f5 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Typography sx={{ fontSize: '2.5rem' }}>📰</Typography>
+            </Box>
+            <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1.5, alignItems: 'center' }}>
+                <Chip label={data.featured_post.category} size="small" sx={{ bgcolor: primaryColor, color: '#fff', fontWeight: 600, fontSize: '0.7rem' }} />
+                <Chip label="Featured" size="small" variant="outlined" sx={{ fontWeight: 600, fontSize: '0.7rem', borderColor: '#ffa726', color: '#ffa726' }} />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1, lineHeight: 1.3 }}>{data.featured_post.title}</Typography>
+              <Typography variant="body2" sx={{ color: '#666', mb: 2, lineHeight: 1.7 }}>{data.featured_post.excerpt}</Typography>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 'auto' }}>
+                <Typography variant="caption" sx={{ color: '#999', fontWeight: 600 }}>{data.featured_post.author}</Typography>
+                <Typography variant="caption" sx={{ color: '#ccc' }}>•</Typography>
+                <Typography variant="caption" sx={{ color: '#999' }}>{data.featured_post.date}</Typography>
+                <Typography variant="caption" sx={{ color: '#ccc' }}>•</Typography>
+                <Typography variant="caption" sx={{ color: '#999' }}>{data.featured_post.read_time}</Typography>
+              </Box>
+            </Box>
+          </Paper>
+        </Box>
+      )}
+
+      {/* Posts Grid */}
+      {Array.isArray(data.posts) && (
+        <Box sx={{ px: 4, pb: 4 }}>
+          <Grid container spacing={2.5}>
+            {data.posts.map((post: any, i: number) => (
+              <Grid item xs={12} sm={6} md={4} key={i}>
+                <Paper elevation={0} sx={{ border: '1px solid #eee', borderRadius: 3, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column', cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' } }}>
+                  {/* Image placeholder */}
+                  <Box sx={{ height: 140, background: `linear-gradient(135deg, ${primaryColor}15, #764ba215)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography sx={{ fontSize: '1.8rem' }}>{['📝', '🎬', '📊', '🚀', '🎨', '⭐'][i % 6]}</Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <Chip label={post.category} size="small" sx={{ alignSelf: 'flex-start', mb: 1.5, fontWeight: 600, fontSize: '0.68rem', bgcolor: `${primaryColor}12`, color: primaryColor }} />
+                    <Typography sx={{ fontWeight: 700, color: '#1a1a2e', mb: 1, lineHeight: 1.3, fontSize: '0.95rem' }}>{post.title}</Typography>
+                    <Typography variant="body2" sx={{ color: '#888', lineHeight: 1.6, mb: 2, flex: 1, fontSize: '0.82rem' }}>{post.excerpt}</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 'auto' }}>
+                      <Typography variant="caption" sx={{ color: '#aaa', fontWeight: 600 }}>{post.author}</Typography>
+                      <Typography variant="caption" sx={{ color: '#ccc' }}>{post.read_time}</Typography>
+                    </Box>
+                  </Box>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      )}
+
+      {/* Newsletter */}
+      {data.newsletter && (
+        <Box sx={{ background: gradient, color: '#fff', px: 4, py: 5, textAlign: 'center' }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>{data.newsletter.headline}</Typography>
+          <Typography sx={{ opacity: 0.9, mb: 3, maxWidth: 500, mx: 'auto', fontSize: '0.95rem' }}>{data.newsletter.subheading}</Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', maxWidth: 440, mx: 'auto' }}>
+            <TextField size="small" placeholder={data.newsletter.placeholder || 'Enter your email'}
+              sx={{ flex: 1, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2, input: { color: '#fff', '&::placeholder': { color: 'rgba(255,255,255,0.6)' } }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.25)' } }}
+            />
+            <Button variant="contained" sx={{ bgcolor: '#fff', color: primaryColor, fontWeight: 700, px: 3, borderRadius: 2, textTransform: 'none', '&:hover': { bgcolor: '#f0f0f0' } }}>
+              {data.newsletter.button_text || 'Subscribe'}
+            </Button>
+          </Box>
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} exclude={['newsletter']} />
+    </Box>
+  );
+}
+
 // Route the page type to the correct renderer
-function RenderPage({ data, primaryColor }: { data: any; primaryColor: string }) {
-  const pageType = data.page_type;
+function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
+  // Resolve AI styled-text objects (e.g. {text:"...", color:"orange"}) into <span> elements
+  const data = resolveStyledText(rawData);
+  const pageType = rawData.page_type;
   switch (pageType) {
     case 'index': return <RenderIndexPage data={data} primaryColor={primaryColor} />;
     case 'thanks': return <RenderThanksPage data={data} primaryColor={primaryColor} />;
     case 'members': return <RenderMembersPage data={data} primaryColor={primaryColor} />;
-    case 'checkout': return <RenderCheckoutPage data={data} primaryColor={primaryColor} />;
+    case 'checkout': return <RenderCheckoutPage data={data} primaryColor={primaryColor} appId={appId} />;
     case 'admin': return <RenderAdminPage data={data} primaryColor={primaryColor} />;
+    case 'pricing': return <RenderPricingPage data={data} primaryColor={primaryColor} />;
+    case 'about': return <RenderAboutPage data={data} primaryColor={primaryColor} />;
+    case 'features': return <RenderFeaturesPage data={data} primaryColor={primaryColor} />;
+    case 'blog-page': return <RenderBlogPage data={data} primaryColor={primaryColor} />;
+    case 'faq': return <RenderFaqPage data={data} primaryColor={primaryColor} />;
+    case 'contact': return <RenderContactPage data={data} primaryColor={primaryColor} />;
     default:
       // Try to auto-detect
       if (data.features_section || data.nav) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
       if (data.order_confirmation || data.next_steps) return <RenderThanksPage data={data} primaryColor={primaryColor} />;
       if (data.welcome || data.courses) return <RenderMembersPage data={data} primaryColor={primaryColor} />;
-      if (data.plans || data.payment_form) return <RenderCheckoutPage data={data} primaryColor={primaryColor} />;
+      if (data.billing_toggle || data.comparison) return <RenderPricingPage data={data} primaryColor={primaryColor} />;
+      if (data.plans || data.payment_form) return <RenderCheckoutPage data={data} primaryColor={primaryColor} appId={appId} />;
       if (data.kpis || data.revenue_chart) return <RenderAdminPage data={data} primaryColor={primaryColor} />;
+      if (data.values || data.team || data.timeline) return <RenderAboutPage data={data} primaryColor={primaryColor} />;
+      if (data.feature_categories) return <RenderFeaturesPage data={data} primaryColor={primaryColor} />;
+      if (data.featured_post || data.posts) return <RenderBlogPage data={data} primaryColor={primaryColor} />;
+      if (data.categories && data.support_cta) return <RenderFaqPage data={data} primaryColor={primaryColor} />;
+      if (data.form && data.contact_info) return <RenderContactPage data={data} primaryColor={primaryColor} />;
       // Handle legacy renderer keys
       if (data.hero || data.sections || data.pricing) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
       return <RenderGenericPage data={data} />;
@@ -631,6 +1408,7 @@ export function AppPreviewPage() {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [addressBar, setAddressBar] = useState('');
+  const [scrollAll, setScrollAll] = useState(true);
 
   // Load apps
   useEffect(() => {
@@ -780,26 +1558,36 @@ export function AppPreviewPage() {
         </Box>
         <Box sx={{ flex: 1 }} />
         {/* Page navigation tabs */}
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
-          {pages.map(page => (
-            <Chip
-              key={page.id}
-              icon={getPageIcon(page.page_type)}
-              label={page.title}
-              size="small"
-              onClick={() => navigateTo(page)}
-              sx={{
-                fontWeight: activePage?.id === page.id ? 700 : 500,
-                fontSize: '0.78rem',
-                bgcolor: activePage?.id === page.id ? `${primaryColor}15` : 'transparent',
-                color: activePage?.id === page.id ? primaryColor : '#888',
-                border: activePage?.id === page.id ? `1px solid ${primaryColor}40` : '1px solid transparent',
-                cursor: 'pointer',
-                '&:hover': { bgcolor: `${primaryColor}08` },
-              }}
-            />
-          ))}
-        </Box>
+        {!scrollAll && (
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            {pages.map(page => (
+              <Chip
+                key={page.id}
+                icon={getPageIcon(page.page_type)}
+                label={page.title}
+                size="small"
+                onClick={() => navigateTo(page)}
+                sx={{
+                  fontWeight: activePage?.id === page.id ? 700 : 500,
+                  fontSize: '0.78rem',
+                  bgcolor: activePage?.id === page.id ? `${primaryColor}15` : 'transparent',
+                  color: activePage?.id === page.id ? primaryColor : '#888',
+                  border: activePage?.id === page.id ? `1px solid ${primaryColor}40` : '1px solid transparent',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: `${primaryColor}08` },
+                }}
+              />
+            ))}
+          </Box>
+        )}
+        {scrollAll && (
+          <Chip
+            icon={<ViewStreamIcon sx={{ fontSize: 14 }} />}
+            label={`${pages.filter(p => p.content_json).length} pages`}
+            size="small"
+            sx={{ fontWeight: 600, fontSize: '0.78rem', bgcolor: `${primaryColor}12`, color: primaryColor, border: `1px solid ${primaryColor}30` }}
+          />
+        )}
       </Box>
 
       {/* Browser Chrome */}
@@ -829,8 +1617,14 @@ export function AppPreviewPage() {
               {/* Address bar */}
               <Box sx={{ flex: 1, bgcolor: '#fff', borderRadius: '8px', border: '1px solid #ddd', px: 1.5, py: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <LockIcon sx={{ fontSize: 14, color: '#4caf50' }} />
-                <Typography sx={{ fontSize: '0.8rem', color: '#555', fontFamily: 'monospace', flex: 1 }}>{addressBar}</Typography>
+                <Typography sx={{ fontSize: '0.8rem', color: '#555', fontFamily: 'monospace', flex: 1 }}>{scrollAll ? `https://${selectedApp.slug}.example.com/` : addressBar}</Typography>
               </Box>
+              {/* View mode toggle */}
+              <Tooltip title={scrollAll ? 'Single page view' : 'Scroll all pages'} arrow>
+                <IconButton size="small" onClick={() => setScrollAll(!scrollAll)} sx={{ p: 0.5 }}>
+                  {scrollAll ? <SinglePageIcon sx={{ fontSize: 18, color: primaryColor }} /> : <ViewStreamIcon sx={{ fontSize: 18, color: '#888' }} />}
+                </IconButton>
+              </Tooltip>
             </Box>
 
             {/* Page content */}
@@ -839,8 +1633,45 @@ export function AppPreviewPage() {
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                   <CircularProgress />
                 </Box>
+              ) : scrollAll ? (
+                // ─── Scroll-All Mode: render every page stacked ───────────
+                pages.length > 0 ? (
+                  <Box>
+                    {pages.filter(p => p.content_json).map((page, idx) => (
+                      <Box key={page.id}>
+                        {/* Page divider header */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 3, py: 1.5, bgcolor: idx === 0 ? 'transparent' : '#f8f9fa', borderTop: idx === 0 ? 'none' : '3px solid #e0e0e0' }}>
+                          <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: `${primaryColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {getPageIcon(page.page_type)}
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', color: '#1a1a2e', lineHeight: 1.2 }}>{page.title}</Typography>
+                            <Typography variant="caption" sx={{ color: '#bbb' }}>/{page.page_type === 'index' ? '' : page.page_type}</Typography>
+                          </Box>
+                        </Box>
+                        {/* Rendered page */}
+                        <PreviewErrorBoundary>
+                          <RenderPage data={page.content_json as any} primaryColor={primaryColor} appId={selectedApp?.id} />
+                        </PreviewErrorBoundary>
+                      </Box>
+                    ))}
+                    {pages.filter(p => p.content_json).length === 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300, flexDirection: 'column' }}>
+                        <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No content</Typography>
+                        <Typography variant="body2" sx={{ color: '#ddd' }}>None of the pages have content configured.</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
+                    <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No pages</Typography>
+                    <Typography variant="body2" sx={{ color: '#ddd' }}>This project has no pages yet.</Typography>
+                  </Box>
+                )
               ) : activePage?.content_json ? (
-                <RenderPage data={activePage.content_json} primaryColor={primaryColor} />
+                <PreviewErrorBoundary>
+                  <RenderPage data={activePage.content_json} primaryColor={primaryColor} appId={selectedApp?.id} />
+                </PreviewErrorBoundary>
               ) : (
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
                   <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No content</Typography>
