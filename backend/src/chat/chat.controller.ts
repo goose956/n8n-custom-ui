@@ -5,6 +5,7 @@ interface PostChatRequest {
   message: string;
   apiProvider: string;
   model?: string;
+  mode?: string;
   pageContent: string;
   pageTitle: string;
   pageType: string;

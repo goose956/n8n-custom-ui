@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Res } from '@nestjs/common';
 import { ProgrammerAgentService } from './programmer-agent.service';
+import { Response } from 'express';
 
 @Controller('api/programmer-agent')
 export class ProgrammerAgentController {
@@ -281,5 +282,41 @@ export class ProgrammerAgentController {
     },
   ) {
     return this.agentService.generateDocs(body.files, body.appId, body.backendTasks as any, body.model);
+  }
+
+  /**
+   * Coder Agent — autonomous builder with SSE streaming for live progress
+   */
+  @Post('coder-chat')
+  async coderChat(
+    @Body()
+    body: {
+      message: string;
+      files?: { path: string; content: string; language: string; description?: string }[];
+      conversationHistory?: { role: 'user' | 'assistant'; content: string }[];
+      appId?: number;
+      model?: string;
+    },
+    @Res() res: Response,
+  ) {
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      await this.agentService.coderChatStream(body, sendEvent);
+    } catch (err) {
+      sendEvent('error', { message: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      sendEvent('done', {});
+      res.end();
+    }
   }
 }

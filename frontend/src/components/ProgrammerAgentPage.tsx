@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react';
 import { API } from '../config/api';
+import { RenderPage } from './AppPreviewPage';
 import {
   Box, Typography, TextField, Button, Paper, Select, MenuItem,
   FormControl, InputLabel, Chip, CircularProgress,
@@ -54,7 +55,620 @@ import {
   Info as InfoIcon,
   Replay as RetryIcon,
   AttachMoney as CostIcon,
+  VerticalSplit as SplitIcon,
 } from '@mui/icons-material';
+
+/* ─── Preview Error Boundary (same pattern as Pages tab) ─── */
+class PreviewErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error.message };
+  }
+  componentDidCatch(error: Error) {
+    console.error('Preview render crash:', error);
+  }
+  componentDidUpdate(prevProps: any) {
+    if (prevProps.children !== this.props.children && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ p: 4, textAlign: 'center' }}>
+          <Typography sx={{ color: '#e74c3c', fontWeight: 700, mb: 1 }}>Preview crashed</Typography>
+          <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>
+            The generated content could not be previewed. Switch to Code view to inspect the output.
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#ccc', fontFamily: 'monospace' }}>{this.state.errorMessage}</Typography>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* ─── Smart preview: thinks about what would actually be on each page ─── */
+interface PreviewContext {
+  appName: string;
+  appDescription: string;
+  prompt: string;
+  pages: { name: string; description: string; type: string }[];
+  allFiles: GeneratedFile[];
+}
+
+function titleCase(s: string) {
+  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Strip "Generated file: path/to/file.tsx" prefix that the AI prepends to descriptions */
+function cleanDescription(raw: string): string {
+  return raw.replace(/^generated\s+file:\s*\S+\s*/i, '').trim();
+}
+
+/** Build nav links from the other pages in the project */
+function navLinksFromPages(pages: { name: string }[], exclude?: string): string[] {
+  return pages
+    .filter(p => p.name.toLowerCase() !== (exclude || '').toLowerCase())
+    .map(p => titleCase(p.name))
+    .slice(0, 4);
+}
+
+/**
+ * The core idea: read the description and figure out what UI elements belong on this page.
+ * Most pages are NOT dashboards. They are functional tool pages with:
+ *  - A title + description paragraph explaining what the page does
+ *  - Maybe an input form (for generators, creators, search)
+ *  - Maybe a list of items (for management, library, history)
+ *  - Maybe settings toggles
+ *  - Maybe notifications
+ *  - Tips on how to use the page
+ */
+function generatePreviewData(file: GeneratedFile, _appNameLegacy?: string, ctx?: PreviewContext): { data: any; pageType: string } {
+  const fileName = file.path.split('/').pop()?.replace(/\.(tsx|jsx|ts|js)$/, '').toLowerCase() || '';
+  const rawDesc = file.description || '';
+  const fileDesc = cleanDescription(rawDesc);
+  const desc = fileDesc.toLowerCase();
+  const appName = ctx?.appName || _appNameLegacy || 'My App';
+  const appDesc = cleanDescription(ctx?.appDescription || '');
+  const pagesCtx = ctx?.pages || [];
+
+  const pageName = titleCase(fileName.replace(/page$/i, ''));
+  const navLinks = navLinksFromPages(pagesCtx, fileName);
+
+  // ─── Priority 1: Exact structural pages (admin, checkout, landing) ───
+
+  // Admin panel — the ONLY page that should look like a dashboard with KPIs
+  if (/admin/i.test(fileName) || /\badmin\b/i.test(desc)) {
+    return {
+      pageType: 'admin',
+      data: {
+        page_type: 'admin',
+        dashboard_title: fileDesc || `${appName} Admin`,
+        kpis: [
+          { label: 'Total Users', value: '1,247', change: '+12%', up: true },
+          { label: 'Revenue', value: '$12,450', change: '+8.3%', up: true },
+          { label: 'Active Today', value: '89', change: '+5', up: true },
+          { label: 'Churn Rate', value: '2.1%', change: '-0.3%', up: true },
+        ],
+        revenue_chart: {
+          title: 'Growth Trend', periods: ['7D', '30D', '90D', '1Y'], default_period: '30D',
+          months: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+          data: [4200, 5100, 4800, 6200, 7100, 8400, 9200, 10800],
+        },
+        recent_users: [
+          { name: 'Sarah Chen', email: 'sarah@example.com', plan: 'Pro', status: 'Active', mrr: '$39/mo' },
+          { name: 'James Wilson', email: 'james@company.co', plan: 'Enterprise', status: 'Active', mrr: '$99/mo' },
+          { name: 'Maria Garcia', email: 'maria@studio.com', plan: 'Starter', status: 'Trial', mrr: '$9/mo' },
+        ],
+        system_health: [
+          { label: 'API Gateway', status: 'Operational' },
+          { label: 'Application Server', status: 'Operational' },
+          { label: 'Database', status: 'Operational' },
+        ],
+        recent_activity: [
+          { text: 'New Enterprise signup', time: '2m ago' },
+          { text: 'System update deployed', time: '1h ago' },
+          { text: 'Monthly report generated', time: '3h ago' },
+        ],
+      },
+    };
+  }
+
+  // Checkout / Pricing / Plans
+  if (/checkout|pricing|plan|billing|subscription/i.test(fileName) || /\b(checkout|pricing|billing|subscription)\b/i.test(desc)) {
+    const what = desc.includes('hour') ? 'hours' : desc.includes('seat') ? 'seats' : desc.includes('project') ? 'projects' : 'features';
+    return {
+      pageType: 'checkout',
+      data: {
+        page_type: 'checkout',
+        headline: fileDesc || `Choose Your ${appName} Plan`,
+        subheading: appDesc || 'Start with a free trial. Upgrade as you grow.',
+        plans: [
+          { name: 'Starter', description: 'For individuals', price: '$9', period: '/mo', features: [`3 ${what}`, 'Core access', 'Email support', 'Community'], cta: 'Start Free' },
+          { name: 'Professional', description: 'For growing teams', price: '$39', period: '/mo', popular: true, features: [`Unlimited ${what}`, 'Everything in Starter', 'Priority support', 'API access', 'Team collaboration', 'Advanced analytics'], cta: 'Go Pro' },
+          { name: 'Enterprise', description: 'For organizations', price: '$99', period: '/mo', features: ['Everything in Pro', 'Custom integrations', 'Dedicated account manager', 'SSO & SAML', 'SLA guarantee'], cta: 'Contact Sales' },
+        ],
+        guarantee: '14-day free trial. No credit card required. Cancel anytime.',
+        trust_badges: ['SSL Secured', 'Cancel Anytime', 'Instant Access', '99.9% Uptime'],
+      },
+    };
+  }
+
+  // Landing / Index / Home — the ONLY page that should look like a marketing site
+  if (/^(index|landing|home|welcome)$/i.test(fileName) || /\b(landing page|home page|welcome page)\b/i.test(desc)) {
+    return {
+      pageType: 'index',
+      data: {
+        page_type: 'index',
+        nav: { brand: appName, links: navLinks.length ? navLinks : ['Features', 'Pricing', 'About'], cta: 'Get Started' },
+        hero: {
+          headline: appName,
+          subheading: appDesc || fileDesc || 'Everything you need to grow and succeed',
+          cta: 'Start Free Trial', secondary_cta: 'Watch Demo',
+          social_proof: '★ Trusted by thousands of professionals worldwide',
+        },
+        features_section: {
+          headline: 'Everything You Need',
+          subheading: appDesc || 'Powerful features for modern teams',
+          items: pagesCtx.slice(0, 6).map((p, i) => {
+            const icons = ['🚀', '⚡', '🔧', '📊', '🔒', '🤝'];
+            const pDesc = cleanDescription(p.description || '');
+            return { icon: icons[i % icons.length], title: titleCase(p.name), description: pDesc || `${titleCase(p.name)} functionality` };
+          }),
+        },
+        testimonials: [
+          { quote: `${appName} completely transformed our workflow. What used to take hours now takes minutes.`, author: 'Sarah Chen', title: 'Operations Director', avatar: '👩‍💼' },
+          { quote: `The best investment we made this year. Our team productivity doubled within weeks.`, author: 'James Wilson', title: 'Head of Product', avatar: '👨‍💻' },
+        ],
+        faq: [
+          { question: `How do I get started with ${appName}?`, answer: `Sign up for a free account and follow our quick-start guide. You'll be up and running in under 5 minutes.` },
+          { question: 'Can I try before I buy?', answer: 'Yes! We offer a 14-day free trial with full access. No credit card required.' },
+          { question: 'Do you offer team plans?', answer: 'Absolutely. Our Professional and Enterprise plans include team features, advanced permissions, and dedicated support.' },
+        ],
+        cta_footer: {
+          headline: `Ready to Get Started?`,
+          subheading: `Join ${appName} today — free trial, no credit card required.`,
+          button_text: 'Start Free Trial',
+        },
+      },
+    };
+  }
+
+  // Contact / Support page — use contact renderer
+  if (/support|help|contact|ticket/i.test(fileName) || /\b(support|help desk|contact us|submit.?ticket)\b/i.test(desc)) {
+    return {
+      pageType: 'contact',
+      data: {
+        page_type: 'contact',
+        form: {
+          headline: fileDesc || `${appName} Support`,
+          subheading: 'Our team typically responds within 2 hours',
+          fields: [
+            { label: 'Subject', type: 'text', placeholder: 'What do you need help with?' },
+            { label: 'Category', type: 'text', placeholder: 'General / Billing / Technical / Feature Request' },
+            { label: 'Message', type: 'textarea', placeholder: 'Describe your issue in detail...', rows: 5 },
+          ],
+          submit_text: 'Submit Ticket',
+        },
+        contact_info: {
+          headline: 'Other Ways to Get Help',
+          items: [
+            { icon: '📧', label: 'Email', value: `support@${appName.toLowerCase().replace(/\s+/g, '')}.com` },
+            { icon: '💬', label: 'Live Chat', value: 'Available Mon–Fri, 9am–6pm' },
+            { icon: '📚', label: 'Knowledge Base', value: '200+ articles & guides' },
+          ],
+        },
+      },
+    };
+  }
+
+  // ─── Priority 2: Description-driven tool pages ───
+  // This is the key insight: READ the description, figure out what would actually be on the page.
+
+  // AI / Generator / Creator pages → input form + recent output
+  if (/\b(ai|generat|creat|build|design|compos|convert|transform|process|produc|automat)\b/i.test(desc) ||
+      /\b(generator|creator|builder|converter|composer|maker)\b/i.test(fileName)) {
+    // Parse the description to figure out WHAT is being generated/created
+    const subjectMatch = desc.match(/(?:ai\s+)?(\w[\w\s]{2,30}?)(?:\s+generator|\s+creator|\s+builder|\s+maker|\s+tool|\s+conversion|\s+processing)/i);
+    const subject = subjectMatch ? titleCase(subjectMatch[1].trim()) : pageName;
+    const isImage = /image|photo|thumbnail|avatar|logo|icon|banner|graphic|visual|picture/i.test(desc);
+    const isText = /text|copy|content|article|blog|email|description|summary|caption|headline|title|script|story/i.test(desc);
+    const isAudio = /audio|sound|music|voice|speech|podcast|narration/i.test(desc);
+    const isVideo = /video|animation|clip|reel/i.test(desc);
+    const isCode = /code|script|program|function|component|template/i.test(desc);
+    const isData = /data|report|spreadsheet|csv|analysis|chart/i.test(desc);
+
+    // Build input fields based on what's being generated
+    const fields: any[] = [];
+    if (isImage) {
+      fields.push({ label: 'Description', type: 'textarea', placeholder: `Describe the ${subject.toLowerCase()} you want to generate...`, rows: 3 });
+      fields.push({ label: 'Style', type: 'select', options: ['Professional', 'Minimalist', 'Vibrant', 'Cinematic', 'Illustrative', 'Watercolor'] });
+      fields.push({ label: 'Size', type: 'select', options: ['1024x1024', '1920x1080', '1080x1080', '800x600', 'Custom'] });
+    } else if (isAudio) {
+      fields.push({ label: 'Input Text or Description', type: 'textarea', placeholder: `Enter text or describe the ${subject.toLowerCase()} you need...`, rows: 3 });
+      fields.push({ label: 'Voice / Style', type: 'select', options: ['Natural', 'Professional', 'Casual', 'Dramatic', 'Whisper'] });
+      fields.push({ label: 'Format', type: 'select', options: ['MP3', 'WAV', 'M4A', 'OGG'] });
+    } else if (isCode) {
+      fields.push({ label: 'What should it do?', type: 'textarea', placeholder: 'Describe the functionality you need...', rows: 4 });
+      fields.push({ label: 'Language', type: 'select', options: ['TypeScript', 'Python', 'JavaScript', 'React', 'HTML/CSS'] });
+    } else if (isData) {
+      fields.push({ label: 'What data do you need?', type: 'textarea', placeholder: `Describe the ${subject.toLowerCase()} you want to generate...`, rows: 3 });
+      fields.push({ label: 'Format', type: 'select', options: ['Table', 'Chart', 'CSV', 'JSON', 'PDF Report'] });
+    } else {
+      // Generic text/content or unknown — still give a good input
+      fields.push({ label: 'Description', type: 'textarea', placeholder: `Describe what you want to ${desc.includes('convert') || desc.includes('transform') ? 'convert' : 'create'}...`, rows: 3 });
+      if (isText) {
+        fields.push({ label: 'Tone', type: 'select', options: ['Professional', 'Casual', 'Formal', 'Persuasive', 'Friendly'] });
+        fields.push({ label: 'Length', type: 'select', options: ['Short (1-2 paragraphs)', 'Medium (3-5 paragraphs)', 'Long (article-length)'] });
+      }
+    }
+
+    // Build output preview items
+    const outputItems = [];
+    const typeLabel = isImage ? 'image' : isAudio ? 'audio' : isVideo ? 'video' : isCode ? 'snippet' : isData ? 'report' : 'item';
+    outputItems.push({ title: `${subject} #1 — Summer Campaign`, subtitle: `Generated ${typeLabel} · 2 min ago`, status: 'Done', time: '2m ago' });
+    outputItems.push({ title: `${subject} #2 — Product Launch`, subtitle: `Generated ${typeLabel} · 15 min ago`, status: 'Done', time: '15m ago' });
+    outputItems.push({ title: `${subject} #3 — Weekly Batch`, subtitle: `3 ${typeLabel}s · Processing`, status: 'Processing', time: '1h ago' });
+
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc,
+        info: appDesc ? `Part of ${appName}: ${appDesc}` : undefined,
+        tool_input: {
+          headline: `Create New ${subject}`,
+          fields,
+          submit_text: desc.includes('convert') || desc.includes('transform') ? 'Convert' : desc.includes('process') ? 'Process' : 'Generate',
+          hint: isImage ? 'Tip: Be specific about colors, style, and composition for better results.' : isText ? 'Tip: Provide context about your audience and goal for better output.' : `Tip: The more detail you provide, the better the result.`,
+        },
+        output_preview: { headline: 'Recent Results', items: outputItems },
+        tips: [
+          `Be specific in your description for better results`,
+          `You can regenerate any result by clicking on it`,
+          `All generated content is saved to your library`,
+        ],
+      },
+    };
+  }
+
+  // Notification / Alert / Feed pages → notification list
+  if (/notification|alert|feed|inbox|announce|update/i.test(fileName) || /\b(notification|alert|inbox|announcement|update|feed)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `Stay up to date with your ${appName} notifications.`,
+        notifications: [
+          { title: 'New Feature Available', message: `${appName} has been updated with new capabilities. Check it out!`, time: '5m ago', read: false },
+          { title: 'Welcome to the Team!', message: 'A new team member has joined your workspace.', time: '1h ago', read: false },
+          { title: 'Weekly Summary', message: 'Your weekly activity report is ready to view.', time: '3h ago', read: true },
+          { title: 'Maintenance Complete', message: 'Scheduled maintenance has been completed successfully.', time: '1d ago', read: true },
+          { title: 'Billing Update', message: 'Your invoice for this month has been generated.', time: '2d ago', read: true },
+        ],
+        quick_actions: ['Mark All Read', 'Notification Settings', 'Filter'],
+      },
+    };
+  }
+
+  // Settings / Config / Preferences → settings sections
+  if (/settings|config|preference/i.test(fileName) || /\b(settings|configuration|preferences)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `Configure your ${appName} experience.`,
+        settings_sections: [
+          {
+            title: 'General',
+            items: [
+              { label: 'Display Name', value: 'John Doe', hint: 'Visible to other members' },
+              { label: 'Email', value: 'john@example.com', hint: 'Used for notifications' },
+              { label: 'Language', value: 'English', hint: 'Interface language' },
+              { label: 'Timezone', value: 'UTC-5 (Eastern)', hint: 'For scheduling and dates' },
+            ],
+          },
+          {
+            title: 'Notifications',
+            items: [
+              { label: 'Email Notifications', value: 'Enabled', hint: 'Receive updates via email' },
+              { label: 'Push Notifications', value: 'Enabled', hint: 'Browser push alerts' },
+              { label: 'Weekly Digest', value: 'Enabled', hint: 'Summary email every Monday' },
+            ],
+          },
+          {
+            title: 'Privacy & Security',
+            items: [
+              { label: 'Two-Factor Auth', value: 'Enabled', hint: 'Extra security for your account' },
+              { label: 'Profile Visibility', value: 'Team Only', hint: 'Who can see your profile' },
+              { label: 'Data Export', value: 'Available', hint: 'Download all your data' },
+            ],
+          },
+        ],
+        quick_actions: ['Change Password', 'Connected Apps', 'API Keys', 'Delete Account'],
+      },
+    };
+  }
+
+  // Content Management / Library / List / Gallery / Collection pages → content list
+  if (/manage|library|collection|gallery|list|directory|catalog|inventory|archive/i.test(fileName) ||
+      /\b(manage|library|collection|gallery|browse|catalog|inventory|directory|archive|organiz)\b/i.test(desc)) {
+    // Figure out what's being managed from the description
+    const itemMatch = desc.match(/(?:manage|browse|view|organize|list)\s+(?:your\s+)?(\w[\w\s]{2,25})/i);
+    const itemType = itemMatch ? titleCase(itemMatch[1].trim()) : pageName.replace(/Management|Library|Collection|Gallery|List/i, '').trim() || 'Items';
+    const icons = ['📄', '🎨', '📸', '📊', '🔗', '📁'];
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `Browse and manage your ${itemType.toLowerCase()}.`,
+        content_list: {
+          search_placeholder: `Search ${itemType.toLowerCase()}...`,
+          actions: [`New ${itemType.replace(/s$/i, '')}`, 'Filter', 'Sort', 'Export'],
+          items: [
+            { icon: icons[0], title: `${itemType.replace(/s$/i, '')} — Summer Campaign`, subtitle: 'Created 2 days ago', type: 'Active', status: 'Published', date: 'Feb 12' },
+            { icon: icons[1], title: `${itemType.replace(/s$/i, '')} — Product Launch`, subtitle: 'Updated yesterday', type: 'Active', status: 'Published', date: 'Feb 11' },
+            { icon: icons[2], title: `${itemType.replace(/s$/i, '')} — Q1 Planning`, subtitle: 'In review', type: 'Review', status: 'Draft', date: 'Feb 10' },
+            { icon: icons[3], title: `${itemType.replace(/s$/i, '')} — Onboarding v2`, subtitle: 'Awaiting approval', type: 'Pending', status: 'Draft', date: 'Feb 8' },
+            { icon: icons[4], title: `${itemType.replace(/s$/i, '')} — Archive sample`, subtitle: 'Completed last week', type: 'Archive', status: 'Published', date: 'Feb 5' },
+          ],
+        },
+        quick_actions: [`New ${itemType.replace(/s$/i, '')}`, 'Import', 'Bulk Actions', 'Trash'],
+      },
+    };
+  }
+
+  // Profile / Account page → settings-style
+  if (/profile|account|my-account/i.test(fileName) || /\b(profile|account|my account)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: 'My Profile',
+        description: fileDesc || `View and edit your ${appName} profile.`,
+        settings_sections: [
+          {
+            title: 'Account Details',
+            items: [
+              { label: 'Name', value: 'John Doe' },
+              { label: 'Email', value: 'john@example.com' },
+              { label: 'Member Since', value: 'January 2025' },
+              { label: 'Plan', value: 'Professional' },
+            ],
+          },
+          {
+            title: 'Usage',
+            items: [
+              { label: 'Current Usage', value: '78%', hint: 'Of monthly plan limit' },
+              { label: 'Storage', value: '2.4 GB / 10 GB', hint: 'Files and media' },
+            ],
+          },
+        ],
+        quick_actions: ['Edit Profile', 'Change Password', 'Billing & Plans', 'Download Data'],
+      },
+    };
+  }
+
+  // History / Activity / Logs → content list with time-based items
+  if (/history|activity|log|timeline|audit/i.test(fileName) || /\b(history|activity log|timeline|audit)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `View your recent ${appName} activity.`,
+        content_list: {
+          search_placeholder: 'Search activity...',
+          actions: ['Filter by Date', 'Export CSV'],
+          items: [
+            { icon: '✅', title: 'Completed task: Review submission', subtitle: 'Marked as done', date: '2 hours ago', status: 'Active' },
+            { icon: '📤', title: 'Exported monthly report', subtitle: 'PDF · 2.4 MB', date: 'Yesterday', status: 'Active' },
+            { icon: '🔄', title: 'Updated settings', subtitle: 'Changed notification preferences', date: '2 days ago', status: 'Active' },
+            { icon: '👤', title: 'Profile updated', subtitle: 'Changed display name and avatar', date: '3 days ago', status: 'Active' },
+            { icon: '📥', title: 'Imported data', subtitle: 'CSV file · 148 records', date: 'Last week', status: 'Active' },
+          ],
+        },
+        quick_actions: ['Clear History', 'Export All'],
+      },
+    };
+  }
+
+  // Upload / Import → tool input for file upload
+  if (/upload|import/i.test(fileName) || /\b(upload|import|file upload)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || 'Upload and import your files.',
+        tool_input: {
+          headline: 'Upload Files',
+          fields: [
+            { label: 'Select Files', type: 'text', placeholder: 'Drag & drop files here or click to browse' },
+            { label: 'Category', type: 'select', options: ['General', 'Documents', 'Images', 'Media', 'Data'] },
+          ],
+          submit_text: 'Upload',
+          hint: 'Supported formats: PDF, DOCX, JPG, PNG, MP4, CSV and more. Max 2 GB per file.',
+        },
+        output_preview: {
+          headline: 'Recent Uploads',
+          items: [
+            { title: 'report-q4.pdf', subtitle: '2.4 MB · PDF', status: 'Done', time: '10m ago' },
+            { title: 'team-photo.jpg', subtitle: '1.1 MB · Image', status: 'Done', time: '1h ago' },
+            { title: 'data-export.csv', subtitle: '450 KB · CSV', status: 'Done', time: '2h ago' },
+          ],
+        },
+        tips: [`You can upload multiple files at once`, `Files are automatically organized by type`],
+      },
+    };
+  }
+
+  // Analytics / Reports / Metrics → keep as admin (the only other dashboard-like page)
+  if (/analytic|report|metric|insight|stat/i.test(fileName) || /\b(analytics|report|metrics|insight|statistics)\b/i.test(desc)) {
+    return {
+      pageType: 'admin',
+      data: {
+        page_type: 'admin',
+        dashboard_title: fileDesc || pageName,
+        kpis: [
+          { label: 'Total Views', value: '24,891', change: '+18%', up: true },
+          { label: 'Engagement', value: '67%', change: '+5.2%', up: true },
+          { label: 'Growth', value: '+23%', change: '+3%', up: true },
+          { label: 'Retention', value: '89%', change: '+1.4%', up: true },
+        ],
+        revenue_chart: {
+          title: 'Activity Over Time', periods: ['7D', '30D', '90D'], default_period: '30D',
+          months: ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+          data: [2100, 3400, 2900, 4100, 5200, 6800],
+        },
+      },
+    };
+  }
+
+  // Dashboard / Overview — the main member dashboard (only for explicitly named dashboards)
+  if (/dashboard|overview/i.test(fileName) || /\b(dashboard|overview)\b/i.test(desc)) {
+    const pageLinks = pagesCtx.map(p => titleCase(p.name)).slice(0, 6);
+    return {
+      pageType: 'members',
+      data: {
+        page_type: 'members',
+        welcome: { headline: `Welcome to ${appName}`, subheading: appDesc || fileDesc || 'Your dashboard — everything at a glance' },
+        stats: [
+          { label: 'Status', value: 'Active', sub: 'All systems go' },
+          { label: 'Last Login', value: 'Today', sub: '2 hours ago' },
+          { label: 'Tasks', value: '3', sub: 'Pending' },
+        ],
+        quick_actions: pageLinks.length >= 3 ? pageLinks : ['Getting Started', 'Settings', 'Support', 'Browse', 'Upgrade'],
+      },
+    };
+  }
+
+  // API / Integrations / Developer → tool page with code-like input
+  if (/api|integrat|develop|webhook/i.test(fileName) || /\b(api|integration|developer|webhook)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `Connect ${appName} with your existing tools and automate your workflow.`,
+        badge: 'Developer',
+        info: 'Use API keys to authenticate requests. Keep your keys private and never share them in client-side code.',
+        settings_sections: [
+          {
+            title: 'API Keys',
+            items: [
+              { label: 'Production Key', value: 'sk_live_••••••••4f2a', hint: 'For live requests' },
+              { label: 'Test Key', value: 'sk_test_••••••••8b1c', hint: 'For development' },
+              { label: 'Rate Limit', value: '1,000 req/min', hint: 'Current plan limit' },
+            ],
+          },
+        ],
+        output_preview: {
+          headline: 'Recent API Activity',
+          items: [
+            { title: 'POST /api/create', subtitle: '200 OK · 142ms', status: 'Done', time: '2m ago' },
+            { title: 'GET /api/list', subtitle: '200 OK · 89ms', status: 'Done', time: '15m ago' },
+            { title: 'POST /api/batch', subtitle: '202 Accepted · 1.2s', status: 'Processing', time: '1h ago' },
+          ],
+        },
+        quick_actions: ['Generate New Key', 'View Docs', 'Test Endpoint', 'Webhook Setup', 'Usage Logs'],
+      },
+    };
+  }
+
+  // Blog / Resources / Library / Docs / Guide → content list
+  if (/blog|resource|library|docs|guide|tutorial|article|knowledge/i.test(fileName) ||
+      /\b(blog|resource|guide|tutorial|article|knowledge base|documentation)\b/i.test(desc)) {
+    return {
+      pageType: 'tool',
+      data: {
+        page_type: 'tool',
+        title: pageName,
+        description: fileDesc || `Explore ${appName} resources, guides, and tutorials.`,
+        content_list: {
+          search_placeholder: 'Search resources...',
+          actions: ['All', 'Guides', 'Tutorials', 'FAQs'],
+          items: [
+            { icon: '📖', title: 'Getting Started Guide', subtitle: 'Step-by-step setup walkthrough', type: 'Guide', status: 'Published', date: 'Updated 3d ago' },
+            { icon: '🎯', title: 'Best Practices', subtitle: 'Tips from power users', type: 'Guide', status: 'Published', date: 'Updated 1w ago' },
+            { icon: '🔌', title: 'Integration Guide', subtitle: 'Connect with your tools', type: 'Tutorial', status: 'Published', date: 'Updated 2w ago' },
+            { icon: '💡', title: 'Tips & Tricks', subtitle: 'Hidden features you should know', type: 'Article', status: 'Published', date: 'Updated 3w ago' },
+          ],
+        },
+      },
+    };
+  }
+
+  // ─── Priority 3: Fallback — description-driven tool page ───
+  // Every other page becomes a clean tool page with description text
+  // and contextual elements based on what the description mentions.
+
+  const data: any = {
+    page_type: 'tool',
+    title: pageName,
+    description: fileDesc || `${pageName} functionality for ${appName}.`,
+  };
+
+  // Add an info callout from the app description if available
+  if (appDesc && appDesc !== fileDesc) {
+    data.info = appDesc;
+  }
+
+  // If the description suggests this page has some kind of input/action
+  const hasInputAction = /\b(enter|input|submit|create|generate|search|write|compose|send|upload|type|describe|select|choose|pick|fill|provide)\b/i.test(desc);
+  const hasListContent = /\b(list|browse|view|see|find|show|display|all|recent|your|history|saved|favorite|archive|items|records|entries|results)\b/i.test(desc);
+
+  if (hasInputAction && !hasListContent) {
+    // Page seems interactive — give it an input form
+    const actionVerb = desc.match(/\b(create|generate|search|send|compose|build|upload|convert|write|submit|enter)\b/i)?.[1] || 'Submit';
+    data.tool_input = {
+      headline: fileDesc || `${pageName}`,
+      fields: [
+        { label: 'Input', type: 'textarea', placeholder: `Enter your ${pageName.toLowerCase()} details here...`, rows: 3 },
+      ],
+      submit_text: titleCase(actionVerb),
+    };
+    data.tips = [
+      `Be as specific as possible for better results`,
+      `Your previous results are saved automatically`,
+    ];
+  } else if (hasListContent) {
+    // Page seems to show a list of things
+    data.content_list = {
+      search_placeholder: `Search ${pageName.toLowerCase()}...`,
+      actions: ['All', 'Recent', 'Favorites'],
+      items: [
+        { icon: '📄', title: `${pageName} Item 1`, subtitle: 'Most recent', status: 'Active', date: 'Today' },
+        { icon: '📄', title: `${pageName} Item 2`, subtitle: 'Updated recently', status: 'Active', date: 'Yesterday' },
+        { icon: '📄', title: `${pageName} Item 3`, subtitle: 'From last week', status: 'Active', date: 'Feb 7' },
+      ],
+    };
+  } else {
+    // Purely informational page — just clean text with tips
+    data.tips = [
+      fileDesc || `This is the ${pageName.toLowerCase()} section of ${appName}`,
+      `Use the navigation to explore other areas of ${appName}`,
+    ];
+    // Add related pages as quick actions so the page isn't empty
+    const relatedPages = pagesCtx.filter(p => p.name.toLowerCase() !== fileName).map(p => titleCase(p.name)).slice(0, 5);
+    if (relatedPages.length >= 2) {
+      data.quick_actions = relatedPages;
+    }
+  }
+
+  return { pageType: 'tool', data };
+}
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -252,7 +866,22 @@ export function ProgrammerAgentPage() {
   const [summary, setSummary] = useState('');
   const [tokensUsed, setTokensUsed] = useState<{ orchestrator: number; subAgent: number; total: number } | null>(null);
   const [activeFileTab, setActiveFileTab] = useState(0);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [splitView, setSplitView] = useState(false);
+
+  // Chat panel state (same as Pages tab)
+  const [chatPanelOpen, setChatPanelOpen] = useState(true);
+  const [chatMode, setChatMode] = useState<'design' | 'backend' | 'coder'>('design');
+  const [designMessages, setDesignMessages] = useState<{ id: string; role: 'user' | 'assistant'; content: string }[]>([]);
+  const [backendMessages, setBackendMessages] = useState<{ id: string; role: 'user' | 'assistant'; content: string }[]>([]);
+  const [coderMessages, setCoderMessages] = useState<{ id: string; role: 'user' | 'assistant'; content: string }[]>([]);
+  // Active messages getter/setter based on current tab
+  const chatMessages = chatMode === 'design' ? designMessages : chatMode === 'backend' ? backendMessages : coderMessages;
+  const setChatMessages = chatMode === 'design' ? setDesignMessages : chatMode === 'backend' ? setBackendMessages : setCoderMessages;
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [coderHistory, setCoderHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const [coderPendingFiles, setCoderPendingFiles] = useState<{ generated: any[]; modified: any[] }>({ generated: [], modified: [] });
 
   // Refine state
   const [refineDialog, setRefineDialog] = useState(false);
@@ -298,6 +927,14 @@ export function ProgrammerAgentPage() {
   const [retryingSteps, setRetryingSteps] = useState<string[]>([]);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const coderChatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll coder chat when messages change
+  useEffect(() => {
+    if (chatMode === 'coder' && coderChatEndRef.current) {
+      coderChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [coderMessages, chatMode]);
 
   const selectedApp = apps.find(a => a.id === selectedAppId) || null;
   const primaryColor = selectedApp?.primary_color || '#667eea';
@@ -498,6 +1135,326 @@ export function ProgrammerAgentPage() {
       setSnack({ open: true, msg: err instanceof Error ? err.message : 'Network error', severity: 'error' });
     } finally {
       setRefining(false);
+    }
+  };
+
+  /* ─── Chat Panel: Design & Backend (same as Pages tab) ──────────── */
+
+  const handleChatSend = async (directMessage?: string) => {
+    const msgText = directMessage || chatInput;
+    if (!msgText.trim()) return;
+
+    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: msgText };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setChatLoading(true);
+
+    try {
+      if (chatMode === 'design') {
+        // Design mode: refine the active file via the refine endpoint
+        const res = await fetch(`${API.programmerAgent}/refine`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instruction: msgText.trim(),
+            files,
+            fileIndex: activeFileTab,
+            model: orchestratorModel || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.file) {
+          const updated = [...files];
+          updated[activeFileTab] = data.file;
+          setFiles(updated);
+          setRefineHistory(prev => [...prev, { instruction: msgText.trim(), fileIndex: activeFileTab, timestamp: new Date().toISOString() }]);
+          setChatMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `\u2705 Updated ${files[activeFileTab]?.path.split('/').pop()}. The preview has been refreshed with your changes.`,
+          }]);
+        } else {
+          setChatMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `\u26a0\ufe0f ${data.error || 'Could not apply the change. Try rephrasing your request.'}`,
+          }]);
+        }
+      } else if (chatMode === 'backend') {
+        // Backend mode: analyze or implement backend tasks
+        if (!backendTasks.length || msgText.toLowerCase().includes('analyze') || msgText.toLowerCase().includes('scan') || msgText.toLowerCase().includes('what')) {
+          // Run finalize to get backend tasks
+          const res = await fetch(`${API.programmerAgent}/finalize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              files,
+              appId: selectedAppId || undefined,
+              model: orchestratorModel || undefined,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setBackendTasks(data.tasks || []);
+            const taskList = (data.tasks || []).map((t: any) => `${t.status === 'done' ? '\u2705' : '\u23f3'} ${t.title} (${t.category} / ${t.priority})`).join('\n');
+            setChatMessages(prev => [...prev, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `Found ${data.tasks?.length || 0} backend tasks:\n\n${taskList}\n\nI can auto-implement tasks marked \u26a1. Say "implement all" or click individual tasks.`,
+            }]);
+          } else {
+            setChatMessages(prev => [...prev, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `\u26a0\ufe0f ${data.error || 'Could not analyze backend tasks.'}`,
+            }]);
+          }
+        } else if (msgText.toLowerCase().includes('implement all') || msgText.toLowerCase().includes('implement everything')) {
+          // Implement all auto tasks
+          const res = await fetch(`${API.programmerAgent}/implement-all`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: backendTasks, appId: selectedAppId || undefined }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setBackendTasks(data.tasks || backendTasks);
+            setChatMessages(prev => [...prev, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `\u2705 Implemented ${data.implemented || 0} tasks. ${data.failed || 0} failed. ${data.skipped || 0} skipped (manual).`,
+            }]);
+          }
+        } else {
+          setChatMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Try asking:\n\u2022 "What backend tasks does this need?"\n\u2022 "Implement all auto tasks"\n\u2022 Or click individual tasks in the task list above.',
+          }]);
+        }
+      } else if (chatMode === 'coder') {
+        // Coder Agent: autonomous builder with SSE streaming for live progress
+        const activeFile = files[activeFileTab] || null;
+        const res = await fetch(`${API.programmerAgent}/coder-chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: msgText.trim(),
+            files,
+            activeFile: activeFile ? { path: activeFile.path, description: activeFile.description } : undefined,
+            conversationHistory: coderHistory,
+            appId: selectedAppId || undefined,
+            model: orchestratorModel || undefined,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server error (${res.status}). Make sure the backend is running.`);
+        }
+
+        // Process SSE stream — show live progress as the agent works
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+
+        if (!reader) throw new Error('No response stream');
+
+        // Tracking ID for updating the "working" message in-place
+        const workingMsgId = `working-${Date.now()}`;
+        let workingLines: string[] = [];
+
+        const updateWorkingMessage = (lines: string[]) => {
+          workingLines = lines;
+          setCoderMessages(prev => {
+            const existing = prev.findIndex(m => m.id === workingMsgId);
+            const msg = { id: workingMsgId, role: 'assistant' as const, content: lines.join('\n') };
+            if (existing >= 0) {
+              const updated = [...prev];
+              updated[existing] = msg;
+              return updated;
+            }
+            return [...prev, msg];
+          });
+        };
+
+        const appendWorkingLine = (line: string) => {
+          updateWorkingMessage([...workingLines, line]);
+        };
+
+        let finalData: any = null;
+
+        // Read SSE events
+        let reading = true;
+        while (reading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const events = sseBuffer.split('\n\n');
+          sseBuffer = events.pop() || ''; // Keep incomplete event in buffer
+
+          for (const evt of events) {
+            if (!evt.trim()) continue;
+            const eventMatch = evt.match(/^event:\s*(.+)$/m);
+            const dataMatch = evt.match(/^data:\s*(.+)$/m);
+            if (!eventMatch || !dataMatch) continue;
+
+            const eventType = eventMatch[1].trim();
+            let eventData: any;
+            try { eventData = JSON.parse(dataMatch[1]); } catch { continue; }
+
+            switch (eventType) {
+              case 'plan': {
+                // Show which file(s) the agent is targeting
+                const targets = eventData.targetFiles?.length > 0
+                  ? eventData.targetFiles.map((f: string) => f.split('/').pop()).join(', ')
+                  : eventData.activeFile?.split('/').pop() || null;
+                const targetLine = targets ? `\n📄 **Working on:** ${targets}` : '';
+                const planLines = (eventData.steps || []).map((s: any) => `  ${s.id}. ${s.title}`);
+                appendWorkingLine(`🛠️ **Plan:** ${eventData.summary}${targetLine}\n${planLines.join('\n')}`);
+                break;
+              }
+              case 'step_start': {
+                appendWorkingLine(`\n⏳ ${eventData.title}...`);
+                break;
+              }
+              case 'step_complete': {
+                // Replace the last "⏳ title..." line with the completed version
+                const icon = eventData.status === 'done' ? '✅' : '❌';
+                let lastPendingIdx = -1;
+                for (let i = workingLines.length - 1; i >= 0; i--) {
+                  if (workingLines[i].includes(`⏳ ${eventData.title}`)) { lastPendingIdx = i; break; }
+                }
+                if (lastPendingIdx >= 0) {
+                  workingLines[lastPendingIdx] = `${icon} ${eventData.title} — ${eventData.detail || ''}`;
+                  updateWorkingMessage([...workingLines]);
+                } else {
+                  appendWorkingLine(`${icon} ${eventData.title} — ${eventData.detail || ''}`);
+                }
+                break;
+              }
+              case 'progress': {
+                appendWorkingLine(eventData.message);
+                break;
+              }
+              case 'result': {
+                finalData = eventData;
+                break;
+              }
+              case 'error': {
+                appendWorkingLine(`\n❌ ${eventData.message}`);
+                break;
+              }
+              case 'done': {
+                reading = false;
+                break;
+              }
+            }
+          }
+        }
+
+        // Process the final result data
+        if (finalData) {
+          // Update conversation history
+          setCoderHistory(prev => [
+            ...prev,
+            { role: 'user' as const, content: msgText.trim() },
+            { role: 'assistant' as const, content: finalData.response || 'No response' },
+          ]);
+
+          // Auto-apply files so the preview updates immediately
+          if (finalData.generatedFiles?.length > 0 || finalData.modifiedFiles?.length > 0) {
+            const genFiles = finalData.generatedFiles || [];
+            const modFiles = finalData.modifiedFiles || [];
+
+            // Merge into files state (same logic as "Apply All" button)
+            setFiles(prev => {
+              const updated = [...prev];
+              for (const gf of genFiles) {
+                const idx = updated.findIndex(f => f.path === gf.path);
+                if (idx >= 0) updated[idx] = gf;
+                else updated.push(gf);
+              }
+              for (const mf of modFiles) {
+                const idx = updated.findIndex(f => f.path === mf.path);
+                if (idx >= 0) updated[idx] = mf;
+                else updated.push(mf);
+              }
+
+              // Auto-switch to the first changed file tab so user sees it
+              const firstChanged = modFiles[0] || genFiles[0];
+              if (firstChanged) {
+                const changedIdx = updated.findIndex(f => f.path === firstChanged.path);
+                if (changedIdx >= 0) {
+                  setTimeout(() => {
+                    setActiveFileTab(changedIdx);
+                    setShowPreview(false); // Switch to code view so changes are visible
+                  }, 100);
+                }
+              }
+
+              return updated;
+            });
+
+            // Also store as pending so the banner shows what was applied
+            setCoderPendingFiles({
+              generated: genFiles,
+              modified: modFiles,
+            });
+          }
+
+          // Add final summary as a separate message
+          if (finalData.response) {
+            setCoderMessages(prev => [...prev, {
+              id: `summary-${Date.now()}`,
+              role: 'assistant',
+              content: finalData.success ? finalData.response : `⚠️ ${finalData.response}`,
+            }]);
+          }
+        }
+      }
+    } catch (err) {
+      setCoderMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `❌ Error: ${err instanceof Error ? err.message : 'Network error'}`,
+      }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleImplementSingleTask = async (task: BackendTask) => {
+    setChatLoading(true);
+    try {
+      const res = await fetch(`${API.programmerAgent}/implement-task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task, appId: selectedAppId || undefined }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackendTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'done' as const } : t));
+        setChatMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `\u2705 ${task.title} — implemented successfully.`,
+        }]);
+      } else {
+        setChatMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `\u26a0\ufe0f ${task.title} — ${data.error || 'implementation failed'}.`,
+        }]);
+      }
+    } catch (err) {
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `\u274c ${task.title} — ${err instanceof Error ? err.message : 'network error'}.`,
+      }]);
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -833,81 +1790,22 @@ export function ProgrammerAgentPage() {
     setAddPageDialog(false);
   };
 
-  /* ─── Preview ──────────────────────────────────────────────────────── */
+  /* ─── Preview (same approach as Pages tab — inline RenderPage) ──── */
 
   const canPreview = !!(files[activeFileTab]?.path?.match(/\.(tsx|jsx)$/));
 
-  const previewSrcDoc = useMemo(() => {
-    if (!files.length) return '';
+  const previewData = useMemo(() => {
+    if (!files.length || !files[activeFileTab]) return null;
     const file = files[activeFileTab];
-    if (!file || !file.path.match(/\.(tsx|jsx)$/)) return '';
-
-    let code = file.content;
-
-    const iconShims: string[] = [];
-    code = code.replace(
-      /^import\s+\{([^}]+)\}\s+from\s+['"]@mui\/icons-material(?:\/\w+)?['"];?\s*$/gm,
-      (_: string, names: string) => {
-        names.split(',').forEach((n) => {
-          const parts = n.trim().split(/\s+as\s+/);
-          if (!parts[0].trim()) return;
-          const imported = parts[0].trim();
-          const local = (parts[1] || parts[0]).trim();
-          const ligature = imported
-            .replace(/(Icon|Outlined|Rounded|Sharp|TwoTone)$/, '')
-            .replace(/([a-z])([A-Z])/g, '$1_$2')
-            .toLowerCase();
-          iconShims.push(
-            `var ${local} = function(props) { return React.createElement('span', { className: 'material-icons', style: Object.assign({ fontSize: 'inherit', verticalAlign: 'middle' }, props && props.sx ? props.sx : {}, props && props.style ? props.style : {}) }, '${ligature}'); };`
-          );
-        });
-        return '';
-      }
-    );
-
-    code = code.replace(/^import\s+.*$/gm, '');
-
-    const fnMatch = code.match(/function\s+([A-Z]\w*)/);
-    const arrowMatch = code.match(/const\s+([A-Z]\w*)\s*[:=]/);
-    const componentName = fnMatch?.[1] || arrowMatch?.[1] || 'App';
-
-    code = code.replace(/\bexport\s+default\s+/g, '');
-    code = code.replace(/\bexport\s+/g, '');
-    code = code.replace(/<\/script/gi, '<\\/script');
-
-    const muiList = 'Box,Typography,Button,Paper,Grid,Card,CardContent,CardActions,CardMedia,CardHeader,Container,Stack,Divider,Chip,Avatar,Badge,Alert,Snackbar,TextField,Select,MenuItem,FormControl,InputLabel,Autocomplete,Switch,Checkbox,Radio,RadioGroup,FormControlLabel,FormGroup,FormHelperText,Table,TableBody,TableCell,TableContainer,TableHead,TableRow,TablePagination,TableSortLabel,Dialog,DialogTitle,DialogContent,DialogContentText,DialogActions,Tabs,Tab,AppBar,Toolbar,Drawer,List,ListItem,ListItemIcon,ListItemText,ListItemButton,ListItemAvatar,ListSubheader,IconButton,Fab,Tooltip,Menu,Accordion,AccordionSummary,AccordionDetails,CircularProgress,LinearProgress,Skeleton,Rating,Slider,createTheme,ThemeProvider,CssBaseline,useTheme,styled,alpha,useMediaQuery,Collapse,Fade,Grow,Slide,Zoom,Link,Breadcrumbs,Stepper,Step,StepLabel,InputAdornment,OutlinedInput,Pagination,Popover,Popper,SwipeableDrawer,ToggleButton,ToggleButtonGroup';
-
-    return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script crossorigin src="https://unpkg.com/@emotion/react@11/dist/emotion-react.umd.min.js"></script>
-<script crossorigin src="https://unpkg.com/@emotion/styled@11/dist/emotion-styled.umd.min.js"></script>
-<script crossorigin src="https://unpkg.com/@mui/material@5/umd/material-ui.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',-apple-system,sans-serif;background:#fff}#pr{min-height:100vh}</style>
-</head><body>
-<div id="pr"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#aaa;font-size:14px">Loading preview\u2026</div></div>
-<script type="text/babel" data-presets="typescript,react">
-var {${muiList}} = MaterialUI;
-${iconShims.join('\n')}
-var useNavigate = function(){return function(){}};
-var useParams = function(){return {}};
-var useLocation = function(){return {pathname:'/',search:'',hash:''}};
-var useSearchParams = function(){return [new URLSearchParams(),function(){}]};
-var axios = {get:function(){return Promise.resolve({data:{}})},post:function(){return Promise.resolve({data:{}})},put:function(){return Promise.resolve({data:{}})},delete:function(){return Promise.resolve({data:{}})}};
-
-${code}
-
-var __t = createTheme({palette:{primary:{main:'${primaryColor}'}},typography:{fontFamily:"'Inter',-apple-system,sans-serif"},shape:{borderRadius:8}});
-ReactDOM.createRoot(document.getElementById('pr')).render(
-  React.createElement(ThemeProvider,{theme:__t},React.createElement(CssBaseline),React.createElement(${componentName})));
-</script>
-<script>window.onerror=function(m,u,l){document.getElementById('pr').innerHTML='<div style="padding:32px;font-family:monospace"><div style="color:#d32f2f;font-weight:700;margin-bottom:12px">Preview Error</div><div style="color:#555;font-size:13px;white-space:pre-wrap">'+m+'</div><div style="color:#999;font-size:11px;margin-top:8px">Line '+l+'</div></div>';}</script>
-</body></html>`;
-  }, [files, activeFileTab, primaryColor]);
+    const ctx: PreviewContext = {
+      appName: selectedApp?.name || 'My App',
+      appDescription: selectedApp?.description || '',
+      prompt,
+      pages: pages.map(p => ({ name: p.name, description: p.description, type: p.type })),
+      allFiles: files,
+    };
+    return generatePreviewData(file, selectedApp?.name, ctx);
+  }, [files, activeFileTab, selectedApp, prompt, pages]);
 
   /* ─── Render ───────────────────────────────────────────────────────── */
 
@@ -1406,7 +2304,7 @@ ReactDOM.createRoot(document.getElementById('pr')).render(
 
       {/* ─── PHASE: RESULTS ────────────────────────────────────────────── */}
       {phase === 'results' && files.length > 0 && (
-        <Box sx={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: chatPanelOpen ? '280px 1fr 380px' : '280px 1fr', gap: 2, transition: 'grid-template-columns 0.3s' }}>
           {/* Left: file list + plan */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* Summary */}
@@ -1427,7 +2325,7 @@ ReactDOM.createRoot(document.getElementById('pr')).render(
                 {files.map((f, i) => (
                   <Box
                     key={i}
-                    onClick={() => { setActiveFileTab(i); setShowPreview(false); }}
+                    onClick={() => { setActiveFileTab(i); }}
                     sx={{
                       px: 2, py: 1.5, cursor: 'pointer',
                       bgcolor: i === activeFileTab ? `${primaryColor}08` : 'transparent',
@@ -1540,74 +2438,519 @@ ReactDOM.createRoot(document.getElementById('pr')).render(
             </Box>
           </Box>
 
-          {/* Right: code/preview viewer */}
-          <Paper sx={{ borderRadius: 3, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} elevation={0}>
-            {/* Toolbar */}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: '#f8f9fa', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <FileIcon sx={{ fontSize: 16, color: primaryColor }} />
-                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                  {files[activeFileTab]?.path.split('/').pop()}
+          {/* Right: code/preview viewer with browser chrome (same pattern as Pages tab) */}
+          <Paper sx={{ borderRadius: 3, border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', bgcolor: '#f5f5f7' }} elevation={0}>
+
+            {/* ─── Browser Chrome (same as Pages tab) ─── */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, bgcolor: '#e8e8ec', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+              {/* Traffic lights */}
+              <Box sx={{ display: 'flex', gap: 0.6, mr: 1 }}>
+                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ff5f57', border: '1px solid #e0443e' }} />
+                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffbd2e', border: '1px solid #dea123' }} />
+                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#28c840', border: '1px solid #1aab29' }} />
+              </Box>
+
+              {/* Address bar */}
+              <Box sx={{
+                flex: 1, display: 'flex', alignItems: 'center', gap: 1,
+                bgcolor: '#fff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 2,
+                px: 1.5, py: 0.5, mx: 1,
+              }}>
+                <SecurityIcon sx={{ fontSize: 14, color: '#4caf50' }} />
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#555', fontSize: '0.72rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  https://{selectedApp?.slug || 'app'}.example.com/{files[activeFileTab]?.path.split('/').pop()?.replace(/\.(tsx|jsx)$/, '').toLowerCase().replace(/page$/, '') || ''}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', gap: 0.5 }}>
-                <Tooltip title="Refine this file">
-                  <IconButton size="small" onClick={() => setRefineDialog(true)}>
-                    <RefineIcon sx={{ fontSize: 18 }} />
+
+              {/* View mode toggles: Preview / Code / Split */}
+              <Box sx={{ display: 'flex', gap: 0.3, bgcolor: '#d8d8dc', borderRadius: 1.5, p: 0.3 }}>
+                <Tooltip title="Preview">
+                  <IconButton size="small" onClick={() => { setShowPreview(true); setSplitView(false); }}
+                    sx={{ bgcolor: showPreview && !splitView ? '#fff' : 'transparent', borderRadius: 1, width: 28, height: 28, boxShadow: showPreview && !splitView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                    <PreviewIcon sx={{ fontSize: 15, color: showPreview && !splitView ? primaryColor : '#888' }} />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Copy code">
-                  <IconButton size="small" onClick={() => copyToClipboard(files[activeFileTab]?.content || '')}>
-                    <CopyIcon sx={{ fontSize: 18 }} />
+                <Tooltip title="Code">
+                  <IconButton size="small" onClick={() => { setShowPreview(false); setSplitView(false); }}
+                    sx={{ bgcolor: !showPreview && !splitView ? '#fff' : 'transparent', borderRadius: 1, width: 28, height: 28, boxShadow: !showPreview && !splitView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                    <CodeIcon sx={{ fontSize: 15, color: !showPreview && !splitView ? primaryColor : '#888' }} />
                   </IconButton>
                 </Tooltip>
                 {canPreview && (
-                  <Tooltip title={showPreview ? 'Show Code' : 'Preview Page'}>
-                    <IconButton size="small" onClick={() => setShowPreview(!showPreview)}
-                      sx={{ color: showPreview ? primaryColor : undefined }}>
-                      {showPreview ? <CodeIcon sx={{ fontSize: 18 }} /> : <PreviewIcon sx={{ fontSize: 18 }} />}
+                  <Tooltip title="Split View">
+                    <IconButton size="small" onClick={() => { setSplitView(!splitView); setShowPreview(true); }}
+                      sx={{ bgcolor: splitView ? '#fff' : 'transparent', borderRadius: 1, width: 28, height: 28, boxShadow: splitView ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                      <SplitIcon sx={{ fontSize: 15, color: splitView ? primaryColor : '#888' }} />
                     </IconButton>
                   </Tooltip>
                 )}
               </Box>
             </Box>
 
-            {/* File path */}
-            <Box sx={{ px: 2, py: 0.5, bgcolor: '#f0f1f3', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#666', fontSize: '0.72rem' }}>
-                {files[activeFileTab]?.path}
-              </Typography>
+            {/* ─── Toolbar ─── */}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 0.8, bgcolor: '#f0f0f3', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <FileIcon sx={{ fontSize: 14, color: primaryColor }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem', color: '#444' }}>
+                  {files[activeFileTab]?.path.split('/').pop()}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#aaa', fontSize: '0.68rem' }}>
+                  {files[activeFileTab]?.path}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Tooltip title="Refine this file">
+                  <IconButton size="small" onClick={() => setRefineDialog(true)} sx={{ color: '#888' }}>
+                    <RefineIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Copy code">
+                  <IconButton size="small" onClick={() => copyToClipboard(files[activeFileTab]?.content || '')} sx={{ color: '#888' }}>
+                    <CopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
 
-            {/* Code / Preview */}
-            {showPreview && previewSrcDoc ? (
-              <Box sx={{ flex: 1, minHeight: 520, bgcolor: '#fff', position: 'relative' }}>
-                <iframe
-                  srcDoc={previewSrcDoc}
-                  style={{ width: '100%', height: '100%', minHeight: 520, border: 'none' }}
-                  sandbox="allow-scripts"
-                  title="Page Preview"
-                />
+            {/* ─── Content: Preview / Code / Split (uses RenderPage like Pages tab) ─── */}
+            {splitView && canPreview ? (
+              /* Split view: preview left, code right */
+              <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 580 }}>
+                <Box sx={{ bgcolor: '#e8eaed', display: 'flex', justifyContent: 'center', overflow: 'auto', p: 2, borderRight: '1px solid rgba(0,0,0,0.08)' }}>
+                  <Box sx={{
+                    width: '100%', maxWidth: 900, bgcolor: '#fff', borderRadius: '10px', overflow: 'hidden',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column',
+                    height: 'fit-content', minHeight: 500,
+                  }}>
+                    <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
+                      <PreviewErrorBoundary>
+                        {previewData && <RenderPage data={previewData.data} primaryColor={primaryColor} appId={selectedApp?.id} />}
+                      </PreviewErrorBoundary>
+                    </Box>
+                  </Box>
+                </Box>
+                <Box sx={{ overflow: 'auto', bgcolor: '#1e1e2e', p: 2, '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#444', borderRadius: 3 } }}>
+                  <SyntaxHighlight code={files[activeFileTab]?.content || ''} language="tsx" />
+                </Box>
+              </Box>
+            ) : showPreview && canPreview && previewData ? (
+              /* Full preview (same layout as Pages tab) */
+              <Box sx={{ flex: 1, bgcolor: '#e8eaed', display: 'flex', justifyContent: 'center', overflow: 'auto', p: 2, minHeight: 580 }}>
                 <Box sx={{
-                  position: 'absolute', bottom: 8, right: 8,
-                  bgcolor: 'rgba(0,0,0,0.6)', color: '#fff', px: 1.5, py: 0.5,
-                  borderRadius: 1, fontSize: '0.7rem', fontWeight: 600,
-                  display: 'flex', alignItems: 'center', gap: 0.5,
+                  width: '100%', maxWidth: 900, bgcolor: '#fff', borderRadius: '10px', overflow: 'hidden',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column',
+                  height: 'fit-content', minHeight: 500,
                 }}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: primaryColor }} />
-                  Preview
+                  <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
+                    <PreviewErrorBoundary>
+                      <RenderPage data={previewData.data} primaryColor={primaryColor} appId={selectedApp?.id} />
+                    </PreviewErrorBoundary>
+                  </Box>
                 </Box>
               </Box>
             ) : (
+              /* Code view */
               <Box sx={{
-                flex: 1, p: 2, minHeight: 520, overflow: 'auto', bgcolor: '#1e1e2e',
-                '&::-webkit-scrollbar': { width: 8 },
-                '&::-webkit-scrollbar-thumb': { bgcolor: '#444', borderRadius: 4 },
+                flex: 1, p: 2, minHeight: 580, overflow: 'auto', bgcolor: '#1e1e2e',
+                '&::-webkit-scrollbar': { width: 6 },
+                '&::-webkit-scrollbar-thumb': { bgcolor: '#444', borderRadius: 3 },
               }}>
                 <SyntaxHighlight code={files[activeFileTab]?.content || ''} language="tsx" />
               </Box>
             )}
           </Paper>
+
+          {/* ─── Chat Panel (Design + Backend) ─── */}
+          {chatPanelOpen && (
+            <Paper sx={{
+              borderRadius: 3, border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden',
+              display: 'flex', flexDirection: 'column', bgcolor: '#fafbfc', minHeight: 580,
+            }} elevation={0}>
+              {/* Tab header */}
+              <Box sx={{ px: 1, py: 0.75, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box sx={{
+                  display: 'flex', gap: 0.3, bgcolor: '#f0f0f2', borderRadius: 1.5, p: 0.3,
+                }}>
+                  <Button size="small" onClick={() => setChatMode('design')} sx={{
+                    fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', px: 1.5, py: 0.4,
+                    borderRadius: 1, minWidth: 0,
+                    bgcolor: chatMode === 'design' ? '#fff' : 'transparent',
+                    boxShadow: chatMode === 'design' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    color: chatMode === 'design' ? primaryColor : '#888',
+                  }}>
+                    <AgentIcon sx={{ fontSize: 14, mr: 0.5 }} /> Design
+                  </Button>
+                  <Button size="small" onClick={() => setChatMode('backend')} sx={{
+                    fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', px: 1.5, py: 0.4,
+                    borderRadius: 1, minWidth: 0,
+                    bgcolor: chatMode === 'backend' ? '#fff' : 'transparent',
+                    boxShadow: chatMode === 'backend' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    color: chatMode === 'backend' ? '#e67e22' : '#888',
+                  }}>
+                    <BuildIcon sx={{ fontSize: 14, mr: 0.5 }} /> Backend
+                  </Button>
+                  <Button size="small" onClick={() => setChatMode('coder')} sx={{
+                    fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', px: 1.5, py: 0.4,
+                    borderRadius: 1, minWidth: 0,
+                    bgcolor: chatMode === 'coder' ? '#fff' : 'transparent',
+                    boxShadow: chatMode === 'coder' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    color: chatMode === 'coder' ? '#00897b' : '#888',
+                  }}>
+                    <CodeIcon sx={{ fontSize: 14, mr: 0.5 }} /> Coder
+                  </Button>
+                </Box>
+                <IconButton size="small" onClick={() => setChatPanelOpen(false)} sx={{ color: '#bbb' }}>
+                  <CollapseIcon sx={{ fontSize: 18, transform: 'rotate(-90deg)' }} />
+                </IconButton>
+              </Box>
+
+              {/* ═══ DESIGN CHAT ═══ */}
+              {chatMode === 'design' && (
+                <>
+                  <Box sx={{
+                    flex: 1, overflow: 'auto', px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5,
+                    '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ccc', borderRadius: 3 },
+                  }}>
+                    {chatMessages.length === 0 ? (
+                      <Box sx={{ m: 'auto', textAlign: 'center', py: 4 }}>
+                        <AgentIcon sx={{ fontSize: 40, color: '#ddd', mb: 1 }} />
+                        <Typography variant="body2" sx={{ color: '#999', mb: 0.5 }}>Design Chat</Typography>
+                        <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block' }}>
+                          Ask the AI to change the design, add sections, update content, or modify styling of the active file.
+                        </Typography>
+                        <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {['Add a sidebar navigation', 'Make the stats cards more colourful', 'Add a notifications section', 'Change the layout to a 2-column grid'].map(s => (
+                            <Button key={s} size="small" variant="outlined" onClick={() => handleChatSend(s)}
+                              sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e0e0e0', color: '#888', justifyContent: 'flex-start', '&:hover': { borderColor: primaryColor, color: primaryColor } }}>
+                              {s}
+                            </Button>
+                          ))}
+                        </Box>
+                      </Box>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <Box key={msg.id} sx={{
+                          p: 1.5, borderRadius: 2,
+                          bgcolor: msg.role === 'user' ? '#e8f0fe' : '#f0faf0',
+                          border: msg.role === 'user' ? '1px solid #d0ddf7' : '1px solid #c8e6c9',
+                        }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                            {msg.role === 'assistant' && <RefineIcon sx={{ fontSize: 14, color: '#4caf50' }} />}
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#5a7bbf' : '#4caf50' }}>
+                              {msg.role === 'user' ? 'You' : 'AI'}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.8rem', lineHeight: 1.6, color: '#333' }}>
+                            {msg.content}
+                          </Typography>
+                        </Box>
+                      ))
+                    )}
+                    {chatLoading && (
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#f5f0ff', borderRadius: 2, border: '1px solid #e8dff5' }}>
+                        <CircularProgress size={16} sx={{ color: primaryColor }} />
+                        <Typography variant="caption" sx={{ color: '#764ba2', fontWeight: 600 }}>Refining design...</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                  <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
+                    <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem', mb: 0.5, display: 'block' }}>
+                      Editing: {files[activeFileTab]?.path?.split('/').pop() || 'file'}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                      <TextField fullWidth size="small" placeholder='e.g. "Add a progress bar to each course"'
+                        value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
+                        onKeyPress={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                        disabled={chatLoading} multiline maxRows={3}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
+                      />
+                      <IconButton onClick={() => handleChatSend()} disabled={chatLoading || !chatInput.trim()}
+                        sx={{
+                          background: `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
+                          color: '#fff', borderRadius: 2, width: 40, height: 40,
+                          '&:hover': { opacity: 0.9 }, '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#aaa' },
+                        }}>
+                        <SendIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </>
+              )}
+
+              {/* ═══ BACKEND AGENT ═══ */}
+              {chatMode === 'backend' && (
+                <>
+                  {backendTasks.length > 0 && (
+                    <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.75rem' }}>Backend Readiness</Typography>
+                        <Chip label={`${backendTasks.filter((t: any) => t.status === 'done').length}/${backendTasks.length}`} size="small"
+                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 700,
+                            bgcolor: backendTasks.every((t: any) => t.status === 'done') ? '#e8f5e9' : '#fff3e0',
+                            color: backendTasks.every((t: any) => t.status === 'done') ? '#2e7d32' : '#e65100',
+                          }} />
+                      </Box>
+                      <LinearProgress variant="determinate"
+                        value={backendTasks.length > 0 ? (backendTasks.filter((t: any) => t.status === 'done').length / backendTasks.length) * 100 : 0}
+                        sx={{ height: 6, borderRadius: 3, bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': { background: 'linear-gradient(135deg, #e67e22 0%, #e74c3c 100%)', borderRadius: 3 },
+                        }} />
+                    </Box>
+                  )}
+                  {backendTasks.length > 0 && (
+                    <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #f0f0f0', maxHeight: 200, overflow: 'auto',
+                      '&::-webkit-scrollbar': { width: 5 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ddd', borderRadius: 3 },
+                    }}>
+                      {backendTasks.map((task: any) => (
+                        <Box key={task.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '1px solid #f8f8f8', '&:last-child': { borderBottom: 'none' } }}>
+                          {task.status === 'done' ? <DoneIcon sx={{ fontSize: 16, color: '#4caf50' }} /> : <PendingIcon sx={{ fontSize: 16, color: '#e0e0e0' }} />}
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: task.status === 'done' ? '#999' : '#1a1a2e', fontSize: '0.72rem', display: 'block', lineHeight: 1.3, textDecoration: task.status === 'done' ? 'line-through' : 'none' }}>
+                              {task.title}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>{task.category} · {task.priority}</Typography>
+                              {task.status !== 'done' && (
+                                <Typography variant="caption" sx={{
+                                  fontSize: '0.6rem', fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '4px',
+                                  ...(task.implementation ? { color: '#e67e22', bgcolor: '#fff3e0' } : { color: '#78909c', bgcolor: '#eceff1' }),
+                                }}>
+                                  {task.implementation ? '⚡ Auto' : '🔧 Manual'}
+                                </Typography>
+                              )}
+                            </Box>
+                          </Box>
+                          {task.status !== 'done' && task.implementation && (
+                            <Tooltip title="Auto-implement this task">
+                              <IconButton size="small" onClick={() => handleImplementSingleTask(task)} disabled={chatLoading}
+                                sx={{ color: '#e67e22', '&:hover': { bgcolor: '#fff3e0' } }}>
+                                <RunningIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                  <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', gap: 0.75, justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
+                    <Button size="small" variant="outlined" onClick={() => handleChatSend('What backend tasks does this need?')}
+                      disabled={chatLoading}
+                      sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}>
+                      🔍 {backendTasks.length > 0 ? 'Re-scan' : 'Analyze'}
+                    </Button>
+                    <Button size="small" variant="outlined" onClick={() => handleChatSend('Implement all auto tasks')}
+                      disabled={chatLoading || backendTasks.filter((t: any) => t.status === 'pending' && t.implementation).length === 0}
+                      sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}>
+                      ⚡ Implement all
+                    </Button>
+                  </Box>
+                  <Box sx={{
+                    flex: 1, overflow: 'auto', px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5,
+                    '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ccc', borderRadius: 3 },
+                  }}>
+                    {chatMessages.length === 0 ? (
+                      <Box sx={{ m: 'auto', textAlign: 'center', py: 3 }}>
+                        <BuildIcon sx={{ fontSize: 36, color: '#e0e0e0', mb: 1 }} />
+                        <Typography variant="body2" sx={{ color: '#999', mb: 0.5, fontSize: '0.85rem' }}>Backend Agent</Typography>
+                        <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block' }}>
+                          Analyze what backend work your membership pages need — database seeding, API routes, integrations, and security.
+                        </Typography>
+                      </Box>
+                    ) : (
+                      chatMessages.map((msg: any) => (
+                        <Box key={msg.id} sx={{
+                          p: 1.5, borderRadius: 2,
+                          bgcolor: msg.role === 'user' ? '#fef3e8' : '#fff',
+                          border: msg.role === 'user' ? '1px solid #f5d5b0' : '1px solid #e8e8e8',
+                        }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                            {msg.role === 'assistant' && <BuildIcon sx={{ fontSize: 14, color: '#e67e22' }} />}
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#bf6c1a' : '#e67e22' }}>
+                              {msg.role === 'user' ? 'You' : 'Backend Agent'}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.8rem', lineHeight: 1.6, color: '#333' }}>
+                            {msg.content}
+                          </Typography>
+                        </Box>
+                      ))
+                    )}
+                    {chatLoading && (
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', p: 1.5, bgcolor: '#fff8f0', borderRadius: 2, border: '1px solid #f5d5b0' }}>
+                        <CircularProgress size={16} sx={{ color: '#e67e22' }} />
+                        <Typography variant="caption" sx={{ color: '#d35400', fontWeight: 600 }}>Working...</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                  <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                      <TextField fullWidth size="small" placeholder='e.g. "What needs done?" or "Implement all"'
+                        value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
+                        onKeyPress={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                        disabled={chatLoading} multiline maxRows={3}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
+                      />
+                      <IconButton onClick={() => handleChatSend()} disabled={chatLoading || !chatInput.trim()}
+                        sx={{
+                          background: 'linear-gradient(135deg, #e67e22 0%, #e74c3c 100%)',
+                          color: '#fff', borderRadius: 2, width: 40, height: 40,
+                          '&:hover': { background: 'linear-gradient(135deg, #d35400 0%, #c0392b 100%)' },
+                          '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#aaa' },
+                        }}>
+                        <SendIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </>
+              )}
+
+              {/* ═══ CODER AGENT (Autonomous Builder) ═══ */}
+              {chatMode === 'coder' && (
+                <>
+                  {/* Pending files banner */}
+                  {(coderPendingFiles.generated.length > 0 || coderPendingFiles.modified.length > 0) && (
+                    <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #b2dfdb', bgcolor: '#e0f2f1' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#00695c', fontSize: '0.75rem' }}>
+                          {coderPendingFiles.generated.length + coderPendingFiles.modified.length} file(s) ready to apply
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Button size="small" variant="contained" onClick={() => {
+                            // Apply generated files — add to project
+                            const newFiles = [...files];
+                            for (const gf of coderPendingFiles.generated) {
+                              const existing = newFiles.findIndex(f => f.path === gf.path);
+                              if (existing >= 0) newFiles[existing] = gf;
+                              else newFiles.push(gf);
+                            }
+                            // Apply modified files — update in place
+                            for (const mf of coderPendingFiles.modified) {
+                              const existing = newFiles.findIndex(f => f.path === mf.path);
+                              if (existing >= 0) newFiles[existing] = mf;
+                              else newFiles.push(mf);
+                            }
+                            setFiles(newFiles);
+                            setCoderPendingFiles({ generated: [], modified: [] });
+                            setChatMessages(prev => [...prev, {
+                              id: Date.now().toString(),
+                              role: 'assistant',
+                              content: `\u2705 Applied ${coderPendingFiles.generated.length + coderPendingFiles.modified.length} file(s) to your project. Check the preview!`,
+                            }]);
+                          }}
+                            sx={{ fontSize: '0.68rem', textTransform: 'none', bgcolor: '#00897b', fontWeight: 700, py: 0.3, px: 1.5,
+                              '&:hover': { bgcolor: '#00695c' } }}>
+                            \u2705 Apply All
+                          </Button>
+                          <Button size="small" onClick={() => setCoderPendingFiles({ generated: [], modified: [] })}
+                            sx={{ fontSize: '0.65rem', textTransform: 'none', color: '#999', minWidth: 0 }}>
+                            Dismiss
+                          </Button>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                        {[...coderPendingFiles.generated.map((f: any) => ({ ...f, _type: 'new' })), ...coderPendingFiles.modified.map((f: any) => ({ ...f, _type: 'mod' }))].map((f: any, i: number) => (
+                          <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Chip label={f._type === 'new' ? 'NEW' : 'MOD'} size="small"
+                              sx={{ height: 16, fontSize: '0.55rem', fontWeight: 800, minWidth: 32,
+                                bgcolor: f._type === 'new' ? '#c8e6c9' : '#fff3e0',
+                                color: f._type === 'new' ? '#2e7d32' : '#e65100' }} />
+                            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#555', fontFamily: 'monospace' }}>
+                              {f.path}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                  <Box sx={{
+                    flex: 1, overflow: 'auto', px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5,
+                    '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#ccc', borderRadius: 3 },
+                  }}>
+                    {chatMessages.length === 0 ? (
+                      <Box sx={{ m: 'auto', textAlign: 'center', py: 4 }}>
+                        <CodeIcon sx={{ fontSize: 36, color: '#b2dfdb', mb: 1 }} />
+                        <Typography variant="body2" sx={{ color: '#888', fontSize: '0.82rem' }}>
+                          Ask me anything — build features, debug code, create pages, set up databases.
+                        </Typography>
+                      </Box>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <Box key={msg.id} sx={{
+                          p: 1.5, borderRadius: 2,
+                          bgcolor: msg.role === 'user' ? '#e0f2f1' : '#fafafa',
+                          border: msg.role === 'user' ? '1px solid #b2dfdb' : '1px solid #e8e8e8',
+                        }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                            {msg.role === 'assistant' && <CodeIcon sx={{ fontSize: 14, color: '#00897b' }} />}
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: msg.role === 'user' ? '#00695c' : '#00897b' }}>
+                              {msg.role === 'user' ? 'You' : 'Builder Agent'}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.8rem', lineHeight: 1.6, color: '#333' }}>
+                            {msg.content}
+                          </Typography>
+                        </Box>
+                      ))
+                    )}
+                    {chatLoading && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1.5, bgcolor: '#e0f2f1', borderRadius: 2, border: '1px solid #b2dfdb' }}>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                          <CircularProgress size={16} sx={{ color: '#00897b' }} />
+                          <Typography variant="caption" sx={{ color: '#00695c', fontWeight: 600 }}>Working...</Typography>
+                        </Box>
+                        <LinearProgress sx={{ height: 3, borderRadius: 2, bgcolor: '#b2dfdb',
+                          '& .MuiLinearProgress-bar': { bgcolor: '#00897b' } }} />
+                      </Box>
+                    )}
+                    <div ref={coderChatEndRef} />
+                  </Box>
+                  <Box sx={{ px: 2, pt: 0.5, pb: 0.5, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button size="small" onClick={() => { setCoderMessages([]); setCoderHistory([]); setCoderPendingFiles({ generated: [], modified: [] }); setChatInput(''); }}
+                      sx={{ fontSize: '0.65rem', textTransform: 'none', color: '#999', '&:hover': { color: '#00897b' } }}>
+                      Clear chat
+                    </Button>
+                  </Box>
+                  <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+                      <TextField fullWidth size="small" placeholder="Ask me anything..."
+                        value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
+                        onKeyPress={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                        disabled={chatLoading} multiline maxRows={3}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: '0.85rem' } }}
+                      />
+                      <IconButton onClick={() => handleChatSend()} disabled={chatLoading || !chatInput.trim()}
+                        sx={{
+                          background: 'linear-gradient(135deg, #00897b 0%, #004d40 100%)',
+                          color: '#fff', borderRadius: 2, width: 40, height: 40,
+                          '&:hover': { background: 'linear-gradient(135deg, #00695c 0%, #003d33 100%)' },
+                          '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#aaa' },
+                        }}>
+                        <SendIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </>
+              )}
+            </Paper>
+          )}
+
+          {/* Open chat FAB (when closed) */}
+          {!chatPanelOpen && (
+            <Box sx={{ position: 'fixed', right: 24, bottom: 24, zIndex: 10 }}>
+              <Tooltip title="Open AI Chat">
+                <IconButton onClick={() => setChatPanelOpen(true)}
+                  sx={{
+                    width: 56, height: 56, borderRadius: 3,
+                    background: `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
+                    color: '#fff', boxShadow: '0 4px 16px rgba(102, 126, 234, 0.4)',
+                    '&:hover': { opacity: 0.9, transform: 'scale(1.05)' },
+                    transition: 'all 0.2s',
+                  }}>
+                  <AgentIcon sx={{ fontSize: 28 }} />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          )}
         </Box>
       )}
 

@@ -9,6 +9,7 @@ interface ChatRequest {
   message: string;
   apiProvider: string;
   model?: string;
+  mode?: string;
   pageContent: string;
   pageTitle: string;
   pageType: string;
@@ -49,8 +50,65 @@ export class ChatService {
     }
   }
 
+  private getProgrammerPrompt(pageContent: string): string {
+    return `You are a page functionality architect. You add interactive and functional elements to web pages.
+You MUST respond with ONLY a valid JSON object — a partial patch to merge into the page's content_json.
+Do NOT return the entire page. Return ONLY the keys being added or modified.
+
+AVAILABLE FUNCTIONAL ELEMENTS you can add:
+
+CONTACT FORM:
+{"contact_form": {"headline": "Get In Touch", "subheading": "We'd love to hear from you", "fields": [{"type": "text", "label": "Full Name", "placeholder": "John Doe"}, {"type": "email", "label": "Email", "placeholder": "john@example.com"}, {"type": "textarea", "label": "Message", "placeholder": "Tell us more...", "rows": 4}], "submit_text": "Send Message"}}
+
+NEWSLETTER SIGNUP:
+{"newsletter": {"headline": "Stay Updated", "subheading": "Get the latest news and updates", "placeholder": "Enter your email", "button_text": "Subscribe"}}
+
+TESTIMONIALS:
+{"testimonials": [{"quote": "Amazing product!", "author": "Jane Smith", "title": "CEO, TechCo", "avatar": "👤"}]}
+
+FAQ SECTION:
+{"faq": [{"question": "How does it work?", "answer": "Simply sign up and..."}], "faq_headline": "Frequently Asked Questions"}
+
+STATISTICS/COUNTERS:
+{"stats": [{"value": "10K+", "label": "Active Users"}, {"value": "99.9%", "label": "Uptime"}, {"value": "24/7", "label": "Support"}]}
+
+CALL TO ACTION:
+{"cta": {"headline": "Ready to Get Started?", "subheading": "Join thousands of happy customers", "button_text": "Start Free Trial"}}
+OR
+{"cta_footer": {"headline": "Transform Your Business", "subheading": "Start your journey today", "button_text": "Get Started"}}
+
+NAVIGATION BAR:
+{"nav": {"brand": "MyApp", "links": [{"label": "Home"}, {"label": "Features"}, {"label": "Pricing"}, {"label": "Contact"}], "cta": "Sign Up"}}
+
+HERO SECTION:
+{"hero": {"badge": "NEW", "headline": "Build Something Amazing", "subheading": "The all-in-one platform for your business", "cta_button": {"text": "Get Started", "secondary_text": "Learn More"}}}
+
+FEATURES GRID:
+{"features_section": {"title": "Why Choose Us", "subtitle": "Everything you need", "items": [{"icon": "⚡", "title": "Fast", "description": "Lightning fast performance"}, {"icon": "🔒", "title": "Secure", "description": "Enterprise-grade security"}]}}
+
+COMPARISON TABLE:
+{"comparison": {"headline": "How We Compare", "columns": ["Feature", "Us", "Competitor A"], "rows": [["Speed", "✅", "❌"], ["Support", "✅", "✅"]]}}
+
+SOCIAL PROOF:
+{"social_proof": {"title": "Trusted by thousands", "items": [{"metric": "10K+", "label": "Users", "icon": "👥"}, {"metric": "50M+", "label": "Transactions", "icon": "💳"}]}}
+
+PRICING PLANS:
+{"pricing": {"plans": [{"name": "Starter", "price": "$9/mo", "features": ["5 Projects", "10GB Storage"], "cta_button": "Choose Plan"}, {"name": "Pro", "price": "$29/mo", "badge": "Popular", "highlighted": true, "features": ["Unlimited Projects", "100GB Storage", "Priority Support"], "cta_button": "Choose Plan"}]}}
+
+RULES:
+- Return ONLY a valid JSON patch — no explanation, no markdown, no code fences
+- Only include keys being added or modified
+- CRITICAL: For arrays, return the COMPLETE array when modifying existing items
+- Set a key to null to remove/delete a section
+- You can combine multiple sections in one response
+- When asked to modify existing content, preserve all existing items and only change what was requested
+
+Current page content for reference:
+${pageContent}`;
+  }
+
   async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-    const { message, apiProvider, model, pageContent, pageTitle, pageType } = request;
+    const { message, apiProvider, model, mode, pageContent, pageTitle, pageType } = request;
 
     const apiKey = this.getApiKey(apiProvider);
     if (!apiKey) {
@@ -63,9 +121,9 @@ export class ChatService {
     // Route to appropriate provider
     switch (apiProvider.toLowerCase()) {
       case 'openai':
-        return this.sendToOpenAI(apiKey, message, model || 'gpt-4', pageContent, pageTitle, pageType);
+        return this.sendToOpenAI(apiKey, message, model || 'gpt-4', pageContent, pageTitle, pageType, mode);
       case 'openrouter':
-        return this.sendToOpenRouter(apiKey, message, pageContent, pageTitle, pageType);
+        return this.sendToOpenRouter(apiKey, message, pageContent, pageTitle, pageType, mode);
       case 'make':
         return this.sendToMake(apiKey, message, pageContent, pageTitle, pageType);
       case 'zapier':
@@ -85,10 +143,11 @@ export class ChatService {
     pageContent: string,
     pageTitle: string,
     pageType: string,
+    mode?: string,
   ): Promise<ChatResponse> {
     try {
       const startTime = Date.now();
-      const systemPrompt = `You are a page content editor. The user will ask you to change something on their page.
+      const systemPrompt = mode === 'programmer' ? this.getProgrammerPrompt(pageContent) : `You are a page content editor. The user will ask you to change something on their page.
 You MUST respond with ONLY a valid JSON object containing ONLY the keys/fields that need to change — a partial patch.
 Do NOT return the entire page. Only return the specific keys being modified.
 If the user asks to change a headline inside "hero", return {"hero": {"headline": "New Headline"}}.
@@ -202,10 +261,11 @@ ${pageContent}`;
     pageContent: string,
     pageTitle: string,
     pageType: string,
+    mode?: string,
   ): Promise<ChatResponse> {
     try {
       const startTime = Date.now();
-      const systemPrompt = `You are a page content editor. The user will ask you to change something on their page.
+      const systemPrompt = mode === 'programmer' ? this.getProgrammerPrompt(pageContent) : `You are a page content editor. The user will ask you to change something on their page.
 You MUST respond with ONLY a valid JSON object containing ONLY the keys/fields that need to change — a partial patch.
 Do NOT return the entire page. Only return the specific keys being modified.
 If the user asks to change a headline inside "hero", return {"hero": {"headline": "New Headline"}}.

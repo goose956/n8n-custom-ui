@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
@@ -40,7 +41,7 @@ export interface BackendTask {
   status: 'pending' | 'done' | 'in-progress';
   priority: 'high' | 'medium' | 'low';
   implementation?: {
-    type: 'db_seed' | 'api_route' | 'config' | 'schema';
+    type: 'db_seed' | 'api_route' | 'config' | 'schema' | 'create_api';
     payload: Record<string, any>;
   };
 }
@@ -111,8 +112,8 @@ const MODELS: ModelConfig[] = [
   { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'anthropic', tier: 'both', costPer1kTokens: 0.015 },
 ];
 
-const DEFAULT_ORCHESTRATOR = 'claude-sonnet-4-20250514';
-const DEFAULT_SUB_AGENT = 'claude-3-haiku-20240307';
+const DEFAULT_ORCHESTRATOR = 'gpt-4o';
+const DEFAULT_SUB_AGENT = 'gpt-4o-mini';
 
 // Token limits per model tier — Opus can output much more
 const MAX_TOKENS: Record<string, number> = {
@@ -935,6 +936,307 @@ Return ONLY the code.`;
     return { success: errors.length === 0, saved, errors };
   }
 
+  // ─── Run shell command safely ────────────────────────────────────────────
+
+  private runCommand(command: string, cwd?: string): { success: boolean; output: string; error?: string } {
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
+    const workDir = cwd ? path.resolve(projectRoot, cwd) : projectRoot;
+    try {
+      const output = execSync(command, {
+        cwd: workDir,
+        encoding: 'utf-8',
+        timeout: 120_000, // 2 min max
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, NODE_ENV: 'development' },
+      });
+      return { success: true, output: output.trim() };
+    } catch (err: any) {
+      return {
+        success: false,
+        output: (err.stdout || '').toString().trim(),
+        error: (err.stderr || err.message || '').toString().trim(),
+      };
+    }
+  }
+
+  // ─── Install npm packages ───────────────────────────────────────────────
+
+  private installPackages(packages: string[], target: 'frontend' | 'backend' = 'frontend', dev = false): { success: boolean; installed: string[]; error?: string } {
+    if (!packages || packages.length === 0) return { success: true, installed: [] };
+    const flag = dev ? '--save-dev' : '--save';
+    const cmd = `npm install ${flag} ${packages.join(' ')}`;
+    const result = this.runCommand(cmd, target);
+    if (result.success) {
+      return { success: true, installed: packages };
+    }
+    return { success: false, installed: [], error: result.error || result.output };
+  }
+
+  // ─── Write generated files directly to disk ─────────────────────────────
+
+  private writeGeneratedFilesToDisk(files: GeneratedFile[]): { written: string[]; errors: string[] } {
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
+    const written: string[] = [];
+    const errors: string[] = [];
+
+    for (const file of files) {
+      try {
+        const filePath = path.resolve(projectRoot, file.path);
+        if (!filePath.startsWith(projectRoot)) {
+          errors.push(`${file.path}: path escapes project root`);
+          continue;
+        }
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(filePath, file.content, 'utf-8');
+        written.push(file.path);
+      } catch (err) {
+        errors.push(`${file.path}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { written, errors };
+  }
+
+  // ─── Read a file from disk ──────────────────────────────────────────────
+
+  private readFileFromDisk(filePath: string): string | null {
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
+    const absPath = path.resolve(projectRoot, filePath);
+    if (!absPath.startsWith(projectRoot)) return null;
+    try {
+      return fs.readFileSync(absPath, 'utf-8');
+    } catch { return null; }
+  }
+
+  // ─── List directory ─────────────────────────────────────────────────────
+
+  private listDirectory(dirPath: string): string[] {
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
+    const absDir = path.resolve(projectRoot, dirPath);
+    if (!absDir.startsWith(projectRoot)) return [];
+    try {
+      return fs.readdirSync(absDir, { recursive: true }).map(f => f.toString());
+    } catch { return []; }
+  }
+
+  // ─── Verify TypeScript build (only for files we touched) ─────────────────
+
+  private verifyBuild(target: 'frontend' | 'backend', onlyFiles?: string[]): { success: boolean; errors: string[] } {
+    const result = this.runCommand('npx tsc --noEmit 2>&1', target);
+    if (result.success && !result.output.includes('error TS')) {
+      return { success: true, errors: [] };
+    }
+    // Parse ALL TS errors
+    const allErrorLines = (result.output + '\n' + (result.error || '')).split('\n').filter(l => l.includes('error TS'));
+
+    // If we have a list of files we touched, only report errors in THOSE files
+    if (onlyFiles && onlyFiles.length > 0) {
+      const normalizedPaths = onlyFiles.map(f => {
+        // Strip leading target dir (e.g. 'frontend/src/...' -> 'src/...')
+        const stripped = f.replace(/^(frontend|backend)\//, '');
+        return stripped.replace(/\//g, '\\'); // normalize to backslash for Windows matching
+      });
+      const relevantErrors = allErrorLines.filter(errLine => {
+        return normalizedPaths.some(p => errLine.includes(p) || errLine.includes(p.replace(/\\/g, '/')));
+      });
+      if (relevantErrors.length === 0) {
+        return { success: true, errors: [] }; // our files are clean, ignore pre-existing errors
+      }
+      return { success: false, errors: relevantErrors.slice(0, 30) };
+    }
+
+    return { success: false, errors: allErrorLines.slice(0, 30) };
+  }
+
+  // ─── Auto-fix build errors via AI ───────────────────────────────────────
+
+  private async autoFixBuildErrors(
+    errors: string[],
+    files: GeneratedFile[],
+    modelId: string,
+  ): Promise<{ fixed: GeneratedFile[]; remainingErrors: string[] }> {
+    // Group errors by file
+    const errorsByFile: Record<string, string[]> = {};
+    for (const err of errors) {
+      const match = err.match(/^(.+?)\(\d+,\d+\):/);
+      if (match) {
+        const file = match[1].replace(/\\/g, '/');
+        if (!errorsByFile[file]) errorsByFile[file] = [];
+        errorsByFile[file].push(err);
+      }
+    }
+
+    const fixedFiles: GeneratedFile[] = [];
+
+    for (const [errFilePath, fileErrors] of Object.entries(errorsByFile)) {
+      // Find the file in our generated files — normalize both paths for comparison
+      const normalizedErrPath = errFilePath.replace(/\\/g, '/');
+      const genFile = files.find(f => {
+        const normGenPath = f.path.replace(/\\/g, '/');
+        // Match by: exact path, end-of-path match, or stripping frontend/backend prefix
+        return normalizedErrPath.endsWith(normGenPath)
+          || normalizedErrPath.endsWith(normGenPath.replace(/^(frontend|backend)\//, ''))
+          || normGenPath.endsWith(normalizedErrPath);
+      });
+
+      if (!genFile) {
+        // If the file isn't one we generated, try reading it from disk to fix it
+        const diskContent = this.readFileFromDisk(errFilePath) || this.readFileFromDisk('frontend/' + errFilePath) || this.readFileFromDisk('backend/' + errFilePath);
+        if (!diskContent) continue;
+        // Create a synthetic GeneratedFile for the disk file
+        const synthFile: GeneratedFile = {
+          path: errFilePath,
+          content: diskContent,
+          language: errFilePath.endsWith('.tsx') ? 'tsx' : 'typescript',
+        };
+        files.push(synthFile);
+        // Now fix it
+        const fixPrompt = this.buildFixPrompt(synthFile, fileErrors);
+        try {
+          const fixResult = await this.callAI(modelId, 'Expert TypeScript/React debugger. Fix all compilation errors while preserving ALL existing functionality. Do not remove features.', fixPrompt);
+          const fixedContent = this.cleanCodeResponse(fixResult.content);
+          if (fixedContent.length > 50) {
+            synthFile.content = fixedContent;
+            fixedFiles.push(synthFile);
+          }
+        } catch { /* skip */ }
+        continue;
+      }
+
+      const fixPrompt = this.buildFixPrompt(genFile, fileErrors);
+      try {
+        const fixResult = await this.callAI(modelId, 'Expert TypeScript/React debugger. Fix all compilation errors while preserving ALL existing functionality. Do not remove features.', fixPrompt);
+        const fixedContent = this.cleanCodeResponse(fixResult.content);
+        if (fixedContent.length > 50) {
+          genFile.content = fixedContent;
+          fixedFiles.push(genFile);
+        }
+      } catch { /* skip unfixable files */ }
+    }
+
+    return { fixed: fixedFiles, remainingErrors: [] };
+  }
+
+  private buildFixPrompt(file: GeneratedFile, errors: string[]): string {
+    return `Fix ALL TypeScript compilation errors in this file. Do NOT remove any existing functionality — only fix the errors.
+
+## File: ${file.path}
+\`\`\`${file.language}
+${file.content}
+\`\`\`
+
+## Compilation Errors (${errors.length}):
+${errors.join('\n')}
+
+Common fixes:
+- Missing imports: add the import statement
+- Type errors: fix the type annotation or add a type cast
+- Unused variables: remove the unused variable or add _ prefix
+- Module not found: check if the import path is correct, use relative paths
+- 'err' is of type 'unknown': add type annotation (err: any) or (err as Error)
+
+Fix every single error. Return ONLY the complete corrected file content. No markdown fences, no explanation.`;
+  }
+
+  private cleanCodeResponse(content: string): string {
+    return content
+      .replace(/^```(?:tsx?|typescript|javascript)?\n?/m, '')
+      .replace(/\n?```$/m, '')
+      .trim();
+  }
+
+  // ─── Auto-register a NestJS module in app.module.ts ─────────────────────
+
+  private registerNestModule(moduleName: string, modulePath: string): boolean {
+    const appModulePath = path.resolve(__dirname, '..', 'app.module.ts');
+    try {
+      let content = fs.readFileSync(appModulePath, 'utf-8');
+      // Check if already registered
+      if (content.includes(moduleName)) return true;
+
+      // Add import
+      const importLine = `import { ${moduleName} } from '${modulePath}';\n`;
+      content = importLine + content;
+
+      // Add to imports array
+      content = content.replace(
+        /imports:\s*\[/,
+        `imports: [\n    ${moduleName},`,
+      );
+
+      fs.writeFileSync(appModulePath, content, 'utf-8');
+      return true;
+    } catch { return false; }
+  }
+
+  // ─── Detect required npm packages from code ─────────────────────────────
+
+  private detectRequiredPackages(files: GeneratedFile[]): { frontend: string[]; backend: string[] } {
+    const frontendPkgs = new Set<string>();
+    const backendPkgs = new Set<string>();
+
+    // Common package patterns to detect
+    const packageMap: Record<string, { pkg: string; target: 'frontend' | 'backend' }> = {
+      'xlsx': { pkg: 'xlsx', target: 'frontend' },
+      'file-saver': { pkg: 'file-saver', target: 'frontend' },
+      'FileSaver': { pkg: 'file-saver', target: 'frontend' },
+      'saveAs': { pkg: 'file-saver', target: 'frontend' },
+      'react-beautiful-dnd': { pkg: 'react-beautiful-dnd', target: 'frontend' },
+      '@hello-pangea/dnd': { pkg: '@hello-pangea/dnd', target: 'frontend' },
+      'recharts': { pkg: 'recharts', target: 'frontend' },
+      'chart.js': { pkg: 'chart.js react-chartjs-2', target: 'frontend' },
+      'react-chartjs-2': { pkg: 'chart.js react-chartjs-2', target: 'frontend' },
+      'date-fns': { pkg: 'date-fns', target: 'frontend' },
+      'dayjs': { pkg: 'dayjs', target: 'frontend' },
+      'moment': { pkg: 'moment', target: 'frontend' },
+      'react-hook-form': { pkg: 'react-hook-form', target: 'frontend' },
+      'zod': { pkg: 'zod', target: 'frontend' },
+      'framer-motion': { pkg: 'framer-motion', target: 'frontend' },
+      'react-router-dom': { pkg: 'react-router-dom', target: 'frontend' },
+      'react-dropzone': { pkg: 'react-dropzone', target: 'frontend' },
+      '@dnd-kit': { pkg: '@dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities', target: 'frontend' },
+      'apify-client': { pkg: 'apify-client', target: 'backend' },
+      'puppeteer': { pkg: 'puppeteer', target: 'backend' },
+      'cheerio': { pkg: 'cheerio', target: 'backend' },
+      'nodemailer': { pkg: 'nodemailer', target: 'backend' },
+      'stripe': { pkg: 'stripe', target: 'backend' },
+      'jsonwebtoken': { pkg: 'jsonwebtoken', target: 'backend' },
+      'bcrypt': { pkg: 'bcrypt', target: 'backend' },
+      'class-validator': { pkg: 'class-validator class-transformer', target: 'backend' },
+      'bull': { pkg: 'bull', target: 'backend' },
+      '@nestjs/schedule': { pkg: '@nestjs/schedule', target: 'backend' },
+    };
+
+    for (const file of files) {
+      const content = file.content;
+      for (const [importKey, { pkg, target }] of Object.entries(packageMap)) {
+        if (content.includes(importKey)) {
+          const pkgs = pkg.split(' ');
+          for (const p of pkgs) {
+            if (target === 'frontend') frontendPkgs.add(p);
+            else backendPkgs.add(p);
+          }
+        }
+      }
+
+      // Also detect from import statements: import ... from 'package-name'
+      const importMatches = content.matchAll(/from\s+['"]([@a-z][a-z0-9\-\/\.]*)['"]/g);
+      for (const m of importMatches) {
+        const pkg = m[1];
+        // Skip relative imports, react, react-dom, and MUI (already installed)
+        if (pkg.startsWith('.') || pkg.startsWith('@mui') || pkg === 'react' || pkg === 'react-dom') continue;
+        const target = file.path.startsWith('backend/') ? 'backend' : 'frontend';
+        if (target === 'frontend') frontendPkgs.add(pkg);
+        else backendPkgs.add(pkg);
+      }
+    }
+
+    return {
+      frontend: [...frontendPkgs],
+      backend: [...backendPkgs],
+    };
+  }
+
   // ─── Models & Stats ──────────────────────────────────────────────────────
 
   getAvailableModels() {
@@ -1106,7 +1408,19 @@ RULES: Complete runnable files, correct imports, error/loading/empty states, Typ
         .trim();
 
       if (cleanContent) {
-        files.push({ path: 'frontend/src/components/GeneratedPage.tsx', content: cleanContent, language: 'typescript', description: 'Generated component' });
+        // Detect if this is backend code (NestJS patterns) vs frontend
+        const isBackend = cleanContent.includes('@Controller') || cleanContent.includes('@Injectable') || cleanContent.includes('@Module') || cleanContent.includes('NestFactory');
+        if (isBackend) {
+          // Don't fallback to GeneratedPage.tsx for backend code — try to extract a reasonable path
+          const controllerMatch = cleanContent.match(/@Controller\(['"](?:api\/)?([\\w-]+)['"]\)/);
+          const slug = controllerMatch ? controllerMatch[1] : 'generated-api';
+          files.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: cleanContent, language: 'typescript', description: `Generated backend: ${slug}` });
+        } else {
+          // Try to extract component name from export statement
+          const exportMatch = cleanContent.match(/export\s+(?:default\s+)?(?:function|const)\s+([A-Z]\w+)/);
+          const componentName = exportMatch ? exportMatch[1] : 'GeneratedComponent';
+          files.push({ path: `frontend/src/components/${componentName}.tsx`, content: cleanContent, language: 'typescript', description: `Generated component: ${componentName}` });
+        }
       }
     }
 
@@ -1179,18 +1493,21 @@ Return ONLY a JSON array of task objects. Each task:
   "title": "Short title",
   "description": "What needs to be done and why",
   "priority": "high" | "medium" | "low",
-  "autoImplement": true/false (true ONLY for database seeding tasks where you can provide sample data),
-  "seedData": { "table": "tableName", "records": [...] } // only if autoImplement is true
+  "autoImplement": true/false,
+  "seedData": { "table": "tableName", "records": [...] },  // only if autoImplement is true AND category is "database" or "data"
+  "apiSpec": { "route": "/api/route-name", "methods": ["GET","POST"], "description": "What this API does" }  // only if category is "api"
 }
 
 Rules:
 - Be practical and specific — reference actual component names and data they display
-- Mark a task as autoImplement:true ONLY if it's a database seed (creating sample records)
+- Mark a task as autoImplement:true if it's a database seed (creating sample records) — provide seedData
+- For API tasks, set category:"api" and include apiSpec — these CAN be auto-implemented
 - For seed data, provide realistic, domain-appropriate records (5-10 per table)
 - Include app_id in seed records where appropriate
 - Don't duplicate tasks
 - Order by priority (high first)
 - Typically 5-15 tasks for a full members area
+- Do NOT include security tasks (JWT auth, RBAC, input validation) unless specifically requested — these are handled separately
 
 Return ONLY the JSON array. No markdown fences, no explanation.`;
 
@@ -1212,6 +1529,9 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
             implementation: t.autoImplement && t.seedData ? {
               type: 'db_seed' as const,
               payload: t.seedData,
+            } : t.category === 'api' && t.apiSpec ? {
+              type: 'create_api' as const,
+              payload: t.apiSpec,
             } : undefined,
           }));
         }
@@ -1243,7 +1563,7 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
     }
   }
 
-  /** Implement a single backend task (currently supports db_seed) */
+  /** Implement a single backend task (supports db_seed and create_api) */
   implementTask(task: BackendTask, appId?: number): { success: boolean; taskId: string; message: string } {
     if (task.status === 'done') {
       return { success: true, taskId: task.id, message: `"${task.title}" is already done.` };
@@ -1255,6 +1575,10 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
     try {
       if (task.implementation.type === 'db_seed') {
         return this.executeSeedTask(task, appId);
+      }
+      if (task.implementation.type === 'create_api') {
+        // API creation is async — mark as pending for async implementation
+        return { success: true, taskId: task.id, message: `API task "${task.title}" queued for auto-implementation` };
       }
       return { success: false, taskId: task.id, message: `Implementation type "${task.implementation.type}" not supported yet.` };
     } catch (err) {
@@ -1292,6 +1616,10 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
     const payload = task.implementation!.payload;
     const table = payload.table as string;
     const records = payload.records as any[];
+
+    if (!table || table === 'undefined' || table === 'null') {
+      return { success: false, taskId: task.id, message: 'No valid table name provided for seeding.' };
+    }
 
     if (!Array.isArray(records) || records.length === 0) {
       return { success: false, taskId: task.id, message: `No seed records provided for "${table}".` };
@@ -1627,6 +1955,1563 @@ Return ONLY the Markdown. No wrapping code fences.`,
       docs,
       tokensUsed: totalTokens,
     };
+  }
+
+  // ─── Coder Agent: Autonomous Builder ──────────────────────────────────────
+
+  async coderChatStream(
+    body: {
+      message: string;
+      files?: { path: string; content: string; language: string; description?: string }[];
+      activeFile?: { path: string; description?: string };
+      conversationHistory?: { role: 'user' | 'assistant'; content: string }[];
+      appId?: number;
+      model?: string;
+    },
+    sendEvent: (event: string, data: any) => void,
+  ): Promise<void> {
+    const modelId = body.model || DEFAULT_ORCHESTRATOR;
+
+    // Check AI key is available before doing any work
+    const modelConfig = this.getModelConfig(modelId);
+    if (modelConfig?.provider === 'anthropic' && !this.getApiKey('anthropic')) {
+      sendEvent('error', { message: 'Anthropic API key not configured. Add it in Settings → API Keys.' });
+      return;
+    }
+    if (modelConfig?.provider === 'openai' && !this.getApiKey('openai')) {
+      sendEvent('error', { message: 'OpenAI API key not configured. Add it in Settings → API Keys.' });
+      return;
+    }
+
+    const history = (body.conversationHistory || []).map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+    const existingFiles = body.files || [];
+    const appId = body.appId;
+
+    // Gather available API keys for context
+    const apiKeysStatus = this.checkApiKeys();
+    const configuredKeys = apiKeysStatus
+      .filter(k => k.configured)
+      .map(k => k.key);
+
+    // DB tables summary
+    let dbSummary = '';
+    try {
+      const db = this.db.readSync();
+      const tables = Object.keys(db).filter(k => Array.isArray(db[k]));
+      dbSummary = tables.map(t => {
+        const rows = appId ? (db[t] as any[]).filter((r: any) => !r.app_id || r.app_id === appId) : db[t] as any[];
+        return `${t}: ${rows.length} records`;
+      }).join(', ');
+    } catch { /* non-critical */ }
+
+    // Build file context
+    const fileContext = existingFiles.map(f =>
+      `### ${f.path} (${f.language})${f.description ? ' — ' + f.description : ''}\n\`\`\`${f.language}\n${f.content.slice(0, 3000)}\n\`\`\``
+    ).join('\n\n');
+
+    const appContext = this.getAppContext(appId);
+
+    let totalTokens = 0;
+    const start = Date.now();
+
+    // ──────────────────────────────────────────────────────────────────────
+    // STEP 0.5: Pre-planning context scan (like Copilot — read BEFORE you plan)
+    // ──────────────────────────────────────────────────────────────────────
+
+    // Read project structure so planner knows what exists
+    const frontendComponents = this.listDirectory('frontend/src/components');
+    const frontendMembers = this.listDirectory('frontend/src/components/members');
+    const backendModules = this.listDirectory('backend/src');
+    const apiConfigContent = this.readFileFromDisk('frontend/src/config/api.ts');
+    const appTsxContent = this.readFileFromDisk('frontend/src/App.tsx');
+
+    // Pre-read the active file from disk so it's available for modify_file steps
+    if (body.activeFile?.path) {
+      const activeInMemory = existingFiles.find(f => f.path === body.activeFile!.path);
+      if (!activeInMemory) {
+        const diskContent = this.readFileFromDisk(body.activeFile.path);
+        if (diskContent) {
+          const ext = path.extname(body.activeFile.path).slice(1);
+          existingFiles.push({
+            path: body.activeFile.path,
+            content: diskContent,
+            language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext,
+            description: body.activeFile.description || `Active file: ${body.activeFile.path}`,
+          });
+        }
+      }
+    }
+
+    // Scan shared/types directories for available imports
+    const frontendShared = this.listDirectory('frontend/src/components/shared');
+    const frontendTypes = this.listDirectory('frontend/src/types');
+    const frontendUtils = this.listDirectory('frontend/src/utils');
+    const frontendConfig = this.listDirectory('frontend/src/config');
+
+    // Pre-read ALL member components so the AI knows what existing components look like
+    // This prevents the "doesn't know what a ContactForm is" problem
+    const componentSnippets: string[] = [];
+    for (const memberFile of frontendMembers.filter(f => f.endsWith('.tsx'))) {
+      const memberPath = `frontend/src/components/members/${memberFile}`;
+      const alreadyLoaded = existingFiles.find(f => f.path === memberPath);
+      if (!alreadyLoaded) {
+        const content = this.readFileFromDisk(memberPath);
+        if (content && content.length < 8000) {
+          componentSnippets.push(`### ${memberPath}:\n\`\`\`tsx\n${content.slice(0, 4000)}\n\`\`\``);
+        }
+      }
+    }
+    // Also read shared components
+    for (const sharedFile of frontendShared.filter(f => f.endsWith('.tsx'))) {
+      const sharedPath = `frontend/src/components/shared/${sharedFile}`;
+      const alreadyLoaded = existingFiles.find(f => f.path === sharedPath);
+      if (!alreadyLoaded) {
+        const content = this.readFileFromDisk(sharedPath);
+        if (content && content.length < 4000) {
+          componentSnippets.push(`### ${sharedPath}:\n\`\`\`tsx\n${content.slice(0, 2000)}\n\`\`\``);
+        }
+      }
+    }
+    const componentLibrary = componentSnippets.length > 0
+      ? `## EXISTING COMPONENTS (read from disk — use these as reference when modifying files):\n${componentSnippets.join('\n\n')}`
+      : '';
+
+    // Build a project map for the planner
+    const projectMap = `## PROJECT STRUCTURE (auto-scanned from disk):
+### Frontend Components:
+${frontendComponents.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/${f}`).join('\n')}
+### Members Area Pages:
+${frontendMembers.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/members/${f}`).join('\n')}
+### Shared Components:
+${frontendShared.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/shared/${f}`).join('\n') || '(none yet)'}
+### Types (frontend/src/types/):
+${frontendTypes.filter(f => f.endsWith('.ts')).map(f => `- frontend/src/types/${f}`).join('\n') || '(none — define types inline in components)'}
+### Utilities (frontend/src/utils/):
+${frontendUtils.filter(f => f.endsWith('.ts')).map(f => `- frontend/src/utils/${f}`).join('\n') || '(none)'}
+### Config files (frontend/src/config/):
+${frontendConfig.filter(f => f.endsWith('.ts')).map(f => `- frontend/src/config/${f}`).join('\n') || '(none)'}
+### Backend Modules:
+${backendModules.filter(f => !f.includes('node_modules')).filter(f => f.endsWith('.ts') || !f.includes('.')).slice(0, 50).map(f => `- backend/src/${f}`).join('\n')}
+### API Config (frontend/src/config/api.ts):
+\`\`\`typescript
+${apiConfigContent?.slice(0, 2000) || '(not found)'}
+\`\`\`
+### App Router (frontend/src/App.tsx) — first 100 lines:
+\`\`\`tsx
+${appTsxContent?.slice(0, 3000) || '(not found)'}
+\`\`\``;
+
+    // ──────────────────────────────────────────────────────────────────────
+    // STEP 1: Ask the AI to classify the request and create an execution plan
+    // ──────────────────────────────────────────────────────────────────────
+
+    const plannerPrompt = `You are an elite autonomous coding agent that can FULLY complete ANY programming task. You have access to the filesystem, npm, shell commands, and can write, compile, and verify code end-to-end.
+
+## Available Actions:
+1. **chat** — Just answer a question / give advice (no file changes)
+2. **search_web** — Search the web for documentation, API references, solutions
+3. **generate_component** — Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
+4. **modify_file** — Modify an existing file (you MUST specify a "targetFile")
+5. **install_packages** — Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
+6. **run_command** — Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
+7. **delegate_backend** — Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
+8. **create_api** — Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
+9. **read_file** — Read an existing file from disk to understand its contents. Specify "targetFile".
+10. **list_directory** — List files in a directory. Specify "targetDir".
+
+## You ALWAYS:
+- Install any npm packages your code needs (xlsx, apify-client, chart.js, etc.)
+- Write files directly to disk, not just hold them in memory
+- Auto-register new NestJS modules in app.module.ts
+- Verify the build compiles after writing files
+- Auto-fix any TypeScript compilation errors
+- Create COMPLETE, fully-functional implementations — not stubs or placeholders
+
+## Context:
+- Available API keys: ${configuredKeys.join(', ') || 'none'}
+- Database: ${dbSummary || 'empty'}
+- Existing files: ${existingFiles.map(f => f.path).join(', ') || 'none'}
+${appContext}
+- Frontend: React + Vite + MUI (in frontend/ directory)
+- Backend: NestJS (in backend/ directory) — uses db.json for data storage
+- Project root: contains both frontend/ and backend/ directories
+
+${projectMap}
+
+## API Keys:
+API keys (OpenAI, Stripe, etc.) are ALREADY stored encrypted in db.json and can be read server-side. You do NOT need to "add" or "configure" API keys — they are already saved.
+When creating backend APIs that call external services, use create_api which auto-injects the API key access pattern.
+NEVER create a step to "add API key" or "configure API key" — they are already stored.
+
+## Frontend API Config:
+The frontend uses \`frontend/src/config/api.ts\` which exports an \`API\` object (NOT a string):
+\`\`\`typescript
+import { API } from '../../config/api';
+// Usage: fetch(API.apps), fetch(API.pages), fetch(API.generateImage), etc.
+// API is an OBJECT with named endpoints, NOT a string base URL.
+// To add a new endpoint, use modify_file on frontend/src/config/api.ts to add a new property.
+\`\`\`
+When generating frontend code that calls APIs, ALWAYS use the named API config pattern: \`API.endpointName\`.
+When creating a new backend API, ALSO add its URL to the API config object via a modify_file step.
+
+## Current project files:
+${fileContext || '(no files loaded)'}
+
+## User's currently-viewed file (the page they are looking at):
+${body.activeFile ? `**${body.activeFile.path}**${body.activeFile.description ? ` — ${body.activeFile.description}` : ''}
+When the user says "this page", "this file", or "the page", they mean THIS file.
+If modifying it, use targetFile: "${body.activeFile.path}".` : '(No file currently selected)'}
+
+## User's request:
+${body.message}
+
+## Your task:
+Return a JSON execution plan. The plan must be a JSON object with:
+{
+  "intent": "chat" | "build",
+  "summary": "One-line summary of what you'll do",
+  "steps": [
+    {
+      "id": 1,
+      "action": "search_web | generate_component | modify_file | install_packages | run_command | delegate_backend | create_api | read_file | list_directory | chat",
+      "title": "Short step title",
+      "detail": "What this step does",
+      "searchQuery": "query (for search_web)",
+      "targetFile": "path/to/file (for modify_file, read_file)",
+      "targetDir": "path/to/dir (for list_directory)",
+      "newFilePath": "path/for/new/file (for generate_component, create_api)",
+      "packages": ["pkg1", "pkg2"] (for install_packages),
+      "target": "frontend | backend" (for install_packages, run_command),
+      "command": "shell command" (for run_command)
+    }
+  ]
+}
+
+If the request is just a question (intent: "chat"), return a single step with action: "chat".
+Order steps logically: search → read_file/list_directory → install_packages → generate_component → create_api → modify_file → delegate_backend.
+
+IMPORTANT RULES:
+- Do NOT add steps for build verification, compile checking, linting, or "npm run build" — these happen AUTOMATICALLY after all steps complete.
+- Do NOT add steps to run "npm run build", "tsc", "npx tsc", "npm run lint", or any build/lint/verify commands — the system handles this.
+- Do NOT add steps to "add API key", "configure API key", or "store API key" — keys are already stored encrypted and accessed server-side automatically.
+- Only use run_command for custom commands like curl, data migration scripts, or API testing.
+- When reading files, use the FULL relative path from project root (e.g. "frontend/src/components/MyPage.tsx" or "backend/src/app.module.ts").
+- If you're not sure of a file path, use list_directory first to find it.
+- Use **create_api** (NOT delegate_backend) when you need to create a new backend API endpoint. create_api generates the actual NestJS code.
+- Use **delegate_backend** only for DB seeding and backend analysis of existing files.
+- When creating a new backend API, ALWAYS also add a step to modify_file "frontend/src/config/api.ts" to add the new endpoint URL to the API config object.
+- When frontend code calls backend APIs, use the API config object: \`API.endpointName\` (e.g. \`API.generateImage\`), NOT string concatenation like \`\${API}/path\`.
+
+CRITICAL: Be PROPORTIONAL to the request.
+- For simple UI changes (add a form, edit text, change styling, add a section), use 1-3 steps max (generate_component and/or modify_file). Do NOT create backend APIs or tables unless the user explicitly asks for backend functionality.
+- For medium requests (add a new page with API calls), use 3-5 steps.
+- For large features (build a complete scraper with backend + frontend + data), use 5-8 steps.
+
+NEVER create unrelated backend tasks. If the user asks "add a contact form", do NOT also create tables for scripts, analytics, FAQs, user profiles, or community posts. Only create what the user actually asked for.
+NEVER add a delegate_backend step unless the user specifically asks for database seeding or backend analysis.
+
+For example, if asked to "add a contact form to a page", you should plan: generate_component (ContactForm.tsx) → modify_file (import and add ContactForm to the target page). That's it — 2 steps.
+
+Return ONLY the JSON object. No markdown fences, no explanation.`;
+
+    try {
+      const planResult = await this.callAI(modelId, 'You are an autonomous builder agent that creates execution plans. Return only valid JSON.', plannerPrompt, history);
+      totalTokens += planResult.tokensUsed || 0;
+
+      let plan: any;
+      try {
+        const jsonMatch = planResult.content.match(/\{[\s\S]*\}/);
+        plan = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      } catch {
+        // If plan parsing fails, fall back to chat mode
+        plan = { intent: 'chat', summary: 'Responding to your question', steps: [{ id: 1, action: 'chat', title: 'Answer', detail: body.message }] };
+      }
+
+      if (!plan || !plan.steps || plan.steps.length === 0) {
+        plan = { intent: 'chat', summary: 'Responding to your question', steps: [{ id: 1, action: 'chat', title: 'Answer', detail: body.message }] };
+      }
+
+      // Emit the plan to the client so they see what's coming
+      const targetFiles = plan.steps
+        .filter((s: any) => s.targetFile || s.newFilePath)
+        .map((s: any) => s.targetFile || s.newFilePath);
+      sendEvent('plan', {
+        summary: plan.summary,
+        intent: plan.intent,
+        activeFile: body.activeFile?.path || null,
+        targetFiles,
+        steps: plan.steps.map((s: any) => ({ id: s.id, title: s.title, action: s.action })),
+      });
+
+      // ──────────────────────────────────────────────────────────────────
+      // STEP 2: Execute each step in the plan
+      // ──────────────────────────────────────────────────────────────────
+
+      const executedPlan: { id: number; title: string; status: string; detail?: string }[] = [];
+      const generatedFiles: GeneratedFile[] = [];
+      const modifiedFiles: GeneratedFile[] = [];
+      const dbChanges: { table: string; action: string; count: number }[] = [];
+      let searchResults: { title: string; url: string; description: string }[] = [];
+      let chatResponse = '';
+      let webContext = '';
+      const backendDelegationTasks: BackendTask[] = [];
+
+      for (const step of plan.steps) {
+        const stepResult: any = { id: step.id, title: step.title, status: 'running', detail: step.detail };
+        executedPlan.push(stepResult);
+
+        // Notify client this step is starting
+        sendEvent('step_start', { id: step.id, title: step.title, action: step.action });
+
+        try {
+          switch (step.action) {
+
+            // ── Web Search ─────────────────────────────────────────────
+            case 'search_web': {
+              const query = step.searchQuery || step.detail || body.message;
+              const results = await this.searchBrave(query, 5);
+              searchResults = [...searchResults, ...results];
+              webContext = results.map((r, i) => `${i + 1}. ${r.title}: ${r.description} (${r.url})`).join('\n');
+              stepResult.status = 'done';
+              stepResult.detail = `Found ${results.length} results for "${query}"`;
+              break;
+            }
+
+            // ── Generate New Component ─────────────────────────────────
+            case 'generate_component': {
+              // Read api.ts config so generated components use correct API patterns
+              let genApiConfig = '';
+              const genApiFileContent = this.readFileFromDisk('frontend/src/config/api.ts');
+              if (genApiFileContent) {
+                genApiConfig = `\n## Frontend API Configuration (frontend/src/config/api.ts):\n\`\`\`typescript\n${genApiFileContent}\`\`\`\nUse the API object for API calls: \`import { API } from '../../config/api'; fetch(API.apps)\`. Do NOT hardcode URLs.\n`;
+              }
+
+              // Read an existing component as an example template (like Copilot reads existing patterns)
+              let exampleComponent = '';
+              const targetDir = step.newFilePath?.includes('members/') ? 'frontend/src/components/members' : 'frontend/src/components';
+              const existingComponents = this.listDirectory(targetDir).filter(f => f.endsWith('.tsx') && !f.includes('ProgrammerAgent'));
+              if (existingComponents.length > 0) {
+                // Pick a component to use as example pattern
+                const examplePath = `${targetDir}/${existingComponents[0]}`;
+                const exampleContent = this.readFileFromDisk(examplePath);
+                if (exampleContent && exampleContent.length < 5000) {
+                  exampleComponent = `\n## EXAMPLE — Follow this component's patterns (imports, structure, API usage, styling):\n### ${examplePath}:\n\`\`\`tsx\n${exampleContent}\`\`\`\nStudy the example above. Match its import patterns, API call patterns, export style, and MUI usage.\n`;
+                }
+              }
+
+              const componentPrompt = `Generate a complete, production-quality React component.
+
+${this.getDesignSystemContext()}
+${appContext}
+
+## Task: ${step.detail}
+## File path: ${step.newFilePath || 'frontend/src/components/NewComponent.tsx'}
+${genApiConfig}
+${exampleComponent}
+${componentLibrary}
+
+## USER'S ORIGINAL REQUEST (follow this exactly):
+"${body.message}"
+
+${existingFiles.length > 0 ? `## Existing files for context:\n${existingFiles.map(f => `- ${f.path}`).join('\n')}` : ''}
+${webContext ? `## Web research results:\n${webContext}` : ''}
+
+## COMMON UI PATTERNS (use as templates for what the user asks for):
+
+### Contact Form:
+A contact form should have Name, Email, Subject, and Message fields with a Submit button.
+
+### Buy/Purchase Button:
+A prominent call-to-action button, typically styled with a gradient or solid primary color.
+
+### Pricing Section:
+Cards with plan name, price, features list, and a CTA button.
+
+## IMPORT RULES (CRITICAL — follow exactly):
+- API config: \`import { API } from '../../config/api';\` (or adjust depth for file path). API is an OBJECT: use \`API.apps\`, \`API.chat\`, etc. NEVER \`\${API}/path\`.
+- MUI components: \`import { Box, Typography, ... } from '@mui/material';\`
+- React hooks: \`import { useState, useEffect, ... } from 'react';\`
+- Do NOT import from paths that don't exist. If you need a type, define it INLINE in the component file.
+- Do NOT import from \`../../types/\` or \`../../../types/\` — these directories may not exist. Define interfaces inline.
+- The import depth depends on the file's location. For files in \`frontend/src/components/\`, use \`../config/api\`. For \`frontend/src/components/members/\`, use \`../../config/api\`. For \`frontend/src/components/shared/\`, use \`../../config/api\`.
+
+CRITICAL RULES:
+- Export as a named export
+- Include all imports
+- Use MUI components and sx prop styling
+- Include loading states, error handling, empty states
+- Make it fully functional with useState, event handlers, etc.
+- Include proper TypeScript types
+- Make it look polished and professional
+- Follow the import patterns and API call patterns from the example component
+- Use \`import { API } from '../../config/api';\` then \`fetch(API.endpointName)\` for ALL API calls
+- NEVER hardcode API URLs or use mock endpoints
+
+Return ONLY the code. No markdown fences, no explanation.`;
+
+              const genResult = await this.callAI(modelId, `Expert React developer. ${this.getDesignSystemContext()}`, componentPrompt);
+              totalTokens += genResult.tokensUsed || 0;
+
+              const filePath = step.newFilePath || `frontend/src/components/${this.toPascalCase(step.title.replace(/\s+/g, '-'))}.tsx`;
+              const cleanContent = genResult.content
+                .replace(/^```(?:tsx?|typescript|javascript)?\n?/m, '')
+                .replace(/\n?```$/m, '')
+                .trim();
+
+              // Check if the AI returned multiple files with ===FILE: markers
+              const hasFileMarkers = /===FILE:\s*.+?===/.test(genResult.content);
+              const parsedFiles = this.parseFiles(genResult.content);
+              if (parsedFiles.length > 0) {
+                if (!hasFileMarkers && parsedFiles.length === 1) {
+                  // parseFiles used its fallback generic path — override with the planned path
+                  parsedFiles[0].path = filePath;
+                  parsedFiles[0].description = step.detail || step.title;
+                }
+                generatedFiles.push(...parsedFiles);
+              } else {
+                generatedFiles.push({
+                  path: filePath,
+                  content: cleanContent,
+                  language: 'typescript',
+                  description: step.detail || step.title,
+                });
+              }
+
+              stepResult.status = 'done';
+              stepResult.detail = `Generated ${parsedFiles.length || 1} file(s)`;
+              break;
+            }
+
+            // ── Modify Existing File ───────────────────────────────────
+            case 'modify_file': {
+              const targetPath = step.targetFile;
+              let targetFile = existingFiles.find(f => f.path === targetPath);
+
+              // Fallback: read from disk if not in existingFiles
+              if (!targetFile && targetPath) {
+                const diskContent = this.readFileFromDisk(targetPath);
+                if (diskContent) {
+                  const ext = path.extname(targetPath).slice(1);
+                  targetFile = {
+                    path: targetPath,
+                    content: diskContent,
+                    language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext,
+                    description: `Read from disk: ${targetPath}`,
+                  };
+                } else {
+                  // Try common path variations
+                  const variations = [
+                    targetPath,
+                    `frontend/${targetPath}`,
+                    `backend/${targetPath}`,
+                    targetPath.replace(/^src\//, 'frontend/src/'),
+                    targetPath.replace(/^src\//, 'backend/src/'),
+                  ];
+                  for (const vPath of variations) {
+                    const content = this.readFileFromDisk(vPath);
+                    if (content) {
+                      const ext = path.extname(vPath).slice(1);
+                      targetFile = {
+                        path: vPath,
+                        content,
+                        language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext,
+                        description: `Read from disk: ${vPath}`,
+                      };
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Also check generatedFiles and modifiedFiles (exact path first, then filename match)
+              if (!targetFile) {
+                targetFile = generatedFiles.find(f => f.path === targetPath) || modifiedFiles.find(f => f.path === targetPath);
+              }
+              if (!targetFile) {
+                const basename = targetPath.split('/').pop();
+                if (basename) {
+                  targetFile = generatedFiles.find(f => f.path.split('/').pop() === basename)
+                    || modifiedFiles.find(f => f.path.split('/').pop() === basename);
+                }
+              }
+
+              if (!targetFile) {
+                stepResult.status = 'failed';
+                stepResult.detail = `File not found on disk or in loaded files: ${targetPath}`;
+                break;
+              }
+
+              // Read api.ts config so the AI knows the correct API patterns
+              let apiConfigContext = '';
+              const apiConfig = this.readFileFromDisk('frontend/src/config/api.ts');
+              if (apiConfig) {
+                apiConfigContext = `\n## Frontend API Configuration (frontend/src/config/api.ts):\n\`\`\`typescript\n${apiConfig}\`\`\`\nIMPORTANT: Use the API object from this config for API calls (e.g. \`import { API } from '../../config/api'; fetch(API.apps)\`). The API object has named properties for each endpoint. Do NOT hardcode URLs or create mock endpoints.\n`;
+              }
+
+              // Read any components referenced in the step detail so the AI knows what they look like
+              let referencedComponentContext = '';
+              const componentRefs = (step.detail || '').match(/\b([A-Z][a-zA-Z]+(?:Form|Button|Card|List|Table|Modal|Dialog|Panel|Section|Header|Footer|Nav|Sidebar|Layout|Page|Widget|Banner|Alert))\b/g) || [];
+              for (const compName of [...new Set(componentRefs)]) {
+                // Search in members/ and shared/ directories
+                for (const dir of ['frontend/src/components/members', 'frontend/src/components/shared']) {
+                  const compPath = `${dir}/${compName}.tsx`;
+                  const content = this.readFileFromDisk(compPath);
+                  if (content) {
+                    referencedComponentContext += `\n## Referenced component ${compName} (${compPath}):\n\`\`\`tsx\n${content.slice(0, 3000)}\n\`\`\`\n`;
+                    break;
+                  }
+                }
+              }
+
+              // ── LINE-BASED EDIT approach ──────────────────────────
+              // Instead of fragile string matching, use line numbers for edits.
+              // GPT sees numbered lines and specifies edits by line range — much more reliable.
+              const fileLines = targetFile.content.split('\n');
+              const numberedContent = fileLines.map((line, i) => `${i + 1}: ${line}`).join('\n');
+              const totalLines = fileLines.length;
+
+              const modifyPrompt = `You are modifying an existing file. Return LINE-BASED EDITS.
+
+## Current file (${targetFile.path}) — ${totalLines} lines:
+\`\`\`${targetFile.language}
+${numberedContent}
+\`\`\`
+
+## Instruction: ${step.detail}
+
+## USER'S ORIGINAL REQUEST (follow placement cues like "at the bottom", "at the top", "below X"):
+"${body.message}"
+${apiConfigContext}
+${referencedComponentContext}
+${componentLibrary}
+${webContext ? `## Web research for reference:\n${webContext}` : ''}
+
+Return a JSON object with line-based edits. Each edit specifies a line range to replace or a line to insert after.
+
+Format:
+\`\`\`json
+{
+  "edits": [
+    {
+      "type": "replace",
+      "startLine": 10,
+      "endLine": 12,
+      "newCode": "the new code that replaces lines 10-12"
+    },
+    {
+      "type": "insert_after",
+      "afterLine": 45,
+      "newCode": "new code to insert after line 45"
+    },
+    {
+      "type": "delete",
+      "startLine": 20,
+      "endLine": 22
+    }
+  ],
+  "newImports": "any new import lines to add at the top (or empty string)"
+}
+\`\`\`
+
+RULES:
+1. **Line numbers** refer to the numbers shown above (1-indexed). Use them precisely.
+2. **"replace"** replaces lines startLine through endLine (inclusive) with newCode.
+3. **"insert_after"** inserts newCode AFTER the specified line. Use afterLine: 0 to insert at the very top.
+4. **"delete"** removes lines startLine through endLine (inclusive).
+5. **newCode** should NOT include line numbers — just the raw code.
+6. **newImports** — any import lines to add. They'll be inserted after the last existing import.
+
+PLACEMENT GUIDANCE:
+- The file has ${totalLines} lines total.
+- "add at the bottom of the page" → insert_after the SECOND-TO-LAST line (the last closing tag before the final \`}\`). Look for the last \`</Box>\` or \`</div>\` before the final return closing.
+- "add at the top of the page" → find the first JSX element after \`return (\` and insert_after that opening tag line.
+- "add a button/form/section" → create a complete JSX block with proper indentation.
+
+A CONTACT FORM looks like:
+\`\`\`tsx
+<Box sx={{ mt: 4, p: 3, border: '1px solid rgba(0,0,0,0.1)', borderRadius: 2 }}>
+  <Typography variant="h6" sx={{ mb: 2 }}>Contact Us</Typography>
+  <TextField fullWidth label="Name" sx={{ mb: 2 }} />
+  <TextField fullWidth label="Email" type="email" sx={{ mb: 2 }} />
+  <TextField fullWidth label="Message" multiline rows={4} sx={{ mb: 2 }} />
+  <Button variant="contained">Send Message</Button>
+</Box>
+\`\`\`
+
+A BUY/PURCHASE BUTTON looks like:
+\`\`\`tsx
+<Button variant="contained" size="large" sx={{ mt: 3, px: 4, py: 1.5, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+  Buy Now
+</Button>
+\`\`\`
+
+IMPORT RULES:
+- For files in frontend/src/components/members/: use \`../../config/api\`, \`../shared/X\`
+- For files in frontend/src/components/: use \`../config/api\`, \`./shared/X\`
+- Define TypeScript interfaces INLINE — do NOT import from nonexistent type files
+- Use MUI components: \`import { Box, Button, TextField, Typography, ... } from '@mui/material';\`
+
+Return ONLY the JSON object. No markdown fences, no explanation.`;
+
+              const modResult = await this.callAI(
+                modelId,
+                `Expert code editor. You produce line-based edits using line numbers. NEVER return the whole file. Return a JSON object with an edits array only. ${this.getDesignSystemContext()}`,
+                modifyPrompt,
+              );
+              totalTokens += modResult.tokensUsed || 0;
+
+              // Apply line-based edits to the file
+              let updatedContent = targetFile.content;
+              let editApplied = false;
+              try {
+                const jsonMatch = modResult.content.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error('No JSON found in AI response');
+
+                const editPlan = JSON.parse(jsonMatch[0]);
+                let currentLines = [...fileLines];
+                
+                // Add new imports first (before line-shifting edits)
+                if (editPlan.newImports && editPlan.newImports.trim()) {
+                  const importText = editPlan.newImports.trim();
+                  let lastImportLine = -1;
+                  for (let i = 0; i < currentLines.length; i++) {
+                    if (currentLines[i].trimStart().startsWith('import ')) lastImportLine = i;
+                  }
+                  const insertAt = lastImportLine >= 0 ? lastImportLine + 1 : 0;
+                  currentLines.splice(insertAt, 0, ...importText.split('\n'));
+                }
+
+                // Sort edits by line number DESCENDING so earlier edits don't shift later line numbers
+                const edits = (editPlan.edits || []).sort((a: any, b: any) => {
+                  const lineA = a.startLine || a.afterLine || 0;
+                  const lineB = b.startLine || b.afterLine || 0;
+                  return lineB - lineA;
+                });
+
+                let appliedCount = 0;
+                for (const edit of edits) {
+                  try {
+                    if (edit.type === 'replace' && edit.startLine && edit.endLine) {
+                      const start = edit.startLine - 1; // convert to 0-indexed
+                      const count = edit.endLine - edit.startLine + 1;
+                      if (start >= 0 && start + count <= currentLines.length) {
+                        const newCodeLines = (edit.newCode || '').split('\n');
+                        currentLines.splice(start, count, ...newCodeLines);
+                        appliedCount++;
+                      }
+                    } else if (edit.type === 'insert_after' && edit.afterLine !== undefined) {
+                      const after = edit.afterLine; // 0 = top, else 1-indexed
+                      const newCodeLines = (edit.newCode || '').split('\n');
+                      if (after >= 0 && after <= currentLines.length) {
+                        currentLines.splice(after, 0, ...newCodeLines);
+                        appliedCount++;
+                      }
+                    } else if (edit.type === 'delete' && edit.startLine && edit.endLine) {
+                      const start = edit.startLine - 1;
+                      const count = edit.endLine - edit.startLine + 1;
+                      if (start >= 0 && start + count <= currentLines.length) {
+                        currentLines.splice(start, count);
+                        appliedCount++;
+                      }
+                    }
+                  } catch (editErr) {
+                    console.error('Individual edit failed:', editErr);
+                  }
+                }
+
+                if (appliedCount > 0) {
+                  updatedContent = currentLines.join('\n');
+                  editApplied = true;
+                  stepResult.detail = `Modified ${targetFile.path} (${appliedCount}/${edits.length} line edits applied)`;
+                } else if (edits.length > 0) {
+                  throw new Error(`No edits could be applied (0/${edits.length})`);
+                } else {
+                  throw new Error('No edits in response');
+                }
+              } catch (editError) {
+                // ── RETRY: Full-file approach ────────────────────────────
+                console.error('Line-based edits failed, trying full-file fallback:', editError);
+                const fallbackPrompt = `Modify this existing file according to the instruction. Return the COMPLETE updated file.
+
+## Current file (${targetFile.path}):
+\`\`\`${targetFile.language}
+${targetFile.content}
+\`\`\`
+
+## Instruction: ${step.detail}
+
+## USER'S ORIGINAL REQUEST:
+"${body.message}"
+${apiConfigContext}
+
+CRITICAL:
+1. Preserve ALL existing functionality. Only add/change what the instruction asks for.
+2. Do NOT remove existing code unless explicitly asked.
+3. Return the file EXACTLY ONCE — do NOT duplicate it.
+4. Do NOT import from nonexistent paths. Define types inline.
+
+Return ONLY the complete updated file. No markdown fences, no explanations.`;
+                
+                const fallbackResult = await this.callAI(modelId, `Expert code editor. Preserve all existing code. Return the file exactly once. ${this.getDesignSystemContext()}`, fallbackPrompt);
+                totalTokens += fallbackResult.tokensUsed || 0;
+                updatedContent = fallbackResult.content
+                  .replace(/^```(?:tsx?|typescript|javascript)?\n?/gm, '')
+                  .replace(/\n?```\s*$/gm, '')
+                  .trim();
+                editApplied = true;
+                stepResult.detail = `Modified ${targetFile.path} (full-file fallback)`;
+              }
+
+              // ── VERIFICATION ──────────────────────────────────────────
+              if (editApplied && updatedContent === targetFile.content) {
+                stepResult.detail += ' — WARNING: no actual changes detected';
+              }
+
+              // ── Deduplication guard ────────────────────────────────────
+              const originalExport = (targetFile.content.match(/export\s+(default\s+)?function\s+\w+/g) || []);
+              const updatedExport = (updatedContent.match(/export\s+(default\s+)?function\s+\w+/g) || []);
+              if (originalExport.length > 0 && updatedExport.length > originalExport.length) {
+                const firstExportFunc = originalExport[0]!;
+                const secondOccurrence = updatedContent.indexOf(firstExportFunc, updatedContent.indexOf(firstExportFunc) + firstExportFunc.length);
+                if (secondOccurrence > 0) {
+                  updatedContent = updatedContent.slice(0, secondOccurrence).trimEnd();
+                  stepResult.detail += ' (dedup applied)';
+                }
+              }
+
+              modifiedFiles.push({
+                ...targetFile,
+                content: updatedContent,
+                description: `Modified: ${step.detail}`,
+              });
+
+              stepResult.status = 'done';
+              break;
+            }
+
+            // ── Delegate to Backend Agent ───────────────────────────────
+            case 'delegate_backend':
+            case 'create_database': {
+              // Collect all generated + modified files so far for backend analysis
+              const allFilesForBackend = [
+                ...existingFiles,
+                ...generatedFiles,
+                ...modifiedFiles,
+              ];
+
+              if (allFilesForBackend.length === 0) {
+                stepResult.status = 'done';
+                stepResult.detail = 'No files to analyze — skipping backend delegation';
+                break;
+              }
+
+              try {
+                // Ask the Backend Agent to analyze what backend work is needed
+                const analysis = await this.analyzeBackendNeeds(allFilesForBackend, appId, modelId);
+                totalTokens += 1000; // estimate for analysis tokens
+
+                if (!analysis.success || analysis.tasks.length === 0) {
+                  stepResult.status = 'done';
+                  stepResult.detail = 'Backend Agent found no additional backend tasks needed';
+                  break;
+                }
+
+                // Auto-implement all tasks that the Backend Agent can handle (DB seeding, etc.)
+                const autoSeedTasks = analysis.tasks.filter(t => t.status === 'pending' && t.implementation?.type === 'db_seed');
+                const autoApiTasks = analysis.tasks.filter(t => t.status === 'pending' && t.implementation?.type === 'create_api');
+                const manualTasks = analysis.tasks.filter(t => t.status === 'pending' && !t.implementation);
+
+                let implementedCount = 0;
+
+                // Auto-implement seed tasks
+                if (autoSeedTasks.length > 0) {
+                  const implResult = this.implementAllTasks(autoSeedTasks, appId);
+                  implementedCount = implResult.results.filter(r => r.success).length;
+
+                  // Record DB changes from backend agent
+                  for (const task of autoSeedTasks) {
+                    if (task.status === 'done' && task.implementation?.payload) {
+                      const payload = task.implementation.payload;
+                      dbChanges.push({
+                        table: payload.table as string,
+                        action: 'seeded (via Backend Agent)',
+                        count: Array.isArray(payload.records) ? payload.records.length : 0,
+                      });
+                    }
+                  }
+                }
+
+                // Auto-implement API tasks by generating NestJS code
+                for (const apiTask of autoApiTasks) {
+                  try {
+                    const apiSpec = apiTask.implementation!.payload;
+                    const apiGenPrompt = `Generate a COMPLETE NestJS backend implementation for:
+
+${apiTask.title}: ${apiTask.description}
+Route: ${apiSpec.route || '/api/' + apiTask.id}
+Methods: ${(apiSpec.methods || ['GET', 'POST']).join(', ')}
+
+## Requirements:
+- NestJS controller with proper decorators
+- NestJS service with business logic
+- NestJS module that exports the controller and service
+- Use JSON file database pattern: constructor(private readonly db: DatabaseService) with this.db.readSync() / this.db.writeSync(data)
+- Import DatabaseService from '../shared/database.service'
+- Controller routes MUST be prefixed with 'api/' (e.g. @Controller('api/${apiTask.id}'))
+- If calling external services, import CryptoService from '../shared/crypto.service' and use the getApiKey pattern
+- Make it FULLY FUNCTIONAL — not stubs
+
+Return the code using ===FILE: path=== / ===END_FILE=== format.
+Include controller, service, AND module files.`;
+
+                    const apiResult = await this.callAI(
+                      modelId,
+                      'Expert NestJS backend developer. Generate clean, complete API code. Include module file.',
+                      apiGenPrompt,
+                    );
+                    totalTokens += apiResult.tokensUsed || 0;
+
+                    const apiFiles = this.parseFiles(apiResult.content);
+                    if (apiFiles.length > 0) {
+                      generatedFiles.push(...apiFiles);
+                      // Write to disk immediately
+                      this.writeGeneratedFilesToDisk(apiFiles);
+
+                      // Auto-register module
+                      const moduleFile = apiFiles.find(f => f.path.includes('.module.'));
+                      if (moduleFile) {
+                        const moduleNameMatch = moduleFile.content.match(/export\s+class\s+(\w+Module)/);
+                        if (moduleNameMatch) {
+                          const moduleName = moduleNameMatch[1];
+                          const relativePath = './' + moduleFile.path.replace('backend/src/', '').replace('.ts', '');
+                          this.registerNestModule(moduleName, relativePath);
+                        }
+                      }
+
+                      apiTask.status = 'done';
+                      implementedCount++;
+                    }
+                  } catch (apiErr) {
+                    // API generation failed — leave as manual
+                    console.error(`Failed to auto-generate API for "${apiTask.title}":`, apiErr);
+                  }
+                }
+
+                // Store backend tasks for the response
+                backendDelegationTasks.push(...analysis.tasks);
+
+                const parts: string[] = [];
+                if (implementedCount > 0) parts.push(`auto-implemented ${implementedCount} task(s)`);
+                if (manualTasks.length > 0) parts.push(`${manualTasks.length} manual task(s) identified`);
+                const alreadyDone = analysis.tasks.filter(t => t.status === 'done').length - implementedCount;
+                if (alreadyDone > 0) parts.push(`${alreadyDone} already done`);
+
+                stepResult.status = 'done';
+                stepResult.detail = `Backend Agent: ${parts.join(', ') || 'analysis complete'}`;
+              } catch (backendErr) {
+                stepResult.status = 'failed';
+                stepResult.detail = `Backend Agent error: ${backendErr instanceof Error ? backendErr.message : 'Unknown'}`;
+              }
+              break;
+            }
+
+            // ── Install Packages ──────────────────────────────────────
+            case 'install_packages': {
+              const packages = step.packages || [];
+              const target = step.target || 'frontend';
+
+              if (packages.length === 0) {
+                stepResult.status = 'done';
+                stepResult.detail = 'No packages to install';
+                break;
+              }
+
+              const installResult = this.installPackages(packages, target as 'frontend' | 'backend');
+              if (installResult.success) {
+                stepResult.status = 'done';
+                stepResult.detail = `Installed ${packages.join(', ')} in ${target}`;
+              } else {
+                stepResult.status = 'failed';
+                stepResult.detail = `Install failed: ${installResult.error?.slice(0, 200)}`;
+              }
+              break;
+            }
+
+            // ── Run Shell Command ──────────────────────────────────────
+            case 'run_command': {
+              const command = step.command;
+              if (!command) {
+                stepResult.status = 'failed';
+                stepResult.detail = 'No command specified';
+                break;
+              }
+
+              // Skip build/lint/verify commands — these are handled automatically in step 3c
+              const buildCmds = ['npm run build', 'npx tsc', 'npm run lint', 'npx eslint', 'npm run check', 'tsc --noEmit', 'tsc ', 'eslint'];
+              if (buildCmds.some(b => command.toLowerCase().includes(b))) {
+                stepResult.status = 'done';
+                stepResult.detail = 'Skipped — build verification happens automatically after all steps';
+                break;
+              }
+
+              // Security: block dangerous commands
+              const blocked = ['rm -rf /', 'format', 'del /s', 'shutdown', 'reboot'];
+              if (blocked.some(b => command.toLowerCase().includes(b))) {
+                stepResult.status = 'failed';
+                stepResult.detail = 'Command blocked for safety';
+                break;
+              }
+
+              const cmdResult = this.runCommand(command, step.target || undefined);
+              if (cmdResult.success) {
+                stepResult.status = 'done';
+                stepResult.detail = `Command completed: ${cmdResult.output.slice(0, 300)}`;
+                // Make command output available as context
+                webContext += `\nCommand output (${command}):\n${cmdResult.output.slice(0, 1000)}\n`;
+              } else {
+                stepResult.status = 'failed';
+                stepResult.detail = `Command failed: ${(cmdResult.error || cmdResult.output).slice(0, 300)}`;
+              }
+              break;
+            }
+
+            // ── Read File from Disk (with fallback paths) ──────────────
+            case 'read_file': {
+              const targetPath = step.targetFile;
+              if (!targetPath) {
+                stepResult.status = 'failed';
+                stepResult.detail = 'No file path specified';
+                break;
+              }
+
+              // Try the exact path first, then common fallback patterns
+              const pathsToTry = [
+                targetPath,
+                targetPath.replace(/^(frontend|backend)\//, 'src/'),
+                `frontend/${targetPath}`,
+                `backend/${targetPath}`,
+                targetPath.replace(/^src\//, 'frontend/src/'),
+                targetPath.replace(/^src\//, 'backend/src/'),
+              ];
+
+              let foundContent: string | null = null;
+              let foundPath = targetPath;
+              for (const tryPath of pathsToTry) {
+                const content = this.readFileFromDisk(tryPath);
+                if (content) {
+                  foundContent = content;
+                  foundPath = tryPath;
+                  break;
+                }
+              }
+
+              // If still not found, try to find similar files in parent dir
+              if (!foundContent) {
+                const filename = path.basename(targetPath);
+                const dir = path.dirname(targetPath);
+                for (const prefix of ['', 'frontend/', 'backend/']) {
+                  const dirFiles = this.listDirectory(prefix + dir);
+                  const match = dirFiles.find(f => f.includes(filename) || filename.includes(f));
+                  if (match) {
+                    const fullPath = prefix + dir + '/' + match;
+                    const content = this.readFileFromDisk(fullPath);
+                    if (content) {
+                      foundContent = content;
+                      foundPath = fullPath;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              if (foundContent) {
+                webContext += `\nFile contents (${foundPath}):\n${foundContent.slice(0, 3000)}\n`;
+                // Also add to existingFiles so modify_file can find it later
+                if (!existingFiles.find(f => f.path === foundPath)) {
+                  const ext = path.extname(foundPath).slice(1);
+                  existingFiles.push({
+                    path: foundPath,
+                    content: foundContent,
+                    language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext,
+                    description: `Read from disk: ${foundPath}`,
+                  });
+                }
+                stepResult.status = 'done';
+                stepResult.detail = `Read ${foundPath} (${foundContent.length} chars)`;
+              } else {
+                // Don't fail — just note and continue
+                stepResult.status = 'done';
+                stepResult.detail = `File not found: ${targetPath} (tried multiple paths, continuing without it)`;
+                webContext += `\nNote: Could not find file ${targetPath}. Proceeding without it.\n`;
+              }
+              break;
+            }
+
+            // ── List Directory ─────────────────────────────────────────
+            case 'list_directory': {
+              const dirPath = step.targetDir || step.detail || '.';
+              const dirFiles = this.listDirectory(dirPath);
+              if (dirFiles.length > 0) {
+                webContext += `\nDirectory listing (${dirPath}):\n${dirFiles.join('\n')}\n`;
+                stepResult.status = 'done';
+                stepResult.detail = `Listed ${dirFiles.length} files in ${dirPath}`;
+              } else {
+                stepResult.status = 'done';
+                stepResult.detail = `Directory ${dirPath} is empty or not found`;
+              }
+              break;
+            }
+
+            // ── Create API (NestJS backend) ────────────────────────────
+            case 'create_api': {
+              // Read existing backend module as an example template (like Copilot reads existing patterns)
+              let backendExamples = '';
+              const existingModuleDirs = this.listDirectory('backend/src').filter(f => !f.includes('.') && !f.includes('node_modules'));
+              // Find a simple existing module to use as template
+              for (const dir of ['chat', 'apps', 'health', 'pages', 'settings']) {
+                if (existingModuleDirs.includes(dir)) {
+                  const ctrlContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.controller.ts`);
+                  const svcContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.service.ts`);
+                  const modContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.module.ts`);
+                  if (ctrlContent && svcContent && modContent) {
+                    backendExamples = `\n## EXISTING BACKEND MODULE TO USE AS TEMPLATE — follow this exact pattern:\n### Controller (backend/src/${dir}/${dir}.controller.ts):\n\`\`\`typescript\n${ctrlContent.slice(0, 3000)}\n\`\`\`\n### Service (backend/src/${dir}/${dir}.service.ts):\n\`\`\`typescript\n${svcContent.slice(0, 3000)}\n\`\`\`\n### Module (backend/src/${dir}/${dir}.module.ts):\n\`\`\`typescript\n${modContent}\n\`\`\`\nStudy the template above carefully. Match its import patterns, decorator usage, DatabaseService usage, error handling, and code structure exactly.\n`;
+                    break;
+                  }
+                }
+              }
+
+              const apiPrompt = `Generate a COMPLETE NestJS backend implementation for:
+
+${step.detail}
+${backendExamples}
+
+## Requirements:
+- NestJS controller with proper decorators (@Controller, @Get, @Post, @Put, @Delete)
+- NestJS service with business logic
+- NestJS module that exports the controller and service
+- Use JSON file database pattern: constructor(private readonly db: DatabaseService) with this.db.readSync() / this.db.writeSync(data)
+- Import DatabaseService from '../shared/database.service'
+- Include proper TypeScript types/interfaces
+- Add error handling and validation
+- Follow RESTful conventions
+- Make it FULLY FUNCTIONAL — not stubs
+- Controller routes MUST be prefixed with 'api/' (e.g. @Controller('api/generate-image'))
+
+## API Key Access Pattern:
+If this API needs to call an external service (OpenAI, Stripe, etc.), use this pattern to read stored API keys:
+\`\`\`typescript
+import { CryptoService } from '../shared/crypto.service';
+// In constructor: private readonly cryptoService: CryptoService
+private getApiKey(provider: string): string | null {
+  const data = this.db.readSync();
+  const apiKeys = data.apiKeys || [];
+  const keyEntry = apiKeys.find((k: any) => k.name.toLowerCase() === provider.toLowerCase());
+  if (!keyEntry) return null;
+  return this.cryptoService.decrypt(keyEntry.value);
+}
+\`\`\`
+Available stored API keys: ${configuredKeys.join(', ') || 'none'}
+Always check if the key exists and return a clear error message if not configured.
+
+${webContext ? `## Reference:\n${webContext}` : ''}
+
+Return the code using ===FILE: path=== / ===END_FILE=== format.
+You MUST return EXACTLY 3 files using this delimiter format. Do NOT return a single code block.
+
+Example output format:
+===FILE: backend/src/example/example.controller.ts===
+import { Controller } from '@nestjs/common';
+// ... controller code
+===END_FILE===
+
+===FILE: backend/src/example/example.service.ts===
+import { Injectable } from '@nestjs/common';
+// ... service code
+===END_FILE===
+
+===FILE: backend/src/example/example.module.ts===
+import { Module } from '@nestjs/common';
+// ... module code
+===END_FILE===
+
+Return ALL 3 files (controller, service, module) using ===FILE: path=== and ===END_FILE=== delimiters. No other text.`;
+
+              const apiResult = await this.callAI(
+                modelId,
+                'Expert NestJS backend developer. Generate clean, well-structured, COMPLETE API code. Include module file. No stubs or placeholders.',
+                apiPrompt,
+              );
+              totalTokens += apiResult.tokensUsed || 0;
+
+              let apiFiles = this.parseFiles(apiResult.content);
+              
+              // If parseFiles returned only 1 file, AI didn't use the delimiter format — try to split the code
+              if (apiFiles.length <= 1) {
+                const cleanApi = apiResult.content
+                  .replace(/^```(?:tsx?|typescript)?\n?/m, '')
+                  .replace(/\n?```$/m, '')
+                  .trim();
+                
+                // Detect the slug from @Controller decorator
+                const controllerMatch = cleanApi.match(/@Controller\(['"](?:api\/)?([\\w-]+)['"]\)/);
+                const slug = controllerMatch ? controllerMatch[1] : (step.title || 'api').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                
+                // Try to split by class boundaries
+                const controllerCode = cleanApi.match(/(import[\s\S]*?@Controller[\s\S]*?export\s+class\s+\w+Controller[\s\S]*?^})/m);
+                const serviceCode = cleanApi.match(/(import[\s\S]*?@Injectable[\s\S]*?export\s+class\s+\w+Service[\s\S]*?^})/m);
+                const moduleCode = cleanApi.match(/(import[\s\S]*?@Module[\s\S]*?export\s+class\s+\w+Module[\s\S]*?^})/m);
+                
+                apiFiles = [];
+                if (controllerCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.controller.ts`, content: controllerCode[1], language: 'typescript', description: `Controller for ${slug}` });
+                if (serviceCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: serviceCode[1], language: 'typescript', description: `Service for ${slug}` });
+                if (moduleCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.module.ts`, content: moduleCode[1], language: 'typescript', description: `Module for ${slug}` });
+                
+                // If splitting failed, just save the whole thing as the service
+                if (apiFiles.length === 0) {
+                  apiFiles.push({
+                    path: `backend/src/${slug}/${slug}.service.ts`,
+                    content: cleanApi,
+                    language: 'typescript',
+                    description: step.detail,
+                  });
+                }
+              }
+
+              if (apiFiles.length > 0) {
+                generatedFiles.push(...apiFiles);
+
+                // Auto-register module in app.module.ts
+                const moduleFile = apiFiles.find(f => f.path.includes('.module.'));
+                if (moduleFile) {
+                  const moduleNameMatch = moduleFile.content.match(/export\s+class\s+(\w+Module)/);
+                  if (moduleNameMatch) {
+                    const moduleName = moduleNameMatch[1];
+                    const relativePath = './' + moduleFile.path.replace('backend/src/', '').replace('.ts', '');
+                    this.registerNestModule(moduleName, relativePath);
+                  }
+                }
+
+                stepResult.status = 'done';
+                stepResult.detail = `Generated ${apiFiles.length} API file(s) + registered module`;
+              }
+              break;
+            }
+
+            // ── Chat / Advise ──────────────────────────────────────────
+            case 'chat':
+            default: {
+              const chatPrompt = `${body.message}
+
+${webContext ? `\nWeb research:\n${webContext}` : ''}
+${fileContext ? `\nProject files:\n${fileContext}` : ''}`;
+
+              const chatResult = await this.callAI(
+                modelId,
+                `You are an elite full-stack coding agent. Available API keys: ${configuredKeys.join(', ') || 'none'}. Database: ${dbSummary}. ${appContext}`,
+                chatPrompt,
+                history,
+              );
+              totalTokens += chatResult.tokensUsed || 0;
+              chatResponse = chatResult.content;
+              stepResult.status = 'done';
+              break;
+            }
+          }
+        } catch (stepErr) {
+          stepResult.status = 'failed';
+          stepResult.detail = `Error: ${stepErr instanceof Error ? stepErr.message : 'Unknown'}`;
+
+          // Notify client of failure
+          sendEvent('step_complete', { id: step.id, title: step.title, status: 'failed', detail: stepResult.detail });
+
+          // ── Retry with alternative approach ──────────────────────────
+          if (step.action !== 'chat' && step.action !== 'search_web') {
+            sendEvent('progress', { message: `⟳ Retrying "${step.title}" with alternative approach...` });
+            try {
+              const retryPrompt = `The previous attempt to "${step.title}" failed with: ${stepResult.detail}
+
+Please try an alternative approach. Original task: ${step.detail}
+
+${webContext ? `Web context:\n${webContext}` : ''}
+
+Return ONLY the code. No explanation.`;
+
+              const retryResult = await this.callAI(modelId, `Expert coder retrying a failed step. ${this.getDesignSystemContext()}`, retryPrompt);
+              totalTokens += retryResult.tokensUsed || 0;
+
+              const retryClean = retryResult.content
+                .replace(/^```(?:tsx?|typescript|javascript)?\n?/m, '')
+                .replace(/\n?```$/m, '')
+                .trim();
+
+              if (retryClean.length > 50) {
+                const retryFiles = this.parseFiles(retryResult.content);
+                if (retryFiles.length > 0) {
+                  generatedFiles.push(...retryFiles);
+                } else {
+                  generatedFiles.push({
+                    path: step.newFilePath || step.targetFile || `frontend/src/components/${this.toPascalCase(step.title)}.tsx`,
+                    content: retryClean,
+                    language: 'typescript',
+                    description: `Retry: ${step.detail}`,
+                  });
+                }
+                stepResult.status = 'done';
+                stepResult.detail += ' (succeeded on retry)';
+              }
+            } catch { /* retry also failed, keep original failure */ }
+          }
+        }
+
+        // Notify client of step completion (final status)
+        if (stepResult.status === 'done' || stepResult.status === 'failed') {
+          sendEvent('step_complete', { id: step.id, title: step.title, status: stepResult.status, detail: stepResult.detail });
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────────────
+      // STEP 2.5: Auto-delegate to Backend Agent if not already done
+      // ──────────────────────────────────────────────────────────────────
+
+      const hadBackendStep = plan.steps.some((s: any) => s.action === 'delegate_backend' || s.action === 'create_database' || s.action === 'create_api');
+      // Only auto-delegate if: (a) the plan didn't already handle backend, (b) there are 3+ generated files
+      // (suggesting a substantial feature build), and (c) the plan is a build intent
+      if (!hadBackendStep && generatedFiles.length >= 3 && plan.intent === 'build') {
+        try {
+          const allFilesForAutoDelegate = [...existingFiles, ...generatedFiles, ...modifiedFiles];
+          const analysis = await this.analyzeBackendNeeds(allFilesForAutoDelegate, appId, modelId);
+
+          if (analysis.success && analysis.tasks.length > 0) {
+            const autoTasks = analysis.tasks.filter(t => t.status === 'pending' && t.implementation);
+            if (autoTasks.length > 0) {
+              const implResult = this.implementAllTasks(autoTasks, appId);
+              const implementedCount = implResult.results.filter(r => r.success).length;
+
+              for (const task of autoTasks) {
+                if (task.status === 'done' && task.implementation?.payload) {
+                  const payload = task.implementation.payload;
+                  dbChanges.push({
+                    table: payload.table as string,
+                    action: 'seeded (auto-delegated to Backend Agent)',
+                    count: Array.isArray(payload.records) ? payload.records.length : 0,
+                  });
+                }
+              }
+              backendDelegationTasks.push(...analysis.tasks);
+
+              executedPlan.push({
+                id: executedPlan.length + 1,
+                title: 'Backend Agent (auto-delegated)',
+                status: 'done',
+                detail: `Auto-implemented ${implementedCount} backend task(s), ${analysis.tasks.filter(t => !t.implementation).length} manual task(s) identified`,
+              });
+            }
+          }
+        } catch { /* auto-delegation is best-effort */ }
+      }
+
+      // ──────────────────────────────────────────────────────────────────
+      // STEP 3: Auto-write files to disk, install packages, verify build
+      // ──────────────────────────────────────────────────────────────────
+
+      const filesWritten: string[] = [];
+      const packagesInstalled: string[] = [];
+      const buildErrors: string[] = [];
+
+      if (plan.intent === 'build' && (generatedFiles.length > 0 || modifiedFiles.length > 0)) {
+        // 3a: Write all generated and modified files to disk
+        const allToWrite = [...generatedFiles, ...modifiedFiles];
+        if (allToWrite.length > 0) {
+          sendEvent('progress', { message: `💾 Writing ${allToWrite.length} file(s) to disk...` });
+          const writeResult = this.writeGeneratedFilesToDisk(allToWrite);
+          filesWritten.push(...writeResult.written);
+          if (writeResult.errors.length > 0) {
+            executedPlan.push({
+              id: executedPlan.length + 1,
+              title: 'Write files to disk',
+              status: writeResult.written.length > 0 ? 'done' : 'failed',
+              detail: `Wrote ${writeResult.written.length} file(s)${writeResult.errors.length > 0 ? `, ${writeResult.errors.length} error(s)` : ''}`,
+            });
+            sendEvent('step_complete', { id: 'write', title: 'Write files to disk', status: writeResult.written.length > 0 ? 'done' : 'failed', detail: `Wrote ${writeResult.written.length} file(s), ${writeResult.errors.length} error(s)` });
+          } else {
+            executedPlan.push({
+              id: executedPlan.length + 1,
+              title: 'Write files to disk',
+              status: 'done',
+              detail: `Wrote ${writeResult.written.length} file(s): ${writeResult.written.join(', ')}`,
+            });
+            sendEvent('step_complete', { id: 'write', title: 'Write files to disk', status: 'done', detail: `Wrote ${writeResult.written.length} file(s): ${writeResult.written.join(', ')}` });
+          }
+        }
+
+        // 3a-2: Auto-update frontend/src/config/api.ts for any new backend controllers
+        try {
+          const newControllers = allToWrite.filter(f => f.path.includes('.controller.') && f.path.startsWith('backend/'));
+          if (newControllers.length > 0) {
+            const projRoot = path.resolve(__dirname, '..', '..', '..');
+            const apiConfigPath = path.join(projRoot, 'frontend', 'src', 'config', 'api.ts');
+            if (fs.existsSync(apiConfigPath)) {
+              let apiConfig = fs.readFileSync(apiConfigPath, 'utf-8');
+              let updated = false;
+
+              for (const ctrl of newControllers) {
+                // Extract route from @Controller('api/xxx')
+                const routeMatch = ctrl.content.match(/@Controller\(['"]api\/([^'"]+)['"]\)/);
+                if (!routeMatch) continue;
+                const route = routeMatch[1];
+                // Convert route-name to camelCase endpoint name
+                const endpointName = route.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
+
+                // Check if already in API config
+                if (apiConfig.includes(`${endpointName}:`)) continue;
+
+                // Add before the closing "} as const"
+                const insertBefore = '} as const;';
+                if (apiConfig.includes(insertBefore)) {
+                  apiConfig = apiConfig.replace(
+                    insertBefore,
+                    `  ${endpointName}: \`\${API_BASE_URL}/api/${route}\`,\n${insertBefore}`,
+                  );
+                  updated = true;
+                }
+              }
+
+              if (updated) {
+                fs.writeFileSync(apiConfigPath, apiConfig, 'utf-8');
+                filesWritten.push('frontend/src/config/api.ts');
+              }
+            }
+          }
+        } catch { /* non-critical */ }
+
+        // 3b: Detect and install any missing npm packages
+        const hadInstallStep = plan.steps.some((s: any) => s.action === 'install_packages');
+        if (!hadInstallStep) {
+          const detected = this.detectRequiredPackages(allToWrite);
+          if (detected.frontend.length > 0) {
+            const frontendInstall = this.installPackages(detected.frontend, 'frontend');
+            if (frontendInstall.success) {
+              packagesInstalled.push(...detected.frontend);
+              executedPlan.push({
+                id: executedPlan.length + 1,
+                title: 'Install frontend packages',
+                status: 'done',
+                detail: `Installed: ${detected.frontend.join(', ')}`,
+              });
+            } else {
+              executedPlan.push({
+                id: executedPlan.length + 1,
+                title: 'Install frontend packages',
+                status: 'failed',
+                detail: `Failed to install ${detected.frontend.join(', ')}: ${frontendInstall.error?.slice(0, 150)}`,
+              });
+            }
+          }
+          if (detected.backend.length > 0) {
+            const backendInstall = this.installPackages(detected.backend, 'backend');
+            if (backendInstall.success) {
+              packagesInstalled.push(...detected.backend);
+              executedPlan.push({
+                id: executedPlan.length + 1,
+                title: 'Install backend packages',
+                status: 'done',
+                detail: `Installed: ${detected.backend.join(', ')}`,
+              });
+            } else {
+              executedPlan.push({
+                id: executedPlan.length + 1,
+                title: 'Install backend packages',
+                status: 'failed',
+                detail: `Failed to install ${detected.backend.join(', ')}: ${backendInstall.error?.slice(0, 150)}`,
+              });
+            }
+          }
+        }
+
+        // 3c: Verify TypeScript build and auto-fix errors (retry loop, up to 3 attempts)
+        const hasFrontendFiles = allToWrite.some(f => f.path.startsWith('frontend/'));
+        const hasBackendFiles = allToWrite.some(f => f.path.startsWith('backend/'));
+
+        for (const target of (['frontend', 'backend'] as const)) {
+          if ((target === 'frontend' && !hasFrontendFiles) || (target === 'backend' && !hasBackendFiles)) continue;
+
+          sendEvent('progress', { message: `🔨 Verifying ${target} build...` });
+
+          // Only check errors in files we actually touched
+          const ourFilePaths = allToWrite.filter(f => f.path.startsWith(`${target}/`)).map(f => f.path);
+          let buildCheck = this.verifyBuild(target, ourFilePaths);
+
+          if (!buildCheck.success && buildCheck.errors.length > 0) {
+            sendEvent('progress', { message: `⚠️ ${buildCheck.errors.length} build error(s) in ${target} — attempting auto-fix...` });
+            let fixAttempt = 0;
+            const maxAttempts = 3;
+            let lastFixCount = 0;
+
+            while (!buildCheck.success && buildCheck.errors.length > 0 && fixAttempt < maxAttempts) {
+              fixAttempt++;
+              const targetFiles = allToWrite.filter(f => f.path.startsWith(`${target}/`));
+              const fixResult = await this.autoFixBuildErrors(buildCheck.errors, targetFiles, modelId);
+              totalTokens += 800; // estimate per fix attempt
+
+              if (fixResult.fixed.length > 0) {
+                // Write fixed files to disk
+                this.writeGeneratedFilesToDisk(fixResult.fixed);
+
+                // Update the generated/modified files arrays with fixes
+                for (const fixed of fixResult.fixed) {
+                  const genIdx = generatedFiles.findIndex(f => f.path === fixed.path);
+                  if (genIdx >= 0) generatedFiles[genIdx] = fixed;
+                  const modIdx = modifiedFiles.findIndex(f => f.path === fixed.path);
+                  if (modIdx >= 0) modifiedFiles[modIdx] = fixed;
+                }
+
+                lastFixCount += fixResult.fixed.length;
+
+                // Re-verify (only our files)
+                buildCheck = this.verifyBuild(target, ourFilePaths);
+                if (buildCheck.success) break; // all clean!
+              } else {
+                break; // AI couldn't fix anything, stop retrying
+              }
+            }
+
+            executedPlan.push({
+              id: executedPlan.length + 1,
+              title: `Build verification (${target})`,
+              status: buildCheck.success ? 'done' : 'failed',
+              detail: buildCheck.success
+                ? `${target} builds clean after ${fixAttempt} fix attempt(s)`
+                : `Fixed ${lastFixCount} file(s) in ${fixAttempt} attempt(s), ${buildCheck.errors.length} error(s) remain in our files`,
+            });
+            sendEvent('step_complete', { id: `build-${target}`, title: `Build verification (${target})`, status: buildCheck.success ? 'done' : 'failed', detail: buildCheck.success ? `${target} builds clean` : `${buildCheck.errors.length} error(s) remain` });
+            if (!buildCheck.success) buildErrors.push(...buildCheck.errors);
+          } else {
+            executedPlan.push({
+              id: executedPlan.length + 1,
+              title: `Build verification (${target})`,
+              status: 'done',
+              detail: `${target} — our files compile clean`,
+            });
+            sendEvent('step_complete', { id: `build-${target}`, title: `Build verification (${target})`, status: 'done', detail: `${target} — compiles clean` });
+          }
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────────────
+      // STEP 4: Build a summary response
+      // ──────────────────────────────────────────────────────────────────
+
+      const doneSteps = executedPlan.filter(s => s.status === 'done').length;
+      const failedSteps = executedPlan.filter(s => s.status === 'failed').length;
+
+      if (plan.intent === 'chat' && chatResponse) {
+        // Pure chat — send the AI's response
+        const duration = Date.now() - start;
+        const config = this.getModelConfig(modelId);
+        await this.trackCost(config?.provider || 'anthropic', modelId, Math.round(totalTokens * 0.7), Math.round(totalTokens * 0.3), duration, 'coder-agent');
+        sendEvent('result', { success: true, response: chatResponse, searchResults: searchResults.length > 0 ? searchResults : undefined, tokensUsed: totalTokens });
+        return;
+      }
+
+      // Build mode — create a structured report
+      const report: string[] = [];
+      report.push(`## ${plan.summary || 'Build Complete'}\n`);
+      report.push(`**${doneSteps}/${executedPlan.length} steps completed** ${failedSteps > 0 ? `(${failedSteps} failed)` : ''}\n`);
+
+      if (generatedFiles.length > 0) {
+        report.push(`### New Files (${generatedFiles.length})`);
+        for (const f of generatedFiles) {
+          report.push(`- \`${f.path}\` — ${f.description || 'Generated'}`);
+        }
+        report.push('');
+      }
+
+      if (modifiedFiles.length > 0) {
+        report.push(`### Modified Files (${modifiedFiles.length})`);
+        for (const f of modifiedFiles) {
+          report.push(`- \`${f.path}\` — ${f.description || 'Modified'}`);
+        }
+        report.push('');
+      }
+
+      if (dbChanges.length > 0) {
+        report.push(`### 🗄️ Database Changes`);
+        for (const c of dbChanges) {
+          report.push(`- \`${c.table}\`: ${c.action} ${c.count} records`);
+        }
+        report.push('');
+      }
+
+      if (searchResults.length > 0) {
+        report.push(`### 🔍 Web Research`);
+        for (const r of searchResults.slice(0, 3)) {
+          report.push(`- [${r.title}](${r.url})`);
+        }
+        report.push('');
+      }
+
+      if (backendDelegationTasks.length > 0) {
+        const done = backendDelegationTasks.filter(t => t.status === 'done');
+        const pending = backendDelegationTasks.filter(t => t.status === 'pending');
+        report.push(`### 🔧 Backend Agent Delegation`);
+        if (done.length > 0) {
+          report.push(`**Auto-implemented (${done.length}):**`);
+          for (const t of done) report.push(`- ✅ ${t.title}`);
+        }
+        if (pending.length > 0) {
+          report.push(`**Needs manual setup (${pending.length}):**`);
+          for (const t of pending) report.push(`- ⏳ ${t.title} — ${t.description}`);
+        }
+        report.push('');
+      }
+
+      report.push('\n---\n');
+
+      for (const step of executedPlan) {
+        const icon = step.status === 'done' ? '✅' : step.status === 'failed' ? '❌' : '⏳';
+        report.push(`${icon} **${step.title}** — ${step.detail || ''}`);
+      }
+
+      if (filesWritten.length > 0) {
+        report.push(`\n\n📁 **${filesWritten.length} file(s) written to disk** — already saved to your project.`);
+      }
+      if (packagesInstalled.length > 0) {
+        report.push(`📦 **Packages installed:** ${packagesInstalled.join(', ')}`);
+      }
+      if (buildErrors.length > 0) {
+        report.push(`\n⚠️ **${buildErrors.length} build error(s) remaining** — may need manual attention.`);
+      } else if (filesWritten.length > 0) {
+        report.push(`\n✅ **Build verified** — all files compile without errors.`);
+      }
+
+      if (generatedFiles.length > 0 && filesWritten.length === 0) {
+        report.push('\n\n💡 **Click "Apply All" to add these files to your project, or review each file individually.**');
+      }
+
+      const duration = Date.now() - start;
+      const config = this.getModelConfig(modelId);
+      await this.trackCost(config?.provider || 'anthropic', modelId, Math.round(totalTokens * 0.7), Math.round(totalTokens * 0.3), duration, 'coder-agent');
+
+      sendEvent('result', {
+        success: true,
+        response: report.join('\n'),
+        plan: executedPlan,
+        generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
+        modifiedFiles: modifiedFiles.length > 0 ? modifiedFiles : undefined,
+        dbChanges: dbChanges.length > 0 ? dbChanges : undefined,
+        backendTasks: backendDelegationTasks.length > 0 ? backendDelegationTasks : undefined,
+        searchResults: searchResults.length > 0 ? searchResults : undefined,
+        filesWritten: filesWritten.length > 0 ? filesWritten : undefined,
+        packagesInstalled: packagesInstalled.length > 0 ? packagesInstalled : undefined,
+        buildVerified: buildErrors.length === 0 && filesWritten.length > 0,
+        tokensUsed: totalTokens,
+      });
+    } catch (err) {
+      sendEvent('error', { message: `Error: ${err instanceof Error ? err.message : 'Unknown error occurred'}` });
+    }
   }
 
   private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {

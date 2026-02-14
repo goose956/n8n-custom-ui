@@ -1022,6 +1022,185 @@ function RenderContactPage({ data, primaryColor }: { data: any; primaryColor: st
   );
 }
 
+// ─── Tool / Content / Interactive Page ───────────────────────────────────────
+// A flexible renderer for pages that represent tools, generators, content lists,
+// notification feeds, settings panels etc.  Mostly text + one contextual UI block.
+function RenderToolPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+  return (
+    <Box>
+      {/* Page header */}
+      <Box sx={{ px: 4, pt: 4, pb: 2 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, color: '#1a1a2e', mb: 1 }}>{data.title}</Typography>
+        {data.description && (
+          <Typography sx={{ color: '#666', lineHeight: 1.7, maxWidth: 700, mb: 1 }}>{data.description}</Typography>
+        )}
+        {data.badge && <Chip label={data.badge} size="small" sx={{ bgcolor: `${primaryColor}15`, color: primaryColor, fontWeight: 600, mt: 0.5 }} />}
+      </Box>
+
+      {/* Info callout */}
+      {data.info && (
+        <Box sx={{ mx: 4, mb: 3 }}>
+          <Paper elevation={0} sx={{ p: 2.5, borderLeft: `4px solid ${primaryColor}`, bgcolor: `${primaryColor}08`, borderRadius: 2 }}>
+            <Typography variant="body2" sx={{ color: '#555', lineHeight: 1.7 }}>{data.info}</Typography>
+          </Paper>
+        </Box>
+      )}
+
+      {/* Tool input section — for generators / AI tools / search */}
+      {data.tool_input && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          <Paper elevation={0} sx={{ p: 3, border: '1px solid #eee', borderRadius: 3 }}>
+            {data.tool_input.headline && (
+              <Typography sx={{ fontWeight: 700, mb: 2, color: '#1a1a2e' }}>{data.tool_input.headline}</Typography>
+            )}
+            {data.tool_input.fields?.map((field: any, i: number) => (
+              field.type === 'textarea' ? (
+                <TextField key={i} fullWidth multiline rows={field.rows || 3} label={field.label} placeholder={field.placeholder || ''} variant="outlined" size="small" sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+              ) : field.type === 'select' ? (
+                <FormControl key={i} fullWidth size="small" sx={{ mb: 1.5 }}>
+                  <InputLabel>{field.label}</InputLabel>
+                  <Select label={field.label} defaultValue="" sx={{ borderRadius: 2 }}>
+                    {field.options?.map((opt: string, oi: number) => (
+                      <MenuItem key={oi} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField key={i} fullWidth label={field.label} placeholder={field.placeholder || ''} type={field.type || 'text'} variant="outlined" size="small" sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+              )
+            ))}
+            <Button variant="contained" sx={{ background: gradient, fontWeight: 700, textTransform: 'none', borderRadius: 2, px: 3 }}>
+              {data.tool_input.submit_text || 'Submit'}
+            </Button>
+            {data.tool_input.hint && (
+              <Typography variant="caption" sx={{ display: 'block', color: '#aaa', mt: 1 }}>{data.tool_input.hint}</Typography>
+            )}
+          </Paper>
+        </Box>
+      )}
+
+      {/* Output / results preview */}
+      {data.output_preview && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1.5, color: '#1a1a2e', fontSize: '0.95rem' }}>{data.output_preview.headline || 'Recent Output'}</Typography>
+          {data.output_preview.items?.map((item: any, i: number) => (
+            <Paper key={i} elevation={0} sx={{ p: 2, mb: 1, border: '1px solid #eee', borderRadius: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: '#1a1a2e' }}>{item.title}</Typography>
+                {item.subtitle && <Typography variant="caption" sx={{ color: '#999' }}>{item.subtitle}</Typography>}
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label={item.status || 'Done'} size="small" sx={{ height: 22, fontSize: '0.7rem', fontWeight: 600, bgcolor: item.status === 'Processing' ? '#fff3e0' : '#e8f5e9', color: item.status === 'Processing' ? '#e65100' : '#2e7d32' }} />
+                {item.time && <Typography variant="caption" sx={{ color: '#bbb' }}>{item.time}</Typography>}
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      {/* Content list — for management / library pages */}
+      {data.content_list && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          {data.content_list.search_placeholder && (
+            <TextField fullWidth size="small" placeholder={data.content_list.search_placeholder} variant="outlined" sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
+          )}
+          {Array.isArray(data.content_list.actions) && (
+            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+              {data.content_list.actions.map((a: string, i: number) => (
+                <Button key={i} variant={i === 0 ? 'contained' : 'outlined'} size="small" sx={{ borderRadius: 2, fontWeight: 600, textTransform: 'none', ...(i === 0 ? { background: gradient } : { borderColor: '#ddd', color: '#555' }) }}>{a}</Button>
+              ))}
+            </Box>
+          )}
+          {data.content_list.items?.map((item: any, i: number) => (
+            <Paper key={i} elevation={0} sx={{ p: 2, mb: 1, border: '1px solid #eee', borderRadius: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', '&:hover': { bgcolor: '#fafbfc' }, cursor: 'pointer' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                {item.icon && <Box sx={{ fontSize: '1.2rem' }}>{item.icon}</Box>}
+                <Box>
+                  <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: '#1a1a2e' }}>{item.title}</Typography>
+                  {item.subtitle && <Typography variant="caption" sx={{ color: '#999' }}>{item.subtitle}</Typography>}
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                {item.type && <Chip label={item.type} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.68rem', fontWeight: 600, borderColor: '#ddd', color: '#888' }} />}
+                {item.status && <Chip label={item.status} size="small" sx={{ height: 22, fontSize: '0.68rem', fontWeight: 600, bgcolor: item.status === 'Published' || item.status === 'Active' ? '#e8f5e9' : item.status === 'Draft' ? '#fff3e0' : '#e3f2fd', color: item.status === 'Published' || item.status === 'Active' ? '#2e7d32' : item.status === 'Draft' ? '#e65100' : '#1565c0' }} />}
+                {item.date && <Typography variant="caption" sx={{ color: '#bbb' }}>{item.date}</Typography>}
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      {/* Notification feed */}
+      {Array.isArray(data.notifications) && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          {data.notifications.map((n: any, i: number) => (
+            <Paper key={i} elevation={0} sx={{ p: 2, mb: 1, border: '1px solid #eee', borderRadius: 2, bgcolor: n.read === false ? `${primaryColor}04` : 'transparent', borderLeft: n.read === false ? `3px solid ${primaryColor}` : '3px solid transparent' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography sx={{ fontWeight: n.read === false ? 700 : 600, fontSize: '0.9rem', color: '#1a1a2e' }}>{n.title}</Typography>
+                  <Typography variant="body2" sx={{ color: '#888', mt: 0.25 }}>{n.message}</Typography>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#bbb', whiteSpace: 'nowrap', ml: 2 }}>{n.time}</Typography>
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      {/* Settings list */}
+      {Array.isArray(data.settings_sections) && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          {data.settings_sections.map((section: any, si: number) => (
+            <Paper key={si} elevation={0} sx={{ p: 2.5, mb: 2, border: '1px solid #eee', borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 700, color: '#1a1a2e', mb: 1.5 }}>{section.title}</Typography>
+              {section.items?.map((item: any, ii: number) => (
+                <Box key={ii} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1, borderBottom: ii < section.items.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 600, fontSize: '0.88rem', color: '#333' }}>{item.label}</Typography>
+                    {item.hint && <Typography variant="caption" sx={{ color: '#aaa' }}>{item.hint}</Typography>}
+                  </Box>
+                  <Typography sx={{ fontSize: '0.85rem', color: primaryColor, fontWeight: 600 }}>{item.value}</Typography>
+                </Box>
+              ))}
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      {/* Quick tips / how-to */}
+      {Array.isArray(data.tips) && (
+        <Box sx={{ px: 4, pb: 3 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1, color: '#1a1a2e', fontSize: '0.95rem' }}>Tips</Typography>
+          <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #eee', borderRadius: 3, bgcolor: '#fafbfc' }}>
+            {data.tips.map((tip: string, i: number) => (
+              <Box key={i} sx={{ display: 'flex', gap: 1, mb: i < data.tips.length - 1 ? 1 : 0, alignItems: 'flex-start' }}>
+                <Typography sx={{ color: primaryColor, fontWeight: 700, fontSize: '0.85rem' }}>💡</Typography>
+                <Typography variant="body2" sx={{ color: '#666', lineHeight: 1.6 }}>{tip}</Typography>
+              </Box>
+            ))}
+          </Paper>
+        </Box>
+      )}
+
+      {/* Quick Actions */}
+      {Array.isArray(data.quick_actions) && (
+        <Box sx={{ px: 4, py: 2 }}>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+            {data.quick_actions.map((a: string, i: number) => (
+              <Button key={i} variant="outlined" size="small" sx={{ borderRadius: 2, borderColor: '#ddd', color: '#555', fontWeight: 600, textTransform: 'none', '&:hover': { borderColor: primaryColor, color: primaryColor } }}>
+                {a}
+              </Button>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      <RenderExtraSections data={data} primaryColor={primaryColor} />
+    </Box>
+  );
+}
+
 // Generic fallback renderer
 function RenderGenericPage({ data }: { data: any }) {
   return (
@@ -1377,8 +1556,10 @@ function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primary
     case 'blog-page': return <RenderBlogPage data={data} primaryColor={primaryColor} />;
     case 'faq': return <RenderFaqPage data={data} primaryColor={primaryColor} />;
     case 'contact': return <RenderContactPage data={data} primaryColor={primaryColor} />;
+    case 'tool': return <RenderToolPage data={data} primaryColor={primaryColor} />;
     default:
       // Try to auto-detect
+      if (data.tool_input || data.content_list || data.notifications || data.settings_sections) return <RenderToolPage data={data} primaryColor={primaryColor} />;
       if (data.features_section || data.nav) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
       if (data.order_confirmation || data.next_steps) return <RenderThanksPage data={data} primaryColor={primaryColor} />;
       if (data.welcome || data.courses) return <RenderMembersPage data={data} primaryColor={primaryColor} />;
@@ -1687,4 +1868,4 @@ export function AppPreviewPage() {
 }
 
 export default AppPreviewPage;
-export { RenderPage, RenderIndexPage, RenderThanksPage, RenderMembersPage, RenderCheckoutPage, RenderAdminPage, RenderGenericPage };
+export { RenderPage, RenderIndexPage, RenderThanksPage, RenderMembersPage, RenderCheckoutPage, RenderAdminPage, RenderToolPage, RenderGenericPage };
