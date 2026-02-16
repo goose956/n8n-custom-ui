@@ -1031,26 +1031,29 @@ export function ProgrammerAgentPage() {
  /* "€"€"€ Save "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
 
  const handleSave = async () => {
- if (files.length === 0) return;
- setSaving(true);
- try {
- const res = await fetch(`${API.programmerAgent}/save`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({ files }),
- });
- const data = await res.json();
- if (data.success) {
- setSnack({ open: true, msg:`Saved ${data.saved?.length || 0} file(s) to project`, severity:'success' });
- } else {
- setSnack({ open: true, msg:`Some files failed: ${data.errors?.join(',')}`, severity:'error' });
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- } finally {
- setSaving(false);
- }
- };
+    if (files.length === 0) return;
+    const activeFile = files[activeFileTab];
+    if (!activeFile) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API.programmerAgent}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: [activeFile] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const fileName = activeFile.path.split('/').pop() || activeFile.path;
+        setSnack({ open: true, msg: `Saved ${fileName} to project`, severity: 'success' });
+      } else {
+        setSnack({ open: true, msg: `Save failed: ${data.errors?.join(', ')}`, severity: 'error' });
+      }
+    } catch (err) {
+      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Network error', severity: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
  const copyToClipboard = (text: string) => {
  navigator.clipboard.writeText(text);
@@ -2045,7 +2048,7 @@ export function ProgrammerAgentPage() {
 '&:hover': { opacity: 0.9 },
  }}
  >
- {saving ?'Saving-..' :`Save All ${files.length} Files`}
+ {saving ?'Saving-..' :`Save ${files[activeFileTab]?.path?.split('/').pop() || 'File'}`}
  </Button>
  {!editMode && failedSteps.length > 0 && (
  <Button
