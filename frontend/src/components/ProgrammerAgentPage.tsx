@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react';
-import { API } from '../config/api';
-import { RenderPage } from './AppPreviewPage';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { API_BASE_URL, API } from '../config/api';
 import {
   Box, Typography, TextField, Button, Paper, Select, MenuItem,
   FormControl, InputLabel, Chip, CircularProgress,
@@ -28,7 +27,6 @@ import {
   Visibility as PreviewIcon,
   Dashboard as DashboardIcon,
   Person as ProfileIcon,
-  SupportAgent as SupportIcon,
   Settings as SettingsIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -54,623 +52,12 @@ import {
   Warning as WarningIcon,
   Info as InfoIcon,
   Replay as RetryIcon,
+  Refresh as RefreshIcon,
   AttachMoney as CostIcon,
   VerticalSplit as SplitIcon,
 } from '@mui/icons-material';
 
-/* ─── Preview Error Boundary (same pattern as Pages tab) ─── */
-class PreviewErrorBoundary extends Component<
-  { children: React.ReactNode },
-  { hasError: boolean; errorMessage: string }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false, errorMessage: '' };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMessage: error.message };
-  }
-  componentDidCatch(error: Error) {
-    console.error('Preview render crash:', error);
-  }
-  componentDidUpdate(prevProps: any) {
-    if (prevProps.children !== this.props.children && this.state.hasError) {
-      this.setState({ hasError: false, errorMessage: '' });
-    }
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <Box sx={{ p: 4, textAlign: 'center' }}>
-          <Typography sx={{ color: '#e74c3c', fontWeight: 700, mb: 1 }}>Preview crashed</Typography>
-          <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>
-            The generated content could not be previewed. Switch to Code view to inspect the output.
-          </Typography>
-          <Typography variant="caption" sx={{ color: '#ccc', fontFamily: 'monospace' }}>{this.state.errorMessage}</Typography>
-        </Box>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-/* ─── Smart preview: thinks about what would actually be on each page ─── */
-interface PreviewContext {
-  appName: string;
-  appDescription: string;
-  prompt: string;
-  pages: { name: string; description: string; type: string }[];
-  allFiles: GeneratedFile[];
-}
-
-function titleCase(s: string) {
-  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-/** Strip "Generated file: path/to/file.tsx" prefix that the AI prepends to descriptions */
-function cleanDescription(raw: string): string {
-  return raw.replace(/^generated\s+file:\s*\S+\s*/i, '').trim();
-}
-
-/** Build nav links from the other pages in the project */
-function navLinksFromPages(pages: { name: string }[], exclude?: string): string[] {
-  return pages
-    .filter(p => p.name.toLowerCase() !== (exclude || '').toLowerCase())
-    .map(p => titleCase(p.name))
-    .slice(0, 4);
-}
-
-/**
- * The core idea: read the description and figure out what UI elements belong on this page.
- * Most pages are NOT dashboards. They are functional tool pages with:
- *  - A title + description paragraph explaining what the page does
- *  - Maybe an input form (for generators, creators, search)
- *  - Maybe a list of items (for management, library, history)
- *  - Maybe settings toggles
- *  - Maybe notifications
- *  - Tips on how to use the page
- */
-function generatePreviewData(file: GeneratedFile, _appNameLegacy?: string, ctx?: PreviewContext): { data: any; pageType: string } {
-  const fileName = file.path.split('/').pop()?.replace(/\.(tsx|jsx|ts|js)$/, '').toLowerCase() || '';
-  const rawDesc = file.description || '';
-  const fileDesc = cleanDescription(rawDesc);
-  const desc = fileDesc.toLowerCase();
-  const appName = ctx?.appName || _appNameLegacy || 'My App';
-  const appDesc = cleanDescription(ctx?.appDescription || '');
-  const pagesCtx = ctx?.pages || [];
-
-  const pageName = titleCase(fileName.replace(/page$/i, ''));
-  const navLinks = navLinksFromPages(pagesCtx, fileName);
-
-  // ─── Priority 1: Exact structural pages (admin, checkout, landing) ───
-
-  // Admin panel — the ONLY page that should look like a dashboard with KPIs
-  if (/admin/i.test(fileName) || /\badmin\b/i.test(desc)) {
-    return {
-      pageType: 'admin',
-      data: {
-        page_type: 'admin',
-        dashboard_title: fileDesc || `${appName} Admin`,
-        kpis: [
-          { label: 'Total Users', value: '1,247', change: '+12%', up: true },
-          { label: 'Revenue', value: '$12,450', change: '+8.3%', up: true },
-          { label: 'Active Today', value: '89', change: '+5', up: true },
-          { label: 'Churn Rate', value: '2.1%', change: '-0.3%', up: true },
-        ],
-        revenue_chart: {
-          title: 'Growth Trend', periods: ['7D', '30D', '90D', '1Y'], default_period: '30D',
-          months: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
-          data: [4200, 5100, 4800, 6200, 7100, 8400, 9200, 10800],
-        },
-        recent_users: [
-          { name: 'Sarah Chen', email: 'sarah@example.com', plan: 'Pro', status: 'Active', mrr: '$39/mo' },
-          { name: 'James Wilson', email: 'james@company.co', plan: 'Enterprise', status: 'Active', mrr: '$99/mo' },
-          { name: 'Maria Garcia', email: 'maria@studio.com', plan: 'Starter', status: 'Trial', mrr: '$9/mo' },
-        ],
-        system_health: [
-          { label: 'API Gateway', status: 'Operational' },
-          { label: 'Application Server', status: 'Operational' },
-          { label: 'Database', status: 'Operational' },
-        ],
-        recent_activity: [
-          { text: 'New Enterprise signup', time: '2m ago' },
-          { text: 'System update deployed', time: '1h ago' },
-          { text: 'Monthly report generated', time: '3h ago' },
-        ],
-      },
-    };
-  }
-
-  // Checkout / Pricing / Plans
-  if (/checkout|pricing|plan|billing|subscription/i.test(fileName) || /\b(checkout|pricing|billing|subscription)\b/i.test(desc)) {
-    const what = desc.includes('hour') ? 'hours' : desc.includes('seat') ? 'seats' : desc.includes('project') ? 'projects' : 'features';
-    return {
-      pageType: 'checkout',
-      data: {
-        page_type: 'checkout',
-        headline: fileDesc || `Choose Your ${appName} Plan`,
-        subheading: appDesc || 'Start with a free trial. Upgrade as you grow.',
-        plans: [
-          { name: 'Starter', description: 'For individuals', price: '$9', period: '/mo', features: [`3 ${what}`, 'Core access', 'Email support', 'Community'], cta: 'Start Free' },
-          { name: 'Professional', description: 'For growing teams', price: '$39', period: '/mo', popular: true, features: [`Unlimited ${what}`, 'Everything in Starter', 'Priority support', 'API access', 'Team collaboration', 'Advanced analytics'], cta: 'Go Pro' },
-          { name: 'Enterprise', description: 'For organizations', price: '$99', period: '/mo', features: ['Everything in Pro', 'Custom integrations', 'Dedicated account manager', 'SSO & SAML', 'SLA guarantee'], cta: 'Contact Sales' },
-        ],
-        guarantee: '14-day free trial. No credit card required. Cancel anytime.',
-        trust_badges: ['SSL Secured', 'Cancel Anytime', 'Instant Access', '99.9% Uptime'],
-      },
-    };
-  }
-
-  // Landing / Index / Home — the ONLY page that should look like a marketing site
-  if (/^(index|landing|home|welcome)$/i.test(fileName) || /\b(landing page|home page|welcome page)\b/i.test(desc)) {
-    return {
-      pageType: 'index',
-      data: {
-        page_type: 'index',
-        nav: { brand: appName, links: navLinks.length ? navLinks : ['Features', 'Pricing', 'About'], cta: 'Get Started' },
-        hero: {
-          headline: appName,
-          subheading: appDesc || fileDesc || 'Everything you need to grow and succeed',
-          cta: 'Start Free Trial', secondary_cta: 'Watch Demo',
-          social_proof: '★ Trusted by thousands of professionals worldwide',
-        },
-        features_section: {
-          headline: 'Everything You Need',
-          subheading: appDesc || 'Powerful features for modern teams',
-          items: pagesCtx.slice(0, 6).map((p, i) => {
-            const icons = ['🚀', '⚡', '🔧', '📊', '🔒', '🤝'];
-            const pDesc = cleanDescription(p.description || '');
-            return { icon: icons[i % icons.length], title: titleCase(p.name), description: pDesc || `${titleCase(p.name)} functionality` };
-          }),
-        },
-        testimonials: [
-          { quote: `${appName} completely transformed our workflow. What used to take hours now takes minutes.`, author: 'Sarah Chen', title: 'Operations Director', avatar: '👩‍💼' },
-          { quote: `The best investment we made this year. Our team productivity doubled within weeks.`, author: 'James Wilson', title: 'Head of Product', avatar: '👨‍💻' },
-        ],
-        faq: [
-          { question: `How do I get started with ${appName}?`, answer: `Sign up for a free account and follow our quick-start guide. You'll be up and running in under 5 minutes.` },
-          { question: 'Can I try before I buy?', answer: 'Yes! We offer a 14-day free trial with full access. No credit card required.' },
-          { question: 'Do you offer team plans?', answer: 'Absolutely. Our Professional and Enterprise plans include team features, advanced permissions, and dedicated support.' },
-        ],
-        cta_footer: {
-          headline: `Ready to Get Started?`,
-          subheading: `Join ${appName} today — free trial, no credit card required.`,
-          button_text: 'Start Free Trial',
-        },
-      },
-    };
-  }
-
-  // Contact / Support page — use contact renderer
-  if (/support|help|contact|ticket/i.test(fileName) || /\b(support|help desk|contact us|submit.?ticket)\b/i.test(desc)) {
-    return {
-      pageType: 'contact',
-      data: {
-        page_type: 'contact',
-        form: {
-          headline: fileDesc || `${appName} Support`,
-          subheading: 'Our team typically responds within 2 hours',
-          fields: [
-            { label: 'Subject', type: 'text', placeholder: 'What do you need help with?' },
-            { label: 'Category', type: 'text', placeholder: 'General / Billing / Technical / Feature Request' },
-            { label: 'Message', type: 'textarea', placeholder: 'Describe your issue in detail...', rows: 5 },
-          ],
-          submit_text: 'Submit Ticket',
-        },
-        contact_info: {
-          headline: 'Other Ways to Get Help',
-          items: [
-            { icon: '📧', label: 'Email', value: `support@${appName.toLowerCase().replace(/\s+/g, '')}.com` },
-            { icon: '💬', label: 'Live Chat', value: 'Available Mon–Fri, 9am–6pm' },
-            { icon: '📚', label: 'Knowledge Base', value: '200+ articles & guides' },
-          ],
-        },
-      },
-    };
-  }
-
-  // ─── Priority 2: Description-driven tool pages ───
-  // This is the key insight: READ the description, figure out what would actually be on the page.
-
-  // AI / Generator / Creator pages → input form + recent output
-  if (/\b(ai|generat|creat|build|design|compos|convert|transform|process|produc|automat)\b/i.test(desc) ||
-      /\b(generator|creator|builder|converter|composer|maker)\b/i.test(fileName)) {
-    // Parse the description to figure out WHAT is being generated/created
-    const subjectMatch = desc.match(/(?:ai\s+)?(\w[\w\s]{2,30}?)(?:\s+generator|\s+creator|\s+builder|\s+maker|\s+tool|\s+conversion|\s+processing)/i);
-    const subject = subjectMatch ? titleCase(subjectMatch[1].trim()) : pageName;
-    const isImage = /image|photo|thumbnail|avatar|logo|icon|banner|graphic|visual|picture/i.test(desc);
-    const isText = /text|copy|content|article|blog|email|description|summary|caption|headline|title|script|story/i.test(desc);
-    const isAudio = /audio|sound|music|voice|speech|podcast|narration/i.test(desc);
-    const isVideo = /video|animation|clip|reel/i.test(desc);
-    const isCode = /code|script|program|function|component|template/i.test(desc);
-    const isData = /data|report|spreadsheet|csv|analysis|chart/i.test(desc);
-
-    // Build input fields based on what's being generated
-    const fields: any[] = [];
-    if (isImage) {
-      fields.push({ label: 'Description', type: 'textarea', placeholder: `Describe the ${subject.toLowerCase()} you want to generate...`, rows: 3 });
-      fields.push({ label: 'Style', type: 'select', options: ['Professional', 'Minimalist', 'Vibrant', 'Cinematic', 'Illustrative', 'Watercolor'] });
-      fields.push({ label: 'Size', type: 'select', options: ['1024x1024', '1920x1080', '1080x1080', '800x600', 'Custom'] });
-    } else if (isAudio) {
-      fields.push({ label: 'Input Text or Description', type: 'textarea', placeholder: `Enter text or describe the ${subject.toLowerCase()} you need...`, rows: 3 });
-      fields.push({ label: 'Voice / Style', type: 'select', options: ['Natural', 'Professional', 'Casual', 'Dramatic', 'Whisper'] });
-      fields.push({ label: 'Format', type: 'select', options: ['MP3', 'WAV', 'M4A', 'OGG'] });
-    } else if (isCode) {
-      fields.push({ label: 'What should it do?', type: 'textarea', placeholder: 'Describe the functionality you need...', rows: 4 });
-      fields.push({ label: 'Language', type: 'select', options: ['TypeScript', 'Python', 'JavaScript', 'React', 'HTML/CSS'] });
-    } else if (isData) {
-      fields.push({ label: 'What data do you need?', type: 'textarea', placeholder: `Describe the ${subject.toLowerCase()} you want to generate...`, rows: 3 });
-      fields.push({ label: 'Format', type: 'select', options: ['Table', 'Chart', 'CSV', 'JSON', 'PDF Report'] });
-    } else {
-      // Generic text/content or unknown — still give a good input
-      fields.push({ label: 'Description', type: 'textarea', placeholder: `Describe what you want to ${desc.includes('convert') || desc.includes('transform') ? 'convert' : 'create'}...`, rows: 3 });
-      if (isText) {
-        fields.push({ label: 'Tone', type: 'select', options: ['Professional', 'Casual', 'Formal', 'Persuasive', 'Friendly'] });
-        fields.push({ label: 'Length', type: 'select', options: ['Short (1-2 paragraphs)', 'Medium (3-5 paragraphs)', 'Long (article-length)'] });
-      }
-    }
-
-    // Build output preview items
-    const outputItems = [];
-    const typeLabel = isImage ? 'image' : isAudio ? 'audio' : isVideo ? 'video' : isCode ? 'snippet' : isData ? 'report' : 'item';
-    outputItems.push({ title: `${subject} #1 — Summer Campaign`, subtitle: `Generated ${typeLabel} · 2 min ago`, status: 'Done', time: '2m ago' });
-    outputItems.push({ title: `${subject} #2 — Product Launch`, subtitle: `Generated ${typeLabel} · 15 min ago`, status: 'Done', time: '15m ago' });
-    outputItems.push({ title: `${subject} #3 — Weekly Batch`, subtitle: `3 ${typeLabel}s · Processing`, status: 'Processing', time: '1h ago' });
-
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc,
-        info: appDesc ? `Part of ${appName}: ${appDesc}` : undefined,
-        tool_input: {
-          headline: `Create New ${subject}`,
-          fields,
-          submit_text: desc.includes('convert') || desc.includes('transform') ? 'Convert' : desc.includes('process') ? 'Process' : 'Generate',
-          hint: isImage ? 'Tip: Be specific about colors, style, and composition for better results.' : isText ? 'Tip: Provide context about your audience and goal for better output.' : `Tip: The more detail you provide, the better the result.`,
-        },
-        output_preview: { headline: 'Recent Results', items: outputItems },
-        tips: [
-          `Be specific in your description for better results`,
-          `You can regenerate any result by clicking on it`,
-          `All generated content is saved to your library`,
-        ],
-      },
-    };
-  }
-
-  // Notification / Alert / Feed pages → notification list
-  if (/notification|alert|feed|inbox|announce|update/i.test(fileName) || /\b(notification|alert|inbox|announcement|update|feed)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `Stay up to date with your ${appName} notifications.`,
-        notifications: [
-          { title: 'New Feature Available', message: `${appName} has been updated with new capabilities. Check it out!`, time: '5m ago', read: false },
-          { title: 'Welcome to the Team!', message: 'A new team member has joined your workspace.', time: '1h ago', read: false },
-          { title: 'Weekly Summary', message: 'Your weekly activity report is ready to view.', time: '3h ago', read: true },
-          { title: 'Maintenance Complete', message: 'Scheduled maintenance has been completed successfully.', time: '1d ago', read: true },
-          { title: 'Billing Update', message: 'Your invoice for this month has been generated.', time: '2d ago', read: true },
-        ],
-        quick_actions: ['Mark All Read', 'Notification Settings', 'Filter'],
-      },
-    };
-  }
-
-  // Settings / Config / Preferences → settings sections
-  if (/settings|config|preference/i.test(fileName) || /\b(settings|configuration|preferences)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `Configure your ${appName} experience.`,
-        settings_sections: [
-          {
-            title: 'General',
-            items: [
-              { label: 'Display Name', value: 'John Doe', hint: 'Visible to other members' },
-              { label: 'Email', value: 'john@example.com', hint: 'Used for notifications' },
-              { label: 'Language', value: 'English', hint: 'Interface language' },
-              { label: 'Timezone', value: 'UTC-5 (Eastern)', hint: 'For scheduling and dates' },
-            ],
-          },
-          {
-            title: 'Notifications',
-            items: [
-              { label: 'Email Notifications', value: 'Enabled', hint: 'Receive updates via email' },
-              { label: 'Push Notifications', value: 'Enabled', hint: 'Browser push alerts' },
-              { label: 'Weekly Digest', value: 'Enabled', hint: 'Summary email every Monday' },
-            ],
-          },
-          {
-            title: 'Privacy & Security',
-            items: [
-              { label: 'Two-Factor Auth', value: 'Enabled', hint: 'Extra security for your account' },
-              { label: 'Profile Visibility', value: 'Team Only', hint: 'Who can see your profile' },
-              { label: 'Data Export', value: 'Available', hint: 'Download all your data' },
-            ],
-          },
-        ],
-        quick_actions: ['Change Password', 'Connected Apps', 'API Keys', 'Delete Account'],
-      },
-    };
-  }
-
-  // Content Management / Library / List / Gallery / Collection pages → content list
-  if (/manage|library|collection|gallery|list|directory|catalog|inventory|archive/i.test(fileName) ||
-      /\b(manage|library|collection|gallery|browse|catalog|inventory|directory|archive|organiz)\b/i.test(desc)) {
-    // Figure out what's being managed from the description
-    const itemMatch = desc.match(/(?:manage|browse|view|organize|list)\s+(?:your\s+)?(\w[\w\s]{2,25})/i);
-    const itemType = itemMatch ? titleCase(itemMatch[1].trim()) : pageName.replace(/Management|Library|Collection|Gallery|List/i, '').trim() || 'Items';
-    const icons = ['📄', '🎨', '📸', '📊', '🔗', '📁'];
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `Browse and manage your ${itemType.toLowerCase()}.`,
-        content_list: {
-          search_placeholder: `Search ${itemType.toLowerCase()}...`,
-          actions: [`New ${itemType.replace(/s$/i, '')}`, 'Filter', 'Sort', 'Export'],
-          items: [
-            { icon: icons[0], title: `${itemType.replace(/s$/i, '')} — Summer Campaign`, subtitle: 'Created 2 days ago', type: 'Active', status: 'Published', date: 'Feb 12' },
-            { icon: icons[1], title: `${itemType.replace(/s$/i, '')} — Product Launch`, subtitle: 'Updated yesterday', type: 'Active', status: 'Published', date: 'Feb 11' },
-            { icon: icons[2], title: `${itemType.replace(/s$/i, '')} — Q1 Planning`, subtitle: 'In review', type: 'Review', status: 'Draft', date: 'Feb 10' },
-            { icon: icons[3], title: `${itemType.replace(/s$/i, '')} — Onboarding v2`, subtitle: 'Awaiting approval', type: 'Pending', status: 'Draft', date: 'Feb 8' },
-            { icon: icons[4], title: `${itemType.replace(/s$/i, '')} — Archive sample`, subtitle: 'Completed last week', type: 'Archive', status: 'Published', date: 'Feb 5' },
-          ],
-        },
-        quick_actions: [`New ${itemType.replace(/s$/i, '')}`, 'Import', 'Bulk Actions', 'Trash'],
-      },
-    };
-  }
-
-  // Profile / Account page → settings-style
-  if (/profile|account|my-account/i.test(fileName) || /\b(profile|account|my account)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: 'My Profile',
-        description: fileDesc || `View and edit your ${appName} profile.`,
-        settings_sections: [
-          {
-            title: 'Account Details',
-            items: [
-              { label: 'Name', value: 'John Doe' },
-              { label: 'Email', value: 'john@example.com' },
-              { label: 'Member Since', value: 'January 2025' },
-              { label: 'Plan', value: 'Professional' },
-            ],
-          },
-          {
-            title: 'Usage',
-            items: [
-              { label: 'Current Usage', value: '78%', hint: 'Of monthly plan limit' },
-              { label: 'Storage', value: '2.4 GB / 10 GB', hint: 'Files and media' },
-            ],
-          },
-        ],
-        quick_actions: ['Edit Profile', 'Change Password', 'Billing & Plans', 'Download Data'],
-      },
-    };
-  }
-
-  // History / Activity / Logs → content list with time-based items
-  if (/history|activity|log|timeline|audit/i.test(fileName) || /\b(history|activity log|timeline|audit)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `View your recent ${appName} activity.`,
-        content_list: {
-          search_placeholder: 'Search activity...',
-          actions: ['Filter by Date', 'Export CSV'],
-          items: [
-            { icon: '✅', title: 'Completed task: Review submission', subtitle: 'Marked as done', date: '2 hours ago', status: 'Active' },
-            { icon: '📤', title: 'Exported monthly report', subtitle: 'PDF · 2.4 MB', date: 'Yesterday', status: 'Active' },
-            { icon: '🔄', title: 'Updated settings', subtitle: 'Changed notification preferences', date: '2 days ago', status: 'Active' },
-            { icon: '👤', title: 'Profile updated', subtitle: 'Changed display name and avatar', date: '3 days ago', status: 'Active' },
-            { icon: '📥', title: 'Imported data', subtitle: 'CSV file · 148 records', date: 'Last week', status: 'Active' },
-          ],
-        },
-        quick_actions: ['Clear History', 'Export All'],
-      },
-    };
-  }
-
-  // Upload / Import → tool input for file upload
-  if (/upload|import/i.test(fileName) || /\b(upload|import|file upload)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || 'Upload and import your files.',
-        tool_input: {
-          headline: 'Upload Files',
-          fields: [
-            { label: 'Select Files', type: 'text', placeholder: 'Drag & drop files here or click to browse' },
-            { label: 'Category', type: 'select', options: ['General', 'Documents', 'Images', 'Media', 'Data'] },
-          ],
-          submit_text: 'Upload',
-          hint: 'Supported formats: PDF, DOCX, JPG, PNG, MP4, CSV and more. Max 2 GB per file.',
-        },
-        output_preview: {
-          headline: 'Recent Uploads',
-          items: [
-            { title: 'report-q4.pdf', subtitle: '2.4 MB · PDF', status: 'Done', time: '10m ago' },
-            { title: 'team-photo.jpg', subtitle: '1.1 MB · Image', status: 'Done', time: '1h ago' },
-            { title: 'data-export.csv', subtitle: '450 KB · CSV', status: 'Done', time: '2h ago' },
-          ],
-        },
-        tips: [`You can upload multiple files at once`, `Files are automatically organized by type`],
-      },
-    };
-  }
-
-  // Analytics / Reports / Metrics → keep as admin (the only other dashboard-like page)
-  if (/analytic|report|metric|insight|stat/i.test(fileName) || /\b(analytics|report|metrics|insight|statistics)\b/i.test(desc)) {
-    return {
-      pageType: 'admin',
-      data: {
-        page_type: 'admin',
-        dashboard_title: fileDesc || pageName,
-        kpis: [
-          { label: 'Total Views', value: '24,891', change: '+18%', up: true },
-          { label: 'Engagement', value: '67%', change: '+5.2%', up: true },
-          { label: 'Growth', value: '+23%', change: '+3%', up: true },
-          { label: 'Retention', value: '89%', change: '+1.4%', up: true },
-        ],
-        revenue_chart: {
-          title: 'Activity Over Time', periods: ['7D', '30D', '90D'], default_period: '30D',
-          months: ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
-          data: [2100, 3400, 2900, 4100, 5200, 6800],
-        },
-      },
-    };
-  }
-
-  // Dashboard / Overview — the main member dashboard (only for explicitly named dashboards)
-  if (/dashboard|overview/i.test(fileName) || /\b(dashboard|overview)\b/i.test(desc)) {
-    const pageLinks = pagesCtx.map(p => titleCase(p.name)).slice(0, 6);
-    return {
-      pageType: 'members',
-      data: {
-        page_type: 'members',
-        welcome: { headline: `Welcome to ${appName}`, subheading: appDesc || fileDesc || 'Your dashboard — everything at a glance' },
-        stats: [
-          { label: 'Status', value: 'Active', sub: 'All systems go' },
-          { label: 'Last Login', value: 'Today', sub: '2 hours ago' },
-          { label: 'Tasks', value: '3', sub: 'Pending' },
-        ],
-        quick_actions: pageLinks.length >= 3 ? pageLinks : ['Getting Started', 'Settings', 'Support', 'Browse', 'Upgrade'],
-      },
-    };
-  }
-
-  // API / Integrations / Developer → tool page with code-like input
-  if (/api|integrat|develop|webhook/i.test(fileName) || /\b(api|integration|developer|webhook)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `Connect ${appName} with your existing tools and automate your workflow.`,
-        badge: 'Developer',
-        info: 'Use API keys to authenticate requests. Keep your keys private and never share them in client-side code.',
-        settings_sections: [
-          {
-            title: 'API Keys',
-            items: [
-              { label: 'Production Key', value: 'sk_live_••••••••4f2a', hint: 'For live requests' },
-              { label: 'Test Key', value: 'sk_test_••••••••8b1c', hint: 'For development' },
-              { label: 'Rate Limit', value: '1,000 req/min', hint: 'Current plan limit' },
-            ],
-          },
-        ],
-        output_preview: {
-          headline: 'Recent API Activity',
-          items: [
-            { title: 'POST /api/create', subtitle: '200 OK · 142ms', status: 'Done', time: '2m ago' },
-            { title: 'GET /api/list', subtitle: '200 OK · 89ms', status: 'Done', time: '15m ago' },
-            { title: 'POST /api/batch', subtitle: '202 Accepted · 1.2s', status: 'Processing', time: '1h ago' },
-          ],
-        },
-        quick_actions: ['Generate New Key', 'View Docs', 'Test Endpoint', 'Webhook Setup', 'Usage Logs'],
-      },
-    };
-  }
-
-  // Blog / Resources / Library / Docs / Guide → content list
-  if (/blog|resource|library|docs|guide|tutorial|article|knowledge/i.test(fileName) ||
-      /\b(blog|resource|guide|tutorial|article|knowledge base|documentation)\b/i.test(desc)) {
-    return {
-      pageType: 'tool',
-      data: {
-        page_type: 'tool',
-        title: pageName,
-        description: fileDesc || `Explore ${appName} resources, guides, and tutorials.`,
-        content_list: {
-          search_placeholder: 'Search resources...',
-          actions: ['All', 'Guides', 'Tutorials', 'FAQs'],
-          items: [
-            { icon: '📖', title: 'Getting Started Guide', subtitle: 'Step-by-step setup walkthrough', type: 'Guide', status: 'Published', date: 'Updated 3d ago' },
-            { icon: '🎯', title: 'Best Practices', subtitle: 'Tips from power users', type: 'Guide', status: 'Published', date: 'Updated 1w ago' },
-            { icon: '🔌', title: 'Integration Guide', subtitle: 'Connect with your tools', type: 'Tutorial', status: 'Published', date: 'Updated 2w ago' },
-            { icon: '💡', title: 'Tips & Tricks', subtitle: 'Hidden features you should know', type: 'Article', status: 'Published', date: 'Updated 3w ago' },
-          ],
-        },
-      },
-    };
-  }
-
-  // ─── Priority 3: Fallback — description-driven tool page ───
-  // Every other page becomes a clean tool page with description text
-  // and contextual elements based on what the description mentions.
-
-  const data: any = {
-    page_type: 'tool',
-    title: pageName,
-    description: fileDesc || `${pageName} functionality for ${appName}.`,
-  };
-
-  // Add an info callout from the app description if available
-  if (appDesc && appDesc !== fileDesc) {
-    data.info = appDesc;
-  }
-
-  // If the description suggests this page has some kind of input/action
-  const hasInputAction = /\b(enter|input|submit|create|generate|search|write|compose|send|upload|type|describe|select|choose|pick|fill|provide)\b/i.test(desc);
-  const hasListContent = /\b(list|browse|view|see|find|show|display|all|recent|your|history|saved|favorite|archive|items|records|entries|results)\b/i.test(desc);
-
-  if (hasInputAction && !hasListContent) {
-    // Page seems interactive — give it an input form
-    const actionVerb = desc.match(/\b(create|generate|search|send|compose|build|upload|convert|write|submit|enter)\b/i)?.[1] || 'Submit';
-    data.tool_input = {
-      headline: fileDesc || `${pageName}`,
-      fields: [
-        { label: 'Input', type: 'textarea', placeholder: `Enter your ${pageName.toLowerCase()} details here...`, rows: 3 },
-      ],
-      submit_text: titleCase(actionVerb),
-    };
-    data.tips = [
-      `Be as specific as possible for better results`,
-      `Your previous results are saved automatically`,
-    ];
-  } else if (hasListContent) {
-    // Page seems to show a list of things
-    data.content_list = {
-      search_placeholder: `Search ${pageName.toLowerCase()}...`,
-      actions: ['All', 'Recent', 'Favorites'],
-      items: [
-        { icon: '📄', title: `${pageName} Item 1`, subtitle: 'Most recent', status: 'Active', date: 'Today' },
-        { icon: '📄', title: `${pageName} Item 2`, subtitle: 'Updated recently', status: 'Active', date: 'Yesterday' },
-        { icon: '📄', title: `${pageName} Item 3`, subtitle: 'From last week', status: 'Active', date: 'Feb 7' },
-      ],
-    };
-  } else {
-    // Purely informational page — just clean text with tips
-    data.tips = [
-      fileDesc || `This is the ${pageName.toLowerCase()} section of ${appName}`,
-      `Use the navigation to explore other areas of ${appName}`,
-    ];
-    // Add related pages as quick actions so the page isn't empty
-    const relatedPages = pagesCtx.filter(p => p.name.toLowerCase() !== fileName).map(p => titleCase(p.name)).slice(0, 5);
-    if (relatedPages.length >= 2) {
-      data.quick_actions = relatedPages;
-    }
-  }
-
-  return { pageType: 'tool', data };
-}
-
-/* ─── Types ──────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 interface GeneratedFile {
   path: string;
@@ -692,7 +79,7 @@ interface MembersPage {
   id: string;
   name: string;
   description: string;
-  type: 'dashboard' | 'profile' | 'support' | 'settings' | 'custom';
+  type: 'dashboard' | 'profile' | 'settings' | 'admin' | 'custom';
   required: boolean;
   enabled?: boolean;
 }
@@ -762,7 +149,7 @@ interface QaIssue {
 
 type Phase = 'setup' | 'planning' | 'pages' | 'generating' | 'results' | 'finalizing' | 'finalized' | 'qa-running' | 'qa-results' | 'documenting' | 'documented';
 
-/* ─── Simple syntax highlighter ─────────────────────────────────────── */
+/* â”€â”€â”€ Simple syntax highlighter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function SyntaxHighlight({ code, language }: { code: string; language: string }) {
   const highlighted = useMemo(() => {
@@ -802,7 +189,7 @@ function SyntaxHighlight({ code, language }: { code: string; language: string })
   );
 }
 
-/* ─── Phase stepper config ───────────────────────────────────────────── */
+/* â”€â”€â”€ Phase stepper config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const PHASE_STEPS = [
   { key: 'setup', label: 'Setup' },
@@ -824,19 +211,18 @@ function getStepIndex(phase: Phase): number {
   return map[phase] ?? 0;
 }
 
-/* ─── Page type icon helper ──────────────────────────────────────────────── */
+/* â”€â”€â”€ Page type icon helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function PageTypeIcon({ type }: { type: string }) {
   switch (type) {
     case 'dashboard': return <DashboardIcon sx={{ fontSize: 18 }} />;
     case 'profile': return <ProfileIcon sx={{ fontSize: 18 }} />;
-    case 'support': return <SupportIcon sx={{ fontSize: 18 }} />;
     case 'settings': return <SettingsIcon sx={{ fontSize: 18 }} />;
     default: return <PagesIcon sx={{ fontSize: 18 }} />;
   }
 }
 
-/* ─── Main component ─────────────────────────────────────────────────── */
+/* â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export function ProgrammerAgentPage() {
   // Phase state
@@ -883,6 +269,10 @@ export function ProgrammerAgentPage() {
   const [coderHistory, setCoderHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [coderPendingFiles, setCoderPendingFiles] = useState<{ generated: any[]; modified: any[] }>({ generated: [], modified: [] });
 
+  // Edit existing pages mode
+  const [editMode, setEditMode] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
   // Refine state
   const [refineDialog, setRefineDialog] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState('');
@@ -928,6 +318,54 @@ export function ProgrammerAgentPage() {
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const coderChatEndRef = useRef<HTMLDivElement>(null);
+
+  // ─── Load existing members files for editing ─────────────────────────
+  const loadMembersFiles = async () => {
+    if (!selectedAppId) {
+      setSnack({ open: true, msg: 'Please select an app first to load its members pages.', severity: 'warning' });
+      return;
+    }
+    setLoadingFiles(true);
+    try {
+      // Stop any existing preview session so it starts fresh
+      if (previewSessionRef.current) {
+        fetch(`${API_BASE_URL}/api/preview/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: previewSessionRef.current }),
+        }).catch(() => {});
+        previewSessionRef.current = null;
+      }
+      previewStartingRef.current = false;
+      setPreviewPort(null);
+      setShowPreview(true);
+
+      const res = await fetch(`${API.programmerAgent}/members-files?appId=${selectedAppId}`);
+      const data = await res.json();
+      if (data.success && data.files.length > 0) {
+        const appName = apps.find(a => a.id === selectedAppId)?.name || 'App';
+        setFiles(data.files);
+        setActiveFileTab(0);
+        setPlan([]);
+        setSummary('');
+        setEditMode(true);
+        setPhase('results');
+        setChatPanelOpen(true);
+        setChatMode('coder');
+        setDesignMessages([]);
+        setBackendMessages([]);
+        setCoderMessages([]);
+        setCoderHistory([]);
+        setSnack({ open: true, msg: `Loaded ${data.files.length} pages for "${appName}"`, severity: 'success' });
+      } else {
+        setSnack({ open: true, msg: 'No members area files found for this app. Generate them first using the builder.', severity: 'info' });
+      }
+    } catch (err) {
+      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Failed to load files', severity: 'error' });
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
 
   // Auto-scroll coder chat when messages change
   useEffect(() => {
@@ -1011,7 +449,7 @@ export function ProgrammerAgentPage() {
   const activeStepIndex = getStepIndex(phase);
   const failedSteps = Array.isArray(plan) ? plan.filter((s: any) => s.status === 'failed') : [];
 
-  /* ─── Plan Members Area ────────────────────────────────────────────── */
+  /* â”€â”€â”€ Plan Members Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handlePlan = async () => {
     if (!prompt.trim() || !selectedAppId) return;
@@ -1031,11 +469,16 @@ export function ProgrammerAgentPage() {
 
       const data = await res.json();
       if (data.success) {
-        setPages(data.pages.map((p: MembersPage) => ({ ...p, enabled: true })));
+        // Filter out blocked page types (support pages were removed from the product)
+        const BLOCKED_PAGE_IDS = new Set(['support', 'support-ticket']);
+        const filteredPages = (data.pages as MembersPage[]).filter(
+          (p) => !BLOCKED_PAGE_IDS.has(p.id) && !BLOCKED_PAGE_IDS.has(p.type)
+        );
+        setPages(filteredPages.map((p: MembersPage) => ({ ...p, enabled: true })));
         setApiKeys(data.apiKeysNeeded || []);
         setSearchResults(data.searchResults || []);
         setPhase('pages');
-        setSnack({ open: true, msg: `AI suggested ${data.pages.length} pages for the members area`, severity: 'success' });
+        setSnack({ open: true, msg: `AI suggested ${filteredPages.length} pages for the members area`, severity: 'success' });
       } else {
         setSnack({ open: true, msg: data.error || 'Planning failed', severity: 'error' });
         setPhase('setup');
@@ -1048,7 +491,7 @@ export function ProgrammerAgentPage() {
     }
   };
 
-  /* ─── Generate Members Area ────────────────────────────────────────── */
+  /* â”€â”€â”€ Generate Members Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleGenerate = useCallback(async () => {
     if (generating) return;
@@ -1089,7 +532,7 @@ export function ProgrammerAgentPage() {
         setTokensUsed(data.tokensUsed || null);
         setSearchResults(data.searchResults || []);
         setPhase('results');
-        setSnack({ open: true, msg: `Generated ${data.files?.length || 0} files — ${(data.tokensUsed?.total || 0).toLocaleString()} tokens`, severity: 'success' });
+        setSnack({ open: true, msg: `Generated ${data.files?.length || 0} files â€” ${(data.tokensUsed?.total || 0).toLocaleString()} tokens`, severity: 'success' });
         loadStats();
       } else {
         setSnack({ open: true, msg: data.error || 'Generation failed', severity: 'error' });
@@ -1103,7 +546,7 @@ export function ProgrammerAgentPage() {
     }
   }, [prompt, selectedAppId, orchestratorModel, subAgentModel, pages, generating]);
 
-  /* ─── Refine ───────────────────────────────────────────────────────── */
+  /* â”€â”€â”€ Refine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleRefine = async () => {
     if (!refineInstruction.trim() || refining) return;
@@ -1138,7 +581,7 @@ export function ProgrammerAgentPage() {
     }
   };
 
-  /* ─── Chat Panel: Design & Backend (same as Pages tab) ──────────── */
+  /* â”€â”€â”€ Chat Panel: Design & Backend (same as Pages tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleChatSend = async (directMessage?: string) => {
     const msgText = directMessage || chatInput;
@@ -1181,14 +624,20 @@ export function ProgrammerAgentPage() {
           }]);
         }
       } else if (chatMode === 'backend') {
-        // Backend mode: analyze or implement backend tasks
-        if (!backendTasks.length || msgText.toLowerCase().includes('analyze') || msgText.toLowerCase().includes('scan') || msgText.toLowerCase().includes('what')) {
-          // Run finalize to get backend tasks
+        // Backend mode: analyze or implement backend tasks for the ACTIVE page
+        const lc = msgText.toLowerCase();
+        const isAnalyze = !backendTasks.length || lc.includes('analyze') || lc.includes('scan') || lc.includes('what') || lc.includes('check');
+        const isImplement = lc.includes('implement') || lc.includes('fix') || lc.includes('run') || lc.includes('do it') || lc.includes('execute') || lc.includes('seed');
+
+        if (isAnalyze && !isImplement) {
+          // Analyze backend tasks scoped to the currently active page only
+          const activeFile = files[activeFileTab];
+          const scopedFiles = activeFile ? [activeFile] : files;
           const res = await fetch(`${API.programmerAgent}/finalize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              files,
+              files: scopedFiles,
               appId: selectedAppId || undefined,
               model: orchestratorModel || undefined,
             }),
@@ -1196,11 +645,12 @@ export function ProgrammerAgentPage() {
           const data = await res.json();
           if (data.success) {
             setBackendTasks(data.tasks || []);
-            const taskList = (data.tasks || []).map((t: any) => `${t.status === 'done' ? '\u2705' : '\u23f3'} ${t.title} (${t.category} / ${t.priority})`).join('\n');
+            const pageName = activeFile?.path.split('/').pop() || 'current page';
+            const taskList = (data.tasks || []).map((t: any) => `${t.status === 'done' ? '\u2705' : t.implementation ? '\u26a1' : '\u23f3'} ${t.title} (${t.category} / ${t.priority})`).join('\n');
             setChatMessages(prev => [...prev, {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: `Found ${data.tasks?.length || 0} backend tasks:\n\n${taskList}\n\nI can auto-implement tasks marked \u26a1. Say "implement all" or click individual tasks.`,
+              content: `Found ${data.tasks?.length || 0} backend tasks for **${pageName}**:\n\n${taskList}\n\nSay "implement all" to auto-implement tasks marked \u26a1, or click individual tasks.`,
             }]);
           } else {
             setChatMessages(prev => [...prev, {
@@ -1209,27 +659,73 @@ export function ProgrammerAgentPage() {
               content: `\u26a0\ufe0f ${data.error || 'Could not analyze backend tasks.'}`,
             }]);
           }
-        } else if (msgText.toLowerCase().includes('implement all') || msgText.toLowerCase().includes('implement everything')) {
-          // Implement all auto tasks
-          const res = await fetch(`${API.programmerAgent}/implement-all`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tasks: backendTasks, appId: selectedAppId || undefined }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setBackendTasks(data.tasks || backendTasks);
-            setChatMessages(prev => [...prev, {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: `\u2705 Implemented ${data.implemented || 0} tasks. ${data.failed || 0} failed. ${data.skipped || 0} skipped (manual).`,
-            }]);
+        } else if (isImplement) {
+          if (!backendTasks.length) {
+            // No tasks analyzed yet — analyze first for active page, then implement
+            const activeFile = files[activeFileTab];
+            const scopedFiles = activeFile ? [activeFile] : files;
+            const analyzeRes = await fetch(`${API.programmerAgent}/finalize`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                files: scopedFiles,
+                appId: selectedAppId || undefined,
+                model: orchestratorModel || undefined,
+              }),
+            });
+            const analyzeData = await analyzeRes.json();
+            if (analyzeData.success && analyzeData.tasks?.length) {
+              setBackendTasks(analyzeData.tasks);
+              // Now implement them
+              const implRes = await fetch(`${API.programmerAgent}/implement-all`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tasks: analyzeData.tasks, appId: selectedAppId || undefined }),
+              });
+              const implData = await implRes.json();
+              if (implData.success) {
+                setBackendTasks(implData.tasks || analyzeData.tasks);
+                const successCount = (implData.results || []).filter((r: any) => r.success).length;
+                const failCount = (implData.results || []).filter((r: any) => !r.success).length;
+                const messages = (implData.results || []).map((r: any) => `${r.success ? '\u2705' : '\u274c'} ${r.message}`).join('\n');
+                setChatMessages(prev => [...prev, {
+                  id: (Date.now() + 1).toString(),
+                  role: 'assistant',
+                  content: `\u2705 Implemented ${successCount} task(s)${failCount > 0 ? `, ${failCount} failed` : ''}.\n\n${messages}`,
+                }]);
+              }
+            } else {
+              setChatMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: '\u2705 No backend tasks needed for this page.',
+              }]);
+            }
+          } else {
+            // Implement existing analyzed tasks
+            const res = await fetch(`${API.programmerAgent}/implement-all`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tasks: backendTasks, appId: selectedAppId || undefined }),
+            });
+            const data = await res.json();
+            if (data.success) {
+              setBackendTasks(data.tasks || backendTasks);
+              const successCount = (data.results || []).filter((r: any) => r.success).length;
+              const failCount = (data.results || []).filter((r: any) => !r.success).length;
+              const messages = (data.results || []).map((r: any) => `${r.success ? '\u2705' : '\u274c'} ${r.message}`).join('\n');
+              setChatMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: `\u2705 Implemented ${successCount} task(s)${failCount > 0 ? `, ${failCount} failed` : ''}.\n\n${messages}`,
+              }]);
+            }
           }
         } else {
           setChatMessages(prev => [...prev, {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: 'Try asking:\n\u2022 "What backend tasks does this need?"\n\u2022 "Implement all auto tasks"\n\u2022 Or click individual tasks in the task list above.',
+            content: 'Try asking:\n\u2022 "What backend tasks does this page need?"\n\u2022 "Fix backend tasks" or "Implement all"\n\u2022 Or click individual tasks in the task list above.',
           }]);
         }
       } else if (chatMode === 'coder') {
@@ -1252,7 +748,7 @@ export function ProgrammerAgentPage() {
           throw new Error(`Server error (${res.status}). Make sure the backend is running.`);
         }
 
-        // Process SSE stream — show live progress as the agent works
+        // Process SSE stream â€” show live progress as the agent works
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
         let sseBuffer = '';
@@ -1309,27 +805,27 @@ export function ProgrammerAgentPage() {
                 const targets = eventData.targetFiles?.length > 0
                   ? eventData.targetFiles.map((f: string) => f.split('/').pop()).join(', ')
                   : eventData.activeFile?.split('/').pop() || null;
-                const targetLine = targets ? `\n📄 **Working on:** ${targets}` : '';
+                const targetLine = targets ? `\nðŸ“„ **Working on:** ${targets}` : '';
                 const planLines = (eventData.steps || []).map((s: any) => `  ${s.id}. ${s.title}`);
-                appendWorkingLine(`🛠️ **Plan:** ${eventData.summary}${targetLine}\n${planLines.join('\n')}`);
+                appendWorkingLine(`ðŸ› ï¸ **Plan:** ${eventData.summary}${targetLine}\n${planLines.join('\n')}`);
                 break;
               }
               case 'step_start': {
-                appendWorkingLine(`\n⏳ ${eventData.title}...`);
+                appendWorkingLine(`\nâ³ ${eventData.title}...`);
                 break;
               }
               case 'step_complete': {
-                // Replace the last "⏳ title..." line with the completed version
-                const icon = eventData.status === 'done' ? '✅' : '❌';
+                // Replace the last "â³ title..." line with the completed version
+                const icon = eventData.status === 'done' ? 'âœ…' : 'âŒ';
                 let lastPendingIdx = -1;
                 for (let i = workingLines.length - 1; i >= 0; i--) {
-                  if (workingLines[i].includes(`⏳ ${eventData.title}`)) { lastPendingIdx = i; break; }
+                  if (workingLines[i].includes(`â³ ${eventData.title}`)) { lastPendingIdx = i; break; }
                 }
                 if (lastPendingIdx >= 0) {
-                  workingLines[lastPendingIdx] = `${icon} ${eventData.title} — ${eventData.detail || ''}`;
+                  workingLines[lastPendingIdx] = `${icon} ${eventData.title} â€” ${eventData.detail || ''}`;
                   updateWorkingMessage([...workingLines]);
                 } else {
-                  appendWorkingLine(`${icon} ${eventData.title} — ${eventData.detail || ''}`);
+                  appendWorkingLine(`${icon} ${eventData.title} â€” ${eventData.detail || ''}`);
                 }
                 break;
               }
@@ -1342,7 +838,7 @@ export function ProgrammerAgentPage() {
                 break;
               }
               case 'error': {
-                appendWorkingLine(`\n❌ ${eventData.message}`);
+                appendWorkingLine(`\nâŒ ${eventData.message}`);
                 break;
               }
               case 'done': {
@@ -1408,7 +904,7 @@ export function ProgrammerAgentPage() {
             setCoderMessages(prev => [...prev, {
               id: `summary-${Date.now()}`,
               role: 'assistant',
-              content: finalData.success ? finalData.response : `⚠️ ${finalData.response}`,
+              content: finalData.success ? finalData.response : `âš ï¸ ${finalData.response}`,
             }]);
           }
         }
@@ -1417,7 +913,7 @@ export function ProgrammerAgentPage() {
       setCoderMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `❌ Error: ${err instanceof Error ? err.message : 'Network error'}`,
+        content: `âŒ Error: ${err instanceof Error ? err.message : 'Network error'}`,
       }]);
     } finally {
       setChatLoading(false);
@@ -1438,27 +934,27 @@ export function ProgrammerAgentPage() {
         setChatMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `\u2705 ${task.title} — implemented successfully.`,
+          content: `\u2705 ${task.title} â€” implemented successfully.`,
         }]);
       } else {
         setChatMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `\u26a0\ufe0f ${task.title} — ${data.error || 'implementation failed'}.`,
+          content: `\u26a0\ufe0f ${task.title} â€” ${data.message || data.error || 'implementation failed'}.`,
         }]);
       }
     } catch (err) {
       setChatMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `\u274c ${task.title} — ${err instanceof Error ? err.message : 'network error'}.`,
+        content: `\u274c ${task.title} â€” ${err instanceof Error ? err.message : 'network error'}.`,
       }]);
     } finally {
       setChatLoading(false);
     }
   };
 
-  /* ─── Retry Failed ─────────────────────────────────────────────────── */
+  /* â”€â”€â”€ Retry Failed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleRetryFailed = async () => {
     if (failedSteps.length === 0) return;
@@ -1498,7 +994,7 @@ export function ProgrammerAgentPage() {
     }
   };
 
-  /* ─── Save ─────────────────────────────────────────────────────────── */
+  /* â”€â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleSave = async () => {
     if (files.length === 0) return;
@@ -1527,7 +1023,7 @@ export function ProgrammerAgentPage() {
     setSnack({ open: true, msg: 'Copied to clipboard', severity: 'info' });
   };
 
-  /* ─── Finalize: analyze backend needs ──────────────────────────────── */
+  /* â”€â”€â”€ Finalize: analyze backend needs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleFinalize = async () => {
     if (files.length === 0) return;
@@ -1552,7 +1048,7 @@ export function ProgrammerAgentPage() {
         setFinalizeSummary(data.summary || '');
         setPhase('finalized');
         const autoCount = (data.tasks || []).filter((t: BackendTask) => t.status === 'pending' && t.implementation).length;
-        setSnack({ open: true, msg: `Found ${data.tasks?.length || 0} backend tasks — ${autoCount} can be auto-implemented`, severity: 'success' });
+        setSnack({ open: true, msg: `Found ${data.tasks?.length || 0} backend tasks â€” ${autoCount} can be auto-implemented`, severity: 'success' });
       } else {
         setSnack({ open: true, msg: data.error || 'Analysis failed', severity: 'error' });
         setPhase('results');
@@ -1613,7 +1109,7 @@ export function ProgrammerAgentPage() {
     }
   };
 
-  /* ─── QA Agent handlers ────────────────────────────────────────────── */
+  /* â”€â”€â”€ QA Agent handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleQaReview = async () => {
     if (files.length === 0) return;
@@ -1641,7 +1137,7 @@ export function ProgrammerAgentPage() {
         setSnack({
           open: true,
           msg: errCount > 0
-            ? `QA found ${errCount} error(s) — review and fix below`
+            ? `QA found ${errCount} error(s) â€” review and fix below`
             : data.issues?.length > 0
               ? 'QA passed with minor suggestions'
               : 'All files passed QA!',
@@ -1772,7 +1268,7 @@ export function ProgrammerAgentPage() {
     }
   };
 
-  /* ─── Add custom page ──────────────────────────────────────────────── */
+  /* â”€â”€â”€ Add custom page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   const handleAddPage = () => {
     if (!newPageName.trim()) return;
@@ -1790,24 +1286,103 @@ export function ProgrammerAgentPage() {
     setAddPageDialog(false);
   };
 
-  /* ─── Preview (same approach as Pages tab — inline RenderPage) ──── */
+  /* â”€â”€â”€ Preview (Vite dev server) â”€â”€â”€â”€ */
 
   const canPreview = !!(files[activeFileTab]?.path?.match(/\.(tsx|jsx)$/));
 
-  const previewData = useMemo(() => {
-    if (!files.length || !files[activeFileTab]) return null;
-    const file = files[activeFileTab];
-    const ctx: PreviewContext = {
-      appName: selectedApp?.name || 'My App',
-      appDescription: selectedApp?.description || '',
-      prompt,
-      pages: pages.map(p => ({ name: p.name, description: p.description, type: p.type })),
-      allFiles: files,
-    };
-    return generatePreviewData(file, selectedApp?.name, ctx);
-  }, [files, activeFileTab, selectedApp, prompt, pages]);
+  const previewSessionRef = useRef<string | null>(null);
+  const previewStartingRef = useRef(false);
+  const [previewPort, setPreviewPort] = useState<number | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ─── Render ───────────────────────────────────────────────────────── */
+  // Helper: detect component name from file content
+  const detectComponentName = (code: string) => {
+    const fnMatch = code.match(/export\s+(?:default\s+)?function\s+([A-Z]\w*)/);
+    const arrowMatch = code.match(/export\s+(?:default\s+)?const\s+([A-Z]\w*)\s*[:=]/);
+    const plainFn = code.match(/function\s+([A-Z]\w*)/);
+    const plainArrow = code.match(/const\s+([A-Z]\w*)\s*[:=]/);
+    return fnMatch?.[1] || arrowMatch?.[1] || plainFn?.[1] || plainArrow?.[1] || 'App';
+  };
+
+  // Start or update Vite preview session
+  useEffect(() => {
+    if (!files.length || !canPreview) {
+      setPreviewPort(null);
+      return;
+    }
+
+    const file = files[activeFileTab];
+    if (!file) return;
+
+    const componentName = detectComponentName(file.content);
+
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    setPreviewLoading(true);
+
+    // Start quickly on first load, debounce updates
+    const delay = previewSessionRef.current ? 500 : 100;
+
+    previewTimerRef.current = setTimeout(async () => {
+      try {
+        if (!previewSessionRef.current && !previewStartingRef.current) {
+          // First time: spin up Vite dev server
+          previewStartingRef.current = true;
+          const resp = await fetch(`${API_BASE_URL}/api/preview/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              files: files.map(f => ({ path: f.path, content: f.content })),
+              entryFile: file.path,
+              componentName,
+              primaryColor,
+            }),
+          });
+          const data = await resp.json();
+          previewSessionRef.current = data.sessionId;
+          setPreviewPort(data.port);
+          previewStartingRef.current = false;
+        } else if (previewSessionRef.current) {
+          // Subsequent: just write files, Vite HMR refreshes
+          await fetch(`${API_BASE_URL}/api/preview/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: previewSessionRef.current,
+              files: files.map(f => ({ path: f.path, content: f.content })),
+              entryFile: file.path,
+              componentName,
+              primaryColor,
+            }),
+          });
+        }
+      } catch (err) {
+        console.error('Preview error:', err);
+      } finally {
+        setPreviewLoading(false);
+      }
+    }, delay);
+
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    };
+  }, [files, activeFileTab, primaryColor, canPreview]);
+
+  // Cleanup: stop Vite session on unmount
+  useEffect(() => {
+    return () => {
+      if (previewSessionRef.current) {
+        fetch(`${API_BASE_URL}/api/preview/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: previewSessionRef.current }),
+        }).catch(() => {});
+        previewSessionRef.current = null;
+      }
+    };
+  }, []);
+
+  /* â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', p: 4 }}>
@@ -1824,14 +1399,30 @@ export function ProgrammerAgentPage() {
           <Box>
             <Typography variant="h4" sx={{ fontSize: '1.5rem' }}>Members Area Builder</Typography>
             <Typography variant="body2" color="text.secondary">
-              AI-powered multi-page members area generation. Describe your app and let the agent build complete, styled HTML pages with login flows, dashboards, and content sections — ready to deploy.
+              AI-powered multi-page members area generation. Describe your app and let the agent build complete, styled HTML pages with login flows, dashboards, and content sections â€” ready to deploy.
             </Typography>
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           {phase === 'results' && (
-            <Button variant="outlined" size="small" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); }}>
-              New Build
+            <Button variant="outlined" size="small" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setEditMode(false); }}>
+              {editMode ? 'Back to Builder' : 'New Build'}
+            </Button>
+          )}
+          {phase === 'setup' && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={loadingFiles ? <CircularProgress size={14} color="inherit" /> : <CodeIcon />}
+              disabled={loadingFiles}
+              onClick={loadMembersFiles}
+              sx={{
+                background: 'linear-gradient(135deg, #2196f3 0%, #1565c0 100%)',
+                fontWeight: 700, textTransform: 'none', borderRadius: 2,
+                '&:hover': { opacity: 0.9 },
+              }}
+            >
+              {loadingFiles ? 'Loading…' : 'Edit Existing Pages'}
             </Button>
           )}
           <Button variant="outlined" size="small" startIcon={<TokenIcon />} onClick={() => setShowStats(!showStats)}>
@@ -1840,8 +1431,8 @@ export function ProgrammerAgentPage() {
         </Box>
       </Box>
 
-      {/* Phase Stepper */}
-      {phase !== 'setup' && (
+      {/* Phase Stepper — hide in edit mode */}
+      {phase !== 'setup' && !editMode && (
         <Stepper activeStep={activeStepIndex} alternativeLabel sx={{ mb: 3 }}>
           {PHASE_STEPS.map((s) => (
             <Step key={s.key}>
@@ -1851,10 +1442,24 @@ export function ProgrammerAgentPage() {
         </Stepper>
       )}
 
+      {/* Edit mode header banner */}
+      {editMode && phase === 'results' && (
+        <Paper sx={{ p: 2, mb: 3, borderRadius: 3, border: '1px solid #2196f315', bgcolor: '#2196f305', display: 'flex', alignItems: 'center', gap: 2 }} elevation={0}>
+          <CodeIcon sx={{ color: '#2196f3', fontSize: 24 }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#2196f3' }}>Editing Members Area Pages{selectedApp ? ` — ${selectedApp.name}` : ''}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Use the Design chat, Coder agent, or Refine tool to modify pages. Changes are saved to disk when you click Save.
+            </Typography>
+          </Box>
+          <Chip label={`${files.length} files`} size="small" sx={{ fontWeight: 700 }} />
+        </Paper>
+      )}
+
       {/* API key warning */}
       {noKeysConfigured && (
         <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
-          No AI API keys configured. Go to <strong>Settings → API Keys</strong> and add Anthropic or OpenAI.
+          No AI API keys configured. Go to <strong>Settings â†’ API Keys</strong> and add Anthropic or OpenAI.
         </Alert>
       )}
 
@@ -1884,7 +1489,7 @@ export function ProgrammerAgentPage() {
         </Paper>
       </Collapse>
 
-      {/* ─── PHASE: SETUP ─────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: SETUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {(phase === 'setup' || phase === 'planning') && (
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 3 }}>
           {/* Left: prompt + project */}
@@ -1946,7 +1551,7 @@ export function ProgrammerAgentPage() {
                     '&:hover': { opacity: 0.9 },
                   }}
                 >
-                  {planLoading ? 'Planning…' : 'Plan Members Area'}
+                  {planLoading ? 'Planningâ€¦' : 'Plan Members Area'}
                 </Button>
               </Box>
 
@@ -2057,7 +1662,7 @@ export function ProgrammerAgentPage() {
                 ))}
               </Box>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-                Configure keys in <strong>Settings → Integration Keys</strong>
+                Configure keys in <strong>Settings â†’ Integration Keys</strong>
               </Typography>
             </Paper>
 
@@ -2096,7 +1701,6 @@ export function ProgrammerAgentPage() {
                 {[
                   { icon: <DashboardIcon sx={{ fontSize: 16 }} />, label: 'Dashboard', desc: 'Stats & overview' },
                   { icon: <ProfileIcon sx={{ fontSize: 16 }} />, label: 'Profile', desc: 'User management' },
-                  { icon: <SupportIcon sx={{ fontSize: 16 }} />, label: 'Support', desc: 'Help & tickets' },
                   { icon: <SettingsIcon sx={{ fontSize: 16 }} />, label: 'Settings', desc: 'Preferences' },
                 ].map(p => (
                   <Box key={p.label} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 0.8 }}>
@@ -2114,7 +1718,7 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── PHASE: PAGES (review & edit AI-suggested pages) ──────────── */}
+      {/* â”€â”€â”€ PHASE: PAGES (review & edit AI-suggested pages) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'pages' && (
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 3 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -2187,7 +1791,7 @@ export function ProgrammerAgentPage() {
                     </Typography>
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    {costEstimate.breakdown?.map((b: any) => `${b.page}: ~${b.tokens} tok`).join(' · ')}
+                    {costEstimate.breakdown?.map((b: any) => `${b.page}: ~${b.tokens} tok`).join(' Â· ')}
                   </Typography>
                 </Box>
               )}
@@ -2234,7 +1838,7 @@ export function ProgrammerAgentPage() {
                   ))}
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', fontStyle: 'italic' }}>
-                  Powered by Brave Search — used as context for AI generation
+                  Powered by Brave Search â€” used as context for AI generation
                 </Typography>
               </Paper>
             )}
@@ -2244,7 +1848,7 @@ export function ProgrammerAgentPage() {
               <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.82rem' }}>
                 The agent will:<br />
                 1. Generate shared types & sidebar layout<br />
-                2. Build each page (complex → orchestrator, simple → sub-agent)<br />
+                2. Build each page (complex â†’ orchestrator, simple â†’ sub-agent)<br />
                 3. Create a router to connect all pages<br />
                 4. Match {selectedApp?.name}'s colour scheme
               </Typography>
@@ -2253,13 +1857,13 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── PHASE: GENERATING ─────────────────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: GENERATING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'generating' && (
         <Paper sx={{ p: 4, borderRadius: 3, border: `1px solid ${primaryColor}25` }} elevation={0}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
             <CircularProgress size={24} sx={{ color: primaryColor }} />
             <Typography variant="h6" sx={{ fontWeight: 700, color: primaryColor, fontSize: '1.1rem' }}>
-              Generating Members Area…
+              Generating Members Areaâ€¦
             </Typography>
           </Box>
           <LinearProgress sx={{
@@ -2268,7 +1872,7 @@ export function ProgrammerAgentPage() {
             '& .MuiLinearProgress-bar': { background: `linear-gradient(90deg, ${primaryColor}, #764ba2)` },
           }} />
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Building {pages.filter(p => p.enabled !== false).length} pages for {selectedApp?.name}…
+            Building {pages.filter(p => p.enabled !== false).length} pages for {selectedApp?.name}â€¦
             This may take 1-3 minutes depending on the number of pages.
           </Typography>
 
@@ -2302,23 +1906,23 @@ export function ProgrammerAgentPage() {
         </Paper>
       )}
 
-      {/* ─── PHASE: RESULTS ────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: RESULTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'results' && files.length > 0 && (
         <Box sx={{ display: 'grid', gridTemplateColumns: chatPanelOpen ? '280px 1fr 380px' : '280px 1fr', gap: 2, transition: 'grid-template-columns 0.3s' }}>
           {/* Left: file list + plan */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* Summary */}
-            {summary && (
+            {summary && !editMode && (
               <Paper sx={{ p: 2.5, borderRadius: 3, border: `1px solid ${primaryColor}15`, bgcolor: `${primaryColor}02` }} elevation={0}>
                 <Typography variant="body2" sx={{ fontWeight: 600, color: primaryColor, fontSize: '0.85rem' }}>{summary}</Typography>
               </Paper>
             )}
 
-            {/* Generated files list */}
+            {/* Files list */}
             <Paper sx={{ borderRadius: 3, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }} elevation={0}>
               <Box sx={{ px: 2, py: 1.5, bgcolor: '#f8f9fa', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
-                  Generated Files ({files.length})
+                  {editMode ? 'Members Pages' : 'Generated Files'} ({files.length})
                 </Typography>
               </Box>
               <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
@@ -2407,9 +2011,9 @@ export function ProgrammerAgentPage() {
                   '&:hover': { opacity: 0.9 },
                 }}
               >
-                {saving ? 'Saving…' : `Save All ${files.length} Files`}
+                {saving ? 'Savingâ€¦' : `Save All ${files.length} Files`}
               </Button>
-              {failedSteps.length > 0 && (
+              {!editMode && failedSteps.length > 0 && (
                 <Button
                   variant="outlined"
                   fullWidth
@@ -2419,7 +2023,19 @@ export function ProgrammerAgentPage() {
                   disabled={retryingSteps.length > 0}
                   sx={{ fontWeight: 700, borderRadius: 2, textTransform: 'none', py: 1.2 }}
                 >
-                  {retryingSteps.length > 0 ? 'Retrying…' : `Retry ${failedSteps.length} Failed`}
+                  {retryingSteps.length > 0 ? 'Retryingâ€¦' : `Retry ${failedSteps.length} Failed`}
+                </Button>
+              )}
+              {editMode && (
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={loadingFiles ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+                  onClick={loadMembersFiles}
+                  disabled={loadingFiles}
+                  sx={{ fontWeight: 700, borderRadius: 2, textTransform: 'none', py: 1.2, borderColor: '#1976d2', color: '#1976d2' }}
+                >
+                  {loadingFiles ? 'Reloadingâ€¦' : 'Reload from Disk'}
                 </Button>
               )}
               <Button
@@ -2441,7 +2057,7 @@ export function ProgrammerAgentPage() {
           {/* Right: code/preview viewer with browser chrome (same pattern as Pages tab) */}
           <Paper sx={{ borderRadius: 3, border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', bgcolor: '#f5f5f7' }} elevation={0}>
 
-            {/* ─── Browser Chrome (same as Pages tab) ─── */}
+            {/* â”€â”€â”€ Browser Chrome (same as Pages tab) â”€â”€â”€ */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, bgcolor: '#e8e8ec', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
               {/* Traffic lights */}
               <Box sx={{ display: 'flex', gap: 0.6, mr: 1 }}>
@@ -2487,7 +2103,7 @@ export function ProgrammerAgentPage() {
               </Box>
             </Box>
 
-            {/* ─── Toolbar ─── */}
+            {/* â”€â”€â”€ Toolbar â”€â”€â”€ */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 0.8, bgcolor: '#f0f0f3', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <FileIcon sx={{ fontSize: 14, color: primaryColor }} />
@@ -2512,41 +2128,41 @@ export function ProgrammerAgentPage() {
               </Box>
             </Box>
 
-            {/* ─── Content: Preview / Code / Split (uses RenderPage like Pages tab) ─── */}
+            {/* â”€â”€â”€ Content: Preview / Code / Split (iframe renders actual TSX) â”€â”€â”€ */}
             {splitView && canPreview ? (
               /* Split view: preview left, code right */
               <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 580 }}>
-                <Box sx={{ bgcolor: '#e8eaed', display: 'flex', justifyContent: 'center', overflow: 'auto', p: 2, borderRight: '1px solid rgba(0,0,0,0.08)' }}>
-                  <Box sx={{
-                    width: '100%', maxWidth: 900, bgcolor: '#fff', borderRadius: '10px', overflow: 'hidden',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column',
-                    height: 'fit-content', minHeight: 500,
-                  }}>
-                    <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
-                      <PreviewErrorBoundary>
-                        {previewData && <RenderPage data={previewData.data} primaryColor={primaryColor} appId={selectedApp?.id} />}
-                      </PreviewErrorBoundary>
+                <Box sx={{ bgcolor: '#fff', overflow: 'hidden', borderRight: '1px solid rgba(0,0,0,0.08)', position: 'relative' }}>
+                  {previewLoading && (
+                    <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.85)', zIndex: 10 }}>
+                      <CircularProgress size={28} />
+                      <Typography variant="body2" sx={{ ml: 1.5, color: '#888' }}>Starting previewâ€¦</Typography>
                     </Box>
-                  </Box>
+                  )}
+                  <iframe
+                    src={previewPort ? `http://localhost:${previewPort}` : undefined}
+                    style={{ width: '100%', height: '100%', minHeight: 580, border: 'none' }}
+                    title="Page Preview"
+                  />
                 </Box>
                 <Box sx={{ overflow: 'auto', bgcolor: '#1e1e2e', p: 2, '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#444', borderRadius: 3 } }}>
                   <SyntaxHighlight code={files[activeFileTab]?.content || ''} language="tsx" />
                 </Box>
               </Box>
-            ) : showPreview && canPreview && previewData ? (
-              /* Full preview (same layout as Pages tab) */
-              <Box sx={{ flex: 1, bgcolor: '#e8eaed', display: 'flex', justifyContent: 'center', overflow: 'auto', p: 2, minHeight: 580 }}>
-                <Box sx={{
-                  width: '100%', maxWidth: 900, bgcolor: '#fff', borderRadius: '10px', overflow: 'hidden',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column',
-                  height: 'fit-content', minHeight: 500,
-                }}>
-                  <Box sx={{ p: 3, overflow: 'auto', bgcolor: '#fff', flexGrow: 1 }}>
-                    <PreviewErrorBoundary>
-                      <RenderPage data={previewData.data} primaryColor={primaryColor} appId={selectedApp?.id} />
-                    </PreviewErrorBoundary>
+            ) : showPreview && canPreview && previewPort ? (
+              /* Full preview â€” Vite dev server */
+              <Box sx={{ flex: 1, bgcolor: '#fff', position: 'relative', minHeight: 580 }}>
+                {previewLoading && (
+                  <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.85)', zIndex: 10 }}>
+                    <CircularProgress size={28} />
+                    <Typography variant="body2" sx={{ ml: 1.5, color: '#888' }}>Starting previewâ€¦</Typography>
                   </Box>
-                </Box>
+                )}
+                <iframe
+                  src={previewPort ? `http://localhost:${previewPort}` : undefined}
+                  style={{ width: '100%', height: '100%', minHeight: 580, border: 'none' }}
+                  title="Page Preview"
+                />
               </Box>
             ) : (
               /* Code view */
@@ -2560,7 +2176,7 @@ export function ProgrammerAgentPage() {
             )}
           </Paper>
 
-          {/* ─── Chat Panel (Design + Backend) ─── */}
+          {/* â”€â”€â”€ Chat Panel (Design + Backend) â”€â”€â”€ */}
           {chatPanelOpen && (
             <Paper sx={{
               borderRadius: 3, border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden',
@@ -2604,7 +2220,7 @@ export function ProgrammerAgentPage() {
                 </IconButton>
               </Box>
 
-              {/* ═══ DESIGN CHAT ═══ */}
+              {/* â•â•â• DESIGN CHAT â•â•â• */}
               {chatMode === 'design' && (
                 <>
                   <Box sx={{
@@ -2677,7 +2293,7 @@ export function ProgrammerAgentPage() {
                 </>
               )}
 
-              {/* ═══ BACKEND AGENT ═══ */}
+              {/* â•â•â• BACKEND AGENT â•â•â• */}
               {chatMode === 'backend' && (
                 <>
                   {backendTasks.length > 0 && (
@@ -2709,13 +2325,13 @@ export function ProgrammerAgentPage() {
                               {task.title}
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>{task.category} · {task.priority}</Typography>
+                              <Typography variant="caption" sx={{ color: '#bbb', fontSize: '0.65rem' }}>{task.category} Â· {task.priority}</Typography>
                               {task.status !== 'done' && (
                                 <Typography variant="caption" sx={{
                                   fontSize: '0.6rem', fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '4px',
                                   ...(task.implementation ? { color: '#e67e22', bgcolor: '#fff3e0' } : { color: '#78909c', bgcolor: '#eceff1' }),
                                 }}>
-                                  {task.implementation ? '⚡ Auto' : '🔧 Manual'}
+                                  {task.implementation ? 'âš¡ Auto' : 'ðŸ”§ Manual'}
                                 </Typography>
                               )}
                             </Box>
@@ -2733,15 +2349,15 @@ export function ProgrammerAgentPage() {
                     </Box>
                   )}
                   <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', gap: 0.75, justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
-                    <Button size="small" variant="outlined" onClick={() => handleChatSend('What backend tasks does this need?')}
+                    <Button size="small" variant="outlined" onClick={() => handleChatSend('What backend tasks does this page need?')}
                       disabled={chatLoading}
                       sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}>
-                      🔍 {backendTasks.length > 0 ? 'Re-scan' : 'Analyze'}
+                      ðŸ” {backendTasks.length > 0 ? 'Re-scan' : 'Analyze'}
                     </Button>
-                    <Button size="small" variant="outlined" onClick={() => handleChatSend('Implement all auto tasks')}
+                    <Button size="small" variant="outlined" onClick={() => handleChatSend('Implement all')}
                       disabled={chatLoading || backendTasks.filter((t: any) => t.status === 'pending' && t.implementation).length === 0}
                       sx={{ fontSize: '0.7rem', textTransform: 'none', borderColor: '#e67e22', color: '#e67e22', '&:hover': { bgcolor: '#fff8f0', borderColor: '#d35400' } }}>
-                      ⚡ Implement all
+                      âš¡ Implement all
                     </Button>
                   </Box>
                   <Box sx={{
@@ -2753,7 +2369,7 @@ export function ProgrammerAgentPage() {
                         <BuildIcon sx={{ fontSize: 36, color: '#e0e0e0', mb: 1 }} />
                         <Typography variant="body2" sx={{ color: '#999', mb: 0.5, fontSize: '0.85rem' }}>Backend Agent</Typography>
                         <Typography variant="caption" sx={{ color: '#bbb', lineHeight: 1.5, display: 'block' }}>
-                          Analyze what backend work your membership pages need — database seeding, API routes, integrations, and security.
+                          Analyze what backend work the current page needs â€” database seeding, API routes, integrations, and security.
                         </Typography>
                       </Box>
                     ) : (
@@ -2784,7 +2400,7 @@ export function ProgrammerAgentPage() {
                   </Box>
                   <Box sx={{ p: 2, borderTop: '1px solid #eee', bgcolor: '#fff' }}>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
-                      <TextField fullWidth size="small" placeholder='e.g. "What needs done?" or "Implement all"'
+                      <TextField fullWidth size="small" placeholder='e.g. "What does this page need?" or "Fix backend tasks"'
                         value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
                         onKeyPress={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
                         disabled={chatLoading} multiline maxRows={3}
@@ -2804,7 +2420,7 @@ export function ProgrammerAgentPage() {
                 </>
               )}
 
-              {/* ═══ CODER AGENT (Autonomous Builder) ═══ */}
+              {/* â•â•â• CODER AGENT (Autonomous Builder) â•â•â• */}
               {chatMode === 'coder' && (
                 <>
                   {/* Pending files banner */}
@@ -2816,14 +2432,14 @@ export function ProgrammerAgentPage() {
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 0.5 }}>
                           <Button size="small" variant="contained" onClick={() => {
-                            // Apply generated files — add to project
+                            // Apply generated files â€” add to project
                             const newFiles = [...files];
                             for (const gf of coderPendingFiles.generated) {
                               const existing = newFiles.findIndex(f => f.path === gf.path);
                               if (existing >= 0) newFiles[existing] = gf;
                               else newFiles.push(gf);
                             }
-                            // Apply modified files — update in place
+                            // Apply modified files â€” update in place
                             for (const mf of coderPendingFiles.modified) {
                               const existing = newFiles.findIndex(f => f.path === mf.path);
                               if (existing >= 0) newFiles[existing] = mf;
@@ -2870,7 +2486,7 @@ export function ProgrammerAgentPage() {
                       <Box sx={{ m: 'auto', textAlign: 'center', py: 4 }}>
                         <CodeIcon sx={{ fontSize: 36, color: '#b2dfdb', mb: 1 }} />
                         <Typography variant="body2" sx={{ color: '#888', fontSize: '0.82rem' }}>
-                          Ask me anything — build features, debug code, create pages, set up databases.
+                          Ask me anything â€” build features, debug code, create pages, set up databases.
                         </Typography>
                       </Box>
                     ) : (
@@ -2954,13 +2570,13 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── PHASE: FINALIZING ─────────────────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: FINALIZING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'finalizing' && (
         <Paper sx={{ p: 4, borderRadius: 3, border: `1px solid ${primaryColor}25` }} elevation={0}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
             <CircularProgress size={24} sx={{ color: primaryColor }} />
             <Typography variant="h6" sx={{ fontWeight: 700, color: primaryColor, fontSize: '1.1rem' }}>
-              Analyzing Backend Requirements…
+              Analyzing Backend Requirementsâ€¦
             </Typography>
           </Box>
           <LinearProgress sx={{
@@ -2969,12 +2585,12 @@ export function ProgrammerAgentPage() {
             '& .MuiLinearProgress-bar': { background: `linear-gradient(90deg, ${primaryColor}, #764ba2)` },
           }} />
           <Typography variant="body2" color="text.secondary">
-            The AI agent is examining each generated page to identify database seeding, API routes, integrations, and security work needed…
+            The AI agent is examining each generated page to identify database seeding, API routes, integrations, and security work neededâ€¦
           </Typography>
         </Paper>
       )}
 
-      {/* ─── PHASE: FINALIZED (backend tasks view) ─────────────────────── */}
+      {/* â”€â”€â”€ PHASE: FINALIZED (backend tasks view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'finalized' && (
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 3 }}>
           {/* Left: task list */}
@@ -3032,7 +2648,7 @@ export function ProgrammerAgentPage() {
                   '&:hover': { opacity: 0.9 },
                 }}
               >
-                {implementingAll ? 'Implementing…' : `Auto-Implement ${backendTasks.filter(t => t.status === 'pending' && t.implementation).length} Tasks`}
+                {implementingAll ? 'Implementingâ€¦' : `Auto-Implement ${backendTasks.filter(t => t.status === 'pending' && t.implementation).length} Tasks`}
               </Button>
             )}
 
@@ -3120,7 +2736,7 @@ export function ProgrammerAgentPage() {
                               '&:hover': { borderColor: '#4caf50', bgcolor: 'rgba(76,175,80,0.04)' },
                             }}
                           >
-                            {implementingTask === task.id ? '…' : 'Run'}
+                            {implementingTask === task.id ? 'â€¦' : 'Run'}
                           </Button>
                         )}
                       </Box>
@@ -3211,22 +2827,22 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── PHASE: QA-RUNNING (loading) ───────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: QA-RUNNING (loading) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'qa-running' && (
         <Paper sx={{ p: 4, borderRadius: 3, textAlign: 'center', border: '1px solid rgba(0,0,0,0.06)' }} elevation={0}>
           <BugIcon sx={{ fontSize: 48, color: '#ff9800', mb: 2 }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>QA Agent Reviewing Code…</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>QA Agent Reviewing Codeâ€¦</Typography>
           <LinearProgress sx={{
             borderRadius: 4, height: 6, maxWidth: 400, mx: 'auto', mb: 2,
             '& .MuiLinearProgress-bar': { background: 'linear-gradient(90deg, #ff9800, #f57c00)' },
           }} />
           <Typography variant="body2" color="text.secondary">
-            Checking imports, types, logic, API calls, and cross-file references…
+            Checking imports, types, logic, API calls, and cross-file referencesâ€¦
           </Typography>
         </Paper>
       )}
 
-      {/* ─── PHASE: QA-RESULTS ─────────────────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: QA-RESULTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'qa-results' && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Summary header */}
@@ -3281,7 +2897,7 @@ export function ProgrammerAgentPage() {
                 '&:hover': { opacity: 0.9 },
               }}
             >
-              {fixingAll ? 'Fixing…' : `Auto-Fix ${qaIssues.filter(i => i.autoFix && i.severity !== 'info').length} Issue(s)`}
+              {fixingAll ? 'Fixingâ€¦' : `Auto-Fix ${qaIssues.filter(i => i.autoFix && i.severity !== 'info').length} Issue(s)`}
             </Button>
           )}
 
@@ -3329,7 +2945,7 @@ export function ProgrammerAgentPage() {
                           '&:hover': { borderColor: sevColors[issue.severity], bgcolor: `${sevColors[issue.severity]}08` },
                         }}
                       >
-                        {fixingIssue === issue.id ? '…' : 'Fix'}
+                        {fixingIssue === issue.id ? 'â€¦' : 'Fix'}
                       </Button>
                     )}
                   </Box>
@@ -3363,22 +2979,22 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── PHASE: DOCUMENTING (loading) ──────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: DOCUMENTING (loading) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'documenting' && (
         <Paper sx={{ p: 4, borderRadius: 3, textAlign: 'center', border: '1px solid rgba(0,0,0,0.06)' }} elevation={0}>
           <DocsIcon sx={{ fontSize: 48, color: primaryColor, mb: 2 }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Generating Documentation…</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Generating Documentationâ€¦</Typography>
           <LinearProgress sx={{
             borderRadius: 4, height: 6, maxWidth: 400, mx: 'auto', mb: 2,
             '& .MuiLinearProgress-bar': { background: `linear-gradient(90deg, ${primaryColor}, #764ba2)` },
           }} />
           <Typography variant="body2" color="text.secondary">
-            Writing README, component docs, and API reference…
+            Writing README, component docs, and API referenceâ€¦
           </Typography>
         </Paper>
       )}
 
-      {/* ─── PHASE: DOCUMENTED (show docs) ─────────────────────────────── */}
+      {/* â”€â”€â”€ PHASE: DOCUMENTED (show docs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {phase === 'documented' && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Header */}
@@ -3474,7 +3090,7 @@ export function ProgrammerAgentPage() {
                 '&:hover': { opacity: 0.9 },
               }}
             >
-              {saving ? 'Saving…' : 'Save Documentation'}
+              {saving ? 'Savingâ€¦' : 'Save Documentation'}
             </Button>
             <Button variant="outlined" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setBackendTasks([]); setQaIssues([]); setDocsFiles([]); }}
               sx={{ borderRadius: 2, textTransform: 'none' }}>
@@ -3484,7 +3100,7 @@ export function ProgrammerAgentPage() {
         </Box>
       )}
 
-      {/* ─── Add Page Dialog ───────────────────────────────────────────── */}
+      {/* â”€â”€â”€ Add Page Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <Dialog open={addPageDialog} onClose={() => setAddPageDialog(false)} maxWidth="xs" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Add Custom Page</DialogTitle>
@@ -3509,7 +3125,7 @@ export function ProgrammerAgentPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ─── Refine Dialog ─────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ Refine Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <Dialog open={refineDialog} onClose={() => setRefineDialog(false)} maxWidth="sm" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>
@@ -3524,7 +3140,7 @@ export function ProgrammerAgentPage() {
               <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>Previous refinements:</Typography>
               {refineHistory.filter(h => h.fileIndex === activeFileTab).map((h, i) => (
                 <Typography key={i} variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-                  • {h.instruction}
+                  â€¢ {h.instruction}
                 </Typography>
               ))}
             </Box>
@@ -3547,7 +3163,7 @@ export function ProgrammerAgentPage() {
               textTransform: 'none', fontWeight: 600,
             }}
           >
-            {refining ? 'Refining…' : 'Refine'}
+            {refining ? 'Refiningâ€¦' : 'Refine'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -199,7 +199,6 @@ export class AppManagementService {
       { type: 'blog-page', title: 'Blog' },
       { type: 'thanks', title: 'Thank You' },
       { type: 'checkout', title: 'Upgrade' },
-      { type: 'admin', title: 'Admin Dashboard' },
     ];
 
     const maxId = Math.max(0, ...(db.pages?.map(p => p.id) || [0]));

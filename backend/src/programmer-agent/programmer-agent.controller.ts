@@ -35,7 +35,7 @@ export class ProgrammerAgentController {
       orchestratorModel?: string;
       subAgentModel?: string;
       conversationHistory?: { role: string; content: string }[];
-      pages?: { id: string; name: string; description: string; type: 'dashboard' | 'profile' | 'support' | 'settings' | 'custom'; required: boolean }[];
+      pages?: { id: string; name: string; description: string; type: 'dashboard' | 'profile' | 'settings' | 'admin' | 'custom'; required: boolean }[];
     },
   ) {
     return this.agentService.generate(body);
@@ -282,6 +282,14 @@ export class ProgrammerAgentController {
     },
   ) {
     return this.agentService.generateDocs(body.files, body.appId, body.backendTasks as any, body.model);
+  }
+
+  /**
+   * List saved members area files from disk for editing
+   */
+  @Get('members-files')
+  async getMembersFiles(@Query('appId') appId?: string) {
+    return this.agentService.getMembersFiles(appId ? parseInt(appId) : undefined);
   }
 
   /**

@@ -1,19 +1,17 @@
 import { Box, Drawer, List, ListItem, ListItemIcon, ListItemText, Toolbar, Typography } from '@mui/material';
-import { Dashboard, AccountCircle, Help, Settings, BarChart, MonetizationOn, LibraryBooks, School, Forum } from '@mui/icons-material';
+import { Dashboard, AccountCircle, Settings, BarChart, MonetizationOn, LibraryBooks, Forum, AdminPanelSettings } from '@mui/icons-material';
 import { useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { ContactForm } from './members/ContactForm';
 
 const pages = [
   { name: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
   { name: 'Profile', icon: <AccountCircle />, path: '/profile' },
-  { name: 'Support', icon: <Help />, path: '/support' },
   { name: 'Settings', icon: <Settings />, path: '/settings' },
-  { name: 'Analytics', icon: <BarChart />, path: '/analytics' },
-  { name: 'Billing', icon: <MonetizationOn />, path: '/billing' },
   { name: 'Script Library', icon: <LibraryBooks />, path: '/script-library' },
-  { name: 'Tutorials', icon: <School />, path: '/tutorials' },
+  { name: 'Analytics', icon: <BarChart />, path: '/analytics' },
   { name: 'Community', icon: <Forum />, path: '/community' },
+  { name: 'Billing', icon: <MonetizationOn />, path: '/billing' },
+  { name: 'Admin', icon: <AdminPanelSettings />, path: '/admin' },
 ];
 
 export function MembersLayout({ children }: { children: React.ReactNode }) {
@@ -54,7 +52,6 @@ export function MembersLayout({ children }: { children: React.ReactNode }) {
       >
         <Toolbar />
         {children}
-<ContactForm />
       </Box>
     </Box>
   );

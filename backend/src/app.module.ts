@@ -16,9 +16,10 @@ import { ResearchModule } from './research/research.module';
 import { ProgrammerAgentModule } from './programmer-agent/programmer-agent.module';
 import { SocialMonitorModule } from './social-monitor/social-monitor.module';
 import { StripeModule } from './stripe/stripe.module';
+import { PreviewModule } from './preview/preview.module';
 
 @Module({
-  imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule],
+  imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule],
   controllers: [],
   providers: [],
 })

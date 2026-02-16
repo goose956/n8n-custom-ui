@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Grid, Card, CardContent, Button, CircularProgress, Snackbar } from '@mui/material';
 import { API } from '../../config/api';
-import { ScriptTemplate } from '../../../types/membersArea';
+import { ScriptTemplate } from '../../types/membersArea';
 
 export function MembersScriptTemplateLibraryPage() {
   const [templates, setTemplates] = useState<ScriptTemplate[]>([]);

@@ -1,4 +1,3 @@
-===FILE: frontend/src/components/members/profile.tsx===  
 import { Box, Typography, TextField, Button, Snackbar, Card, CardContent, List, ListItem, ListItemText, CircularProgress } from '@mui/material';
 import { useState, useEffect } from 'react';
 import { UserProfile } from '../../../types/membersArea';

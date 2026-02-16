@@ -5,11 +5,12 @@ import { API } from '../../config/api';
 interface ContactFormData {
   name: string;
   email: string;
+  subject: string;
   message: string;
 }
 
 export function ContactForm() {
-  const [formData, setFormData] = useState<ContactFormData>({ name: '', email: '', message: '' });
+  const [formData, setFormData] = useState<ContactFormData>({ name: '', email: '', subject: '', message: '' });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -24,7 +25,7 @@ export function ContactForm() {
     event.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch(`${API.apps}/contact`, {
+      const res = await fetch(API.apps + '/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -33,7 +34,7 @@ export function ContactForm() {
         throw new Error('Failed to submit the contact form');
       }
       setSuccess('Your message has been sent successfully!');
-      setFormData({ name: '', email: '', message: '' });
+      setFormData({ name: '', email: '', subject: '', message: '' });
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -49,11 +50,11 @@ export function ContactForm() {
   };
 
   return (
-    <Box sx={{ padding: 3, backgroundColor: '#fafbfc', borderRadius: 2, marginTop: 5 }}>
+    <Box sx={{ padding: 3, backgroundColor: '#fafbfc', borderRadius: 12, marginTop: 5 }}>
       <Typography variant="h4" sx={{ marginBottom: 2, color: '#1976d2' }}>Contact Us</Typography>
       <form onSubmit={handleSubmit} noValidate>
         <Grid container spacing={2}>
-          <Grid item xs={12}>
+          <Grid item xs={12} sm={6}>
             <TextField
               name="name"
               label="Name"
@@ -63,13 +64,23 @@ export function ContactForm() {
               required
             />
           </Grid>
-          <Grid item xs={12}>
+          <Grid item xs={12} sm={6}>
             <TextField
               name="email"
               label="Email"
               type="email"
               fullWidth
               value={formData.email}
+              onChange={handleChange}
+              required
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <TextField
+              name="subject"
+              label="Subject"
+              fullWidth
+              value={formData.subject}
               onChange={handleChange}
               required
             />

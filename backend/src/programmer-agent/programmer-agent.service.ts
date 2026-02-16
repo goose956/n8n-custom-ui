@@ -6,6 +6,7 @@ import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { getPageTemplate } from './members-templates';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ export interface MembersAreaPage {
   id: string;
   name: string;
   description: string;
-  type: 'dashboard' | 'profile' | 'support' | 'settings' | 'custom';
+  type: 'dashboard' | 'profile' | 'settings' | 'admin' | 'custom';
   required: boolean;
 }
 
@@ -126,12 +127,13 @@ const MAX_TOKENS: Record<string, number> = {
 };
 
 // Estimated tokens per page for cost calculation
+// Template pages (profile, settings, admin) cost 0 AI tokens
 const EST_TOKENS_PER_PAGE: Record<string, number> = {
   dashboard: 3500,
   custom: 3000,
-  profile: 2000,
-  support: 2000,
-  settings: 2000,
+  admin: 0,      // static template
+  profile: 0,    // static template
+  settings: 0,   // static template
 };
 
 // ─── Default members area pages ─────────────────────────────────────────────
@@ -139,8 +141,8 @@ const EST_TOKENS_PER_PAGE: Record<string, number> = {
 const DEFAULT_MEMBERS_PAGES: MembersAreaPage[] = [
   { id: 'dashboard', name: 'Dashboard', description: 'Main dashboard overview with stats, recent activity, and quick actions', type: 'dashboard', required: true },
   { id: 'profile', name: 'Profile', description: 'User profile management with avatar, bio, and account details', type: 'profile', required: true },
-  { id: 'support', name: 'Support', description: 'Help center with FAQ, ticket submission, and contact options', type: 'support', required: true },
   { id: 'settings', name: 'Settings', description: 'Account settings, notifications, privacy, and preferences', type: 'settings', required: true },
+  { id: 'admin', name: 'Admin Panel', description: 'Admin dashboard with real-time analytics, user management, support tickets, error logs, and API usage — wired to the live backend API', type: 'admin', required: true },
 ];
 
 // ─── Service ───────────────────────────────────────────────────────────────────
@@ -346,22 +348,35 @@ DESIGN SYSTEM RULES (must follow exactly):
 - Framework: React 18 with TypeScript
 - UI Library: Material-UI 5 (@mui/material)
 - Import pattern: import { Box, Typography, ... } from '@mui/material';
-- Import icons: import { IconName } from '@mui/icons-material';
+- Icons: import { IconName } from '@mui/icons-material/IconName'; — USE ICONS LIBERALLY throughout the UI
 - Colors: primary=#667eea, secondary=#764ba2, dark=#1a1a2e, bg=#fafbfc
 - Gradients: background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
 - Font: Inter (via theme)
 - Border radius: 2-3 for small, 12-16 for cards (theme default is 12)
-- Shadows: boxShadow: 'none' with border: '1px solid rgba(0,0,0,0.06)' for cards
+- Shadows: boxShadow: '0 1px 3px rgba(0,0,0,0.08)' for cards, '0 4px 12px rgba(0,0,0,0.1)' for elevated
 - Use sx prop for all styling, never CSS files
 - Export components as named exports: export function ComponentName()
 - Use functional components with hooks
 - State: useState, useEffect, useCallback, useMemo
-- API calls: use fetch() with the pattern: const res = await fetch(url); const data = await res.json();
-- API base: import { API } from '../config/api'; (already configured)
+- API calls: use fetch() with const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : ''; — do NOT import from config files. This ensures /api/ calls work in both local dev and production.
 - Snackbar pattern for notifications
 - Dialog pattern for modals
-- Always include proper TypeScript types/interfaces
+- Always include proper TypeScript types/interfaces — define them inline, do NOT import from external type files
 - Responsive: use MUI's Grid or Box with display: 'grid' / 'flex'
+- Only import from: 'react', '@mui/material', '@mui/icons-material/*', 'react-router-dom' — NO other packages
+
+VISUAL RICHNESS (CRITICAL — pages must look polished and premium):
+- Use MUI icons next to EVERY label, heading, stat, button, and nav item (e.g. TrendingUp, Person, Settings, Dashboard, Analytics, Edit, Delete, Refresh, Search, FilterList, MoreVert, CheckCircle, Warning, Error, Star, Favorite, Visibility, Timeline, BarChart, PieChart, Speed)
+- Stat cards: use gradient backgrounds or colored left borders with large numbers, icons, and trend indicators (ArrowUpward/ArrowDownward with green/red text)
+- Cards: use elevation, subtle shadows, rounded corners (borderRadius: 3), hover effects (transform: 'translateY(-2px)', transition: '0.2s')
+- Tables: use alternating row colors, icon status badges (Chip with icon), action buttons in last column
+- Sections: use Paper with padding, section headers with icon + Typography variant="h6"
+- Empty states: centered icon (large, 64px, muted color), helpful message, action button
+- Loading: use Skeleton components (not just CircularProgress) to show content shape while loading
+- Use Avatar, Chip, Badge, LinearProgress, Divider, Tooltip liberally
+- Color-code statuses: success=green, warning=orange, error=red, info=blue (use MUI's color system)
+- Add subtle background patterns or gradient headers to hero sections
+- Use Grid containers for responsive card layouts (xs=12, sm=6, md=4 for stat cards)
 `.trim();
   }
 
@@ -411,6 +426,28 @@ STYLE CONSISTENCY RULES:
     } catch {
       return '';
     }
+  }
+
+  /**
+   * Look up an app's slug from the database. Used for per-app folder paths.
+   */
+  private getAppSlug(appId?: number): string | null {
+    if (!appId) return null;
+    try {
+      const data = this.db.readSync();
+      const app = (data.apps || []).find((a: any) => a.id === appId);
+      return app?.slug || null;
+    } catch { return null; }
+  }
+
+  /**
+   * Get the members directory path for a specific app.
+   * Returns `frontend/src/components/members/{slug}` for app-specific pages.
+   */
+  private getMembersDir(appId?: number): string {
+    const slug = this.getAppSlug(appId);
+    if (slug) return `frontend/src/components/members/${slug}`;
+    return 'frontend/src/components/members';
   }
 
   private extractColorsFromContent(obj: any, found: Set<string> = new Set()): string[] {
@@ -486,16 +523,17 @@ ${searchContext}
 The minimum required pages are:
 1. Dashboard - Main overview page with stats, activity, quick actions
 2. Profile - User profile management
-3. Support - Help/FAQ/ticket system
-4. Settings - Account settings and preferences
+3. Settings - Account settings and preferences
 
 Based on the user's description, suggest additional pages that would be needed. Think about what content and features the members area should have.
+
+IMPORTANT: Do NOT suggest a "Support" or "Support Ticket" page. Support functionality is handled within the Admin Panel.
 
 Return ONLY a JSON array of pages. Each page:
 - id: lowercase slug (e.g., "courses", "billing")
 - name: Display name
-- description: What this page contains and does (be specific)
-- type: "dashboard" | "profile" | "support" | "settings" | "custom"
+- description: What this page contains and does — be VERY specific to this app's domain. Include what real data/metrics/content a user of this app would see on this page. Do NOT use generic descriptions.
+- type: "dashboard" | "profile" | "settings" | "custom"
 - required: true for the 4 core pages, false for extras
 
 Include the 4 required pages plus any additional pages that make sense for this specific app.
@@ -510,13 +548,24 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
         const jsonMatch = result.content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          pages = parsed.map((p: any) => ({
-            id: p.id || 'custom',
-            name: p.name || 'Page',
-            description: p.description || '',
-            type: p.type || 'custom',
-            required: !!p.required,
-          }));
+          // IDs that are allowed to be marked "required"
+          const REQUIRED_IDS = new Set(DEFAULT_MEMBERS_PAGES.filter(dp => dp.required).map(dp => dp.id));
+          // IDs that must never appear (removed page types)
+          const BLOCKED_IDS = new Set(['support', 'support-ticket']);
+
+          const aiPages: MembersAreaPage[] = parsed
+            .filter((p: any) => !BLOCKED_IDS.has((p.id || '').toLowerCase()) && !BLOCKED_IDS.has((p.type || '').toLowerCase()))
+            .map((p: any) => ({
+              id: p.id || 'custom',
+              name: p.name || 'Page',
+              description: p.description || '',
+              type: p.type || 'custom',
+              required: REQUIRED_IDS.has(p.id) ? true : false,
+            }));
+          // Ensure all required default pages are always present
+          const existingIds = new Set(aiPages.map(p => p.id));
+          const missingRequired = DEFAULT_MEMBERS_PAGES.filter(dp => dp.required && !existingIds.has(dp.id));
+          pages = [...aiPages, ...missingRequired];
         }
       } catch { /* use defaults */ }
 
@@ -532,7 +581,38 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
   async generateMembersArea(request: GenerateRequest): Promise<GenerateResponse> {
     const orchestratorModel = request.orchestratorModel || DEFAULT_ORCHESTRATOR;
     const subAgentModel = request.subAgentModel || DEFAULT_SUB_AGENT;
-    const pages = request.pages || DEFAULT_MEMBERS_PAGES;
+    let pages = request.pages || DEFAULT_MEMBERS_PAGES;
+
+    // Filter out blocked page types (support was removed)
+    const BLOCKED_PAGE_IDS = new Set(['support', 'support-ticket']);
+    pages = pages.filter(p => !BLOCKED_PAGE_IDS.has(p.id) && !BLOCKED_PAGE_IDS.has(p.type));
+
+    // Ensure admin page is always included even if the plan didn't have it
+    const hasAdmin = pages.some(p => p.id === 'admin' || p.type === 'admin');
+    if (!hasAdmin) {
+      const adminPage = DEFAULT_MEMBERS_PAGES.find(p => p.id === 'admin');
+      if (adminPage) pages = [...pages, adminPage];
+    }
+
+    // Resolve the app's name and description so we can inject them into prompts
+    let appName = '';
+    let appDescription = '';
+    if (request.appId) {
+      try {
+        const data = this.db.readSync();
+        const app = (data.apps || []).find((a: any) => a.id === request.appId);
+        if (app) {
+          appName = app.name || '';
+          appDescription = app.description || '';
+        }
+      } catch { /* non-critical */ }
+    }
+    const appIdentity = appName
+      ? `This is the "${appName}" app. App description: "${appDescription}". ALL content, labels, stats, and copy must be specifically about ${appName} and its features.`
+      : `App description: "${request.prompt}". ALL content must be relevant to this description.`;
+
+    // Resolve per-app folder path
+    const membersPath = this.getMembersDir(request.appId);
 
     let totalOrchestratorTokens = 0;
     let totalSubAgentTokens = 0;
@@ -578,7 +658,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
         const sharedResult = await this.callAI(
           subAgentModel,
           `You are a TypeScript expert. Generate clean shared types and a sidebar navigation component for a members area.\n${this.getDesignSystemContext()}\n${this.getAppContext(request.appId)}`,
-          `Generate two files for a members area with these pages:\n${pagesDescription}\n\nFile 1: TypeScript interfaces and types for all the data structures needed across the members area.\nFile 2: A MembersLayout component that has a left sidebar navigation with links to each page, and a main content area. The sidebar should highlight the active page. Use MUI components.\n\nUse the ===FILE: path=== / ===END_FILE=== format.\n\nReturn ONLY the code. No explanations.`,
+          `${appIdentity}\n\nGenerate two files for a members area with these pages:\n${pagesDescription}\n\nThe members area is for: ${request.prompt}\n\nFile 1: TypeScript interfaces and types for all the data structures needed across the members area. Type names, field names, and comments should reflect the actual domain of this app (not generic names).\nFile 2: A MembersLayout component that has a left sidebar navigation with links to each page, and a main content area. The sidebar should highlight the active page. Navigation labels must be specific to this app's features. Use MUI components.\n\nUse the ===FILE: path=== / ===END_FILE=== format.\n\nReturn ONLY the code. No explanations.`,
         );
         totalSubAgentTokens += sharedResult.tokensUsed;
         sharedCode = sharedResult.content;
@@ -592,6 +672,18 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
       // Step 2: Generate each page
       const complexPageTypes = ['dashboard', 'custom'];
       let stepId = 2;
+
+      // Resolve app info for templates
+      let templateAppName = appName || 'App';
+      let templateAppId = request.appId || 1;
+      let templatePrimaryColor = '#667eea';
+      if (request.appId) {
+        try {
+          const data = this.db.readSync();
+          const app = (data.apps || []).find((a: any) => a.id === request.appId);
+          if (app) templatePrimaryColor = app.primary_color || '#667eea';
+        } catch { /* use defaults */ }
+      }
 
       for (const page of pages) {
         const isComplex = complexPageTypes.includes(page.type);
@@ -608,7 +700,73 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
         allPlanSteps.push(step);
 
         try {
+          // Check for static template first — saves ~2000-4000 tokens per page
+          const templateCode = getPageTemplate(page.type, {
+            appName: templateAppName,
+            appId: templateAppId,
+            primaryColor: templatePrimaryColor,
+          });
+          if (templateCode) {
+            console.log(`[MembersArea] Using static template for ${page.type} page (0 AI tokens)`);
+            allFiles.push({
+              path: `${membersPath}/${page.id}.tsx`,
+              content: templateCode,
+              language: 'typescript',
+              description: `${page.name} page (template)`,
+            });
+            step.status = 'complete';
+            continue;
+          }
+          const adminApiGuide = page.type === 'admin' ? `
+
+ADMIN PANEL — REAL API WIRING (CRITICAL):
+This admin page MUST make real fetch() calls to the backend.
+Use: const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
+The app ID for API calls is: ${request.appId}
+
+Available endpoints (all return { success: boolean, data: T, timestamp: string }):
+
+1. GET /api/apps/${request.appId}/stats
+   Response data: { app_id, name, active_subscriptions, total_subscriptions, total_revenue, created_at }
+
+2. GET /api/analytics/app/${request.appId}
+   Response data: { app_id, total_page_views, unique_visitors, page_stats (Record<string,number>), views_by_date (Record<string,number>), recent_views[] }
+
+3. GET /api/analytics/app/${request.appId}/visitors
+   Response data: Array<{ visitor_id, first_visit, last_visit, page_views, pages[] }>
+
+4. GET /api/analytics/errors?resolved=false
+   Response data: { errors: Array<{ id, source, severity, message, timestamp, resolved }>, summary: { total, critical, errors, warnings, unresolved, bySource } }
+
+5. POST /api/analytics/errors/:id/resolve  (resolves an error)
+
+6. GET /api/analytics/api-usage
+   Response data: { entries[], summary: { totalCalls, successRate, totalTokens, totalCost, avgDuration, byProvider, byModule, byDay[] } }
+
+7. GET /api/pages?app_id=${request.appId}
+   Response data: Page[] — each has { id, app_id, page_type, title, content_json, created_at, updated_at }
+
+8. GET /api/analytics/n8n-executions
+   Response data: { executions[], summary: { total, success, errors, running, errorRate } }
+
+IMPLEMENTATION RULES:
+- Use useEffect + useState to fetch data on mount from these REAL endpoints
+- Show loading spinners while fetching
+- Handle errors gracefully with error states
+- Add a refresh button that re-fetches all data
+- Include tabs or sections for: Overview (KPIs), Analytics (charts), Users/Visitors, Error Logs (with resolve button), API Usage
+- The support tickets section should show errors from /api/analytics/errors — the admin can resolve them
+- Do NOT use mock data — ALL data comes from real API calls
+- Use MUI Table, TableHead, TableRow, TableCell, TableBody for tabular data — do NOT use @mui/x-data-grid (it is NOT installed)
+- Use simple bar/line charts with MUI or inline SVG (no recharts/chart.js — they are not installed)
+- Use: const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : ''; — do NOT import from any config file. This works in both local dev and production.
+- Do NOT import types from external files — define any interfaces inline in this file
+- Only import from 'react', '@mui/material', '@mui/icons-material/*', and 'react-router-dom' — these are the ONLY available packages
+` : '';
+
           const pagePrompt = `Generate a complete React page component for the "${page.name}" page of a members area.
+
+${appIdentity}
 
 Page purpose: ${page.description}
 
@@ -619,17 +777,39 @@ ${pagesDescription}
 
 ${sharedCode ? `\nAlready generated shared code (import from these):\n${sharedCode}` : ''}
 ${searchContext}
-
+${adminApiGuide}
 IMPORTANT RULES:
 - Export the component as a named export: export function Members${this.toPascalCase(page.id)}Page()
 - The component will be rendered inside a layout — do NOT include sidebar navigation
 - Use the app's color scheme consistently
-- Include loading states, error handling, empty states
-- Use realistic demo/mock data for the initial state
-- Make it look professional and polished
+- Include loading states (use Skeleton components to show content placeholders), error handling, empty states (centered icon + message + action button)
+- Make it look PREMIUM and visually rich — this should look like a $99/month SaaS dashboard, NOT a basic tutorial
 - Include all necessary imports
+- Use MUI icons (from @mui/icons-material) next to EVERY heading, stat, button, tab label, and list item
+- Use Cards with shadows, gradients, colored accents, hover effects
+- Use Chip components for tags/statuses, Avatar for user images, Badge for counts
+- Stat cards should have large numbers, trend arrows (ArrowUpward/ArrowDownward), and icon decorations
+- Use Grid layout for responsive card grids (xs=12, sm=6, md=4 or md=3)
+- Add visual hierarchy: gradient header/hero section at top, then stat cards row, then detailed content below
+- Tables need: alternating row backgrounds, status Chips with colors, action IconButtons
+- Do NOT import from any config files or external type files — define ALL interfaces and types INLINE in this same file
+- Do NOT import from paths like '../config/api', '../../types/', '../shared/' — the file must be 100% self-contained
+- The ONLY allowed imports are: 'react', '@mui/material', '@mui/icons-material/XxxIcon', 'react-router-dom'
+- Do NOT use \`extends SomeType\` or \`implements SomeInterface\` unless you define that type in this same file
+- Do NOT check response.ok or response.status after fetch() — just call .json() and use the data. Errors are handled by the runtime.
+- Use useState with sensible defaults (empty arrays [], null, 0) so the component never crashes before data arrives
 
-Return the file using ===FILE: frontend/src/components/members/${page.id}.tsx=== / ===END_FILE=== format.
+CONTENT & COPY RULES (CRITICAL — READ CAREFULLY):
+- This is "${appName || request.prompt}" — every piece of text on this page must relate to it
+- ALL headings, labels, stats, descriptions, button text, and placeholder text MUST be specific to this app
+- FORBIDDEN: generic text like "Lorem ipsum", "Item 1", "Sample data", "Total Items", "Welcome to your dashboard", "Your content here"
+- Dashboard stats example: if this is a TikTok script app → "Scripts Generated", "Viral Hooks Found", "Videos Analyzed". If fitness → "Workouts", "Calories". Match the domain.
+- Mock data: use ${appName ? `data that a "${appName}" user would actually see` : 'realistic domain-specific data'}
+- Empty states: "${appName ? `You haven't created any ${appName.toLowerCase()}-related content yet` : 'No items yet'}" — NOT "No items found"
+- Section titles, card headers, and action buttons must all reference the app's actual features
+- Think: "If I were a paying user of ${appName || 'this app'}, what would I expect to see on this ${page.name} page?"
+
+Return the file using ===FILE: ${membersPath}/${page.id}.tsx=== / ===END_FILE=== format.
 Return ONLY the code. No explanations.`;
 
           const result = await this.callAI(
@@ -647,7 +827,7 @@ Return ONLY the code. No explanations.`;
           const pageFiles = this.parseFiles(result.content);
           if (pageFiles.length === 0 && result.content.trim()) {
             allFiles.push({
-              path: `frontend/src/components/members/${page.id}.tsx`,
+              path: `${membersPath}/${page.id}.tsx`,
               content: result.content.replace(/^```(?:tsx?|typescript)?\n?/m, '').replace(/\n?```$/m, '').trim(),
               language: 'typescript',
               description: `${page.name} page`,
@@ -672,31 +852,31 @@ Return ONLY the code. No explanations.`;
       allPlanSteps.push(routerStep);
 
       try {
-        const routerPrompt = `Generate a MembersArea index component that:
-1. Imports all the page components from the members/ folder
-2. Uses React Router (react-router-dom) with nested routes
-3. Wraps pages in the MembersLayout sidebar component
-4. Defines routes for each page
+        // Generate the router deterministically — no AI needed since we know the exact pages
+        const routerImports = pages.map(p =>
+          `import { Members${this.toPascalCase(p.id)}Page } from './${p.id}';`
+        ).join('\n');
+        const routerRoutes = pages.map(p =>
+          `        <Route path="/${p.id}" element={<Members${this.toPascalCase(p.id)}Page />} />`
+        ).join('\n');
+        const routerCode = `import { Routes, Route, Navigate } from 'react-router-dom';
+${routerImports}
 
-Pages to include:
-${pages.map(p => `- /${p.id} → Members${this.toPascalCase(p.id)}Page`).join('\n')}
-
-Default route should redirect to /dashboard.
-
-The already generated files are:
-${allFiles.map(f => `- ${f.path}`).join('\n')}
-
-Use ===FILE: frontend/src/components/members/index.tsx=== / ===END_FILE=== format.
-Return ONLY the code.`;
-
-        const routerResult = await this.callAI(
-          subAgentModel,
-          `You are a React Router expert.\n${this.getDesignSystemContext()}\n${this.getAppContext(request.appId)}`,
-          routerPrompt,
-        );
-        totalSubAgentTokens += routerResult.tokensUsed;
-        const routerFiles = this.parseFiles(routerResult.content);
-        allFiles.push(...routerFiles);
+export function MembersArea() {
+  return (
+    <Routes>
+${routerRoutes}
+      <Route path="*" element={<Navigate to="/dashboard" />} />
+    </Routes>
+  );
+}
+`;
+        allFiles.push({
+          path: `${membersPath}/index.tsx`,
+          content: routerCode,
+          language: 'typescript',
+          description: 'Members area router',
+        });
         routerStep.status = 'complete';
       } catch {
         routerStep.status = 'failed';
@@ -906,6 +1086,57 @@ Return ONLY the code.`;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, result: '', tokensUsed: 0, error: message };
+    }
+  }
+
+  // ─── Load existing members area files from disk ─────────────────────────
+
+  async getMembersFiles(appId?: number): Promise<{ success: boolean; files: { path: string; content: string; language: string; description: string }[]; appSlug?: string }> {
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
+    const slug = this.getAppSlug(appId);
+    const membersBase = path.resolve(projectRoot, 'frontend', 'src', 'components', 'members');
+    // If appId given and slug exists, read from per-app subfolder
+    const membersDir = slug ? path.resolve(membersBase, slug) : membersBase;
+    const layoutPath = path.resolve(projectRoot, 'src', 'components', 'MembersLayout.tsx');
+    const loadedFiles: { path: string; content: string; language: string; description: string }[] = [];
+
+    try {
+      // Load MembersLayout.tsx if it exists
+      if (fs.existsSync(layoutPath)) {
+        const content = fs.readFileSync(layoutPath, 'utf-8');
+        loadedFiles.push({
+          path: 'src/components/MembersLayout.tsx',
+          content,
+          language: 'tsx',
+          description: 'Members area layout with navigation sidebar',
+        });
+      }
+
+      // Load all .tsx/.ts files from the app's members folder
+      if (fs.existsSync(membersDir)) {
+        const relPrefix = slug ? `frontend/src/components/members/${slug}` : 'frontend/src/components/members';
+        const entries = fs.readdirSync(membersDir).filter(f => {
+          // Only pick files, not subdirectories
+          const fullPath = path.resolve(membersDir, f);
+          return (f.endsWith('.tsx') || f.endsWith('.ts')) && fs.statSync(fullPath).isFile();
+        }).sort();
+        for (const entry of entries) {
+          const filePath = path.resolve(membersDir, entry);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const name = entry.replace(/\.(tsx|ts)$/, '');
+          loadedFiles.push({
+            path: `${relPrefix}/${entry}`,
+            content,
+            language: entry.endsWith('.tsx') ? 'tsx' : 'typescript',
+            description: `${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, ' ')} page`,
+          });
+        }
+      }
+
+      return { success: true, files: loadedFiles, appSlug: slug || undefined };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, files: [], error: message } as any;
     }
   }
 
@@ -1851,6 +2082,7 @@ Return ONLY the JSON array. No markdown, no explanation.`;
     const aiModel = model || DEFAULT_SUB_AGENT;
     let totalTokens = 0;
     const docs: GeneratedFile[] = [];
+    const docsDir = this.getMembersDir(appId);
 
     const appContext = this.getAppContext(appId);
 
@@ -1901,7 +2133,7 @@ Return ONLY the Markdown content. No wrapping code fences.`,
       totalTokens += readmeResult.tokensUsed;
 
       docs.push({
-        path: 'frontend/src/components/members/README.md',
+        path: `${docsDir}/README.md`,
         content: readmeResult.content.replace(/^```(?:md|markdown)?\n?/m, '').replace(/\n?```$/m, '').trim(),
         language: 'markdown',
         description: 'Members area documentation',
@@ -1942,7 +2174,7 @@ Return ONLY the Markdown. No wrapping code fences.`,
         totalTokens += apiResult.tokensUsed;
 
         docs.push({
-          path: 'frontend/src/components/members/API_REFERENCE.md',
+          path: `${docsDir}/API_REFERENCE.md`,
           content: apiResult.content.replace(/^```(?:md|markdown)?\n?/m, '').replace(/\n?```$/m, '').trim(),
           language: 'markdown',
           description: 'API endpoint reference',
@@ -2023,7 +2255,8 @@ Return ONLY the Markdown. No wrapping code fences.`,
 
     // Read project structure so planner knows what exists
     const frontendComponents = this.listDirectory('frontend/src/components');
-    const frontendMembers = this.listDirectory('frontend/src/components/members');
+    const membersDir = this.getMembersDir(appId);
+    const frontendMembers = this.listDirectory(membersDir);
     const backendModules = this.listDirectory('backend/src');
     const apiConfigContent = this.readFileFromDisk('frontend/src/config/api.ts');
     const appTsxContent = this.readFileFromDisk('frontend/src/App.tsx');
@@ -2055,7 +2288,7 @@ Return ONLY the Markdown. No wrapping code fences.`,
     // This prevents the "doesn't know what a ContactForm is" problem
     const componentSnippets: string[] = [];
     for (const memberFile of frontendMembers.filter(f => f.endsWith('.tsx'))) {
-      const memberPath = `frontend/src/components/members/${memberFile}`;
+      const memberPath = `${membersDir}/${memberFile}`;
       const alreadyLoaded = existingFiles.find(f => f.path === memberPath);
       if (!alreadyLoaded) {
         const content = this.readFileFromDisk(memberPath);
@@ -2084,7 +2317,7 @@ Return ONLY the Markdown. No wrapping code fences.`,
 ### Frontend Components:
 ${frontendComponents.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/${f}`).join('\n')}
 ### Members Area Pages:
-${frontendMembers.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/members/${f}`).join('\n')}
+${frontendMembers.filter(f => f.endsWith('.tsx')).map(f => `- ${membersDir}/${f}`).join('\n')}
 ### Shared Components:
 ${frontendShared.filter(f => f.endsWith('.tsx')).map(f => `- frontend/src/components/shared/${f}`).join('\n') || '(none yet)'}
 ### Types (frontend/src/types/):
@@ -2291,7 +2524,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
 
               // Read an existing component as an example template (like Copilot reads existing patterns)
               let exampleComponent = '';
-              const targetDir = step.newFilePath?.includes('members/') ? 'frontend/src/components/members' : 'frontend/src/components';
+              const targetDir = step.newFilePath?.includes('members/') ? membersDir : 'frontend/src/components';
               const existingComponents = this.listDirectory(targetDir).filter(f => f.endsWith('.tsx') && !f.includes('ProgrammerAgent'));
               if (existingComponents.length > 0) {
                 // Pick a component to use as example pattern
@@ -2455,8 +2688,8 @@ Return ONLY the code. No markdown fences, no explanation.`;
               let referencedComponentContext = '';
               const componentRefs = (step.detail || '').match(/\b([A-Z][a-zA-Z]+(?:Form|Button|Card|List|Table|Modal|Dialog|Panel|Section|Header|Footer|Nav|Sidebar|Layout|Page|Widget|Banner|Alert))\b/g) || [];
               for (const compName of [...new Set(componentRefs)]) {
-                // Search in members/ and shared/ directories
-                for (const dir of ['frontend/src/components/members', 'frontend/src/components/shared']) {
+                // Search in members/ (per-app) and shared/ directories
+                for (const dir of [membersDir, 'frontend/src/components/shared']) {
                   const compPath = `${dir}/${compName}.tsx`;
                   const content = this.readFileFromDisk(compPath);
                   if (content) {

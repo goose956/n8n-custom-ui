@@ -22,4 +22,5 @@ export const API = {
   health: `${API_BASE_URL}/api/health`,
   socialMonitor: `${API_BASE_URL}/api/social-monitor`,
   stripe: `${API_BASE_URL}/api/stripe`,
+  preview: `${API_BASE_URL}/api/preview`,
 } as const;
