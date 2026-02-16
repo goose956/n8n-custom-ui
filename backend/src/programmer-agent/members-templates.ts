@@ -1,7 +1,9 @@
-/**
+﻿/**
  * Static page templates for members area pages that are identical across all SaaS apps.
  * Only the app name, app ID, and primary color are injected.
- * This saves ~10,000 AI tokens per members area generation.
+ * Design matches the main frontend: gradient accents, hover animations,
+ * floating decorative shapes, polished shadows, and rich typography.
+ * This saves ~15,000+ AI tokens per members area generation.
  */
 
 interface TemplateParams {
@@ -18,660 +20,873 @@ function darken(hex: string, pct: number): string {
  return`#${((r << 16) | (g << 8) | b).toString(16).padStart(6,'0')}`;
 }
 
-// --- Profile Page ------------------------------------------------------------
+// ============================================================================
+// SHARED DESIGN TOKENS — injected into every template as runtime constants
+// ============================================================================
 
-export function profileTemplate(p: TemplateParams): string {
+function sharedBlock(primary: string, sec: string): string {
+ return `
+const COLORS = {
+ primary: '${primary}',
+ secondary: '${sec}',
+ tint: '${primary}15',
+ bg: '#fafbfc',
+ border: 'rgba(0,0,0,0.06)',
+ shadow: '0 2px 12px rgba(0,0,0,0.04)',
+ shadowHover: '0 8px 25px rgba(0,0,0,0.08)',
+ success: '#4caf50',
+ warning: '#ff9800',
+ error: '#e74c3c',
+ blue: '#2196f3',
+ purple: '#9b59b6',
+};
+
+const heroSx = {
+ p: { xs: 3, md: 4 }, mb: 4, borderRadius: 4, position: 'relative' as const, overflow: 'hidden',
+ background: 'linear-gradient(135deg, ${primary} 0%, ${sec} 100%)',
+ color: '#fff',
+};
+
+const floatingCircle = (size: number, top: number, right: number, opacity = 0.08) => ({
+ position: 'absolute' as const, width: size, height: size, borderRadius: '50%',
+ background: 'rgba(255,255,255,' + opacity + ')', top, right,
+});
+
+const cardSx = {
+ borderRadius: 4, border: '1px solid ' + COLORS.border, boxShadow: COLORS.shadow,
+ transition: 'all 0.25s ease',
+ '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '${primary}40' },
+};
+
+const sectionSx = {
+ borderRadius: 4, border: '1px solid ' + COLORS.border, boxShadow: COLORS.shadow, p: 3, mb: 3,
+};
+
+const gradientBtnSx = {
+ background: 'linear-gradient(135deg, ${primary} 0%, ${sec} 100%)',
+ color: '#fff', fontWeight: 600, textTransform: 'none' as const,
+ boxShadow: '0 4px 15px ${primary}40',
+ '&:hover': { boxShadow: '0 6px 20px ${primary}60', transform: 'translateY(-1px)' },
+ transition: 'all 0.2s ease',
+};
+
+const statLabelSx = {
+ fontSize: '0.75rem', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 600, color: 'text.secondary',
+};
+`;
+}
+
+// ============================================================================
+// DASHBOARD PAGE
+// ============================================================================
+
+export function dashboardTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
- return`import { useState } from'react';
+ const SB = sharedBlock(p.primaryColor, sec);
+ return `import { useState } from 'react';
 import {
- Box, Typography, Paper, Grid, Avatar, Button, TextField, Divider,
- Chip, Snackbar, Alert, Skeleton, IconButton, Tooltip, Card, CardContent,
-} from'@mui/material';
-import AccountCircle from'@mui/icons-material/AccountCircle';
-import Edit from'@mui/icons-material/Edit';
-import Save from'@mui/icons-material/Save';
-import Cancel from'@mui/icons-material/Cancel';
-import Email from'@mui/icons-material/Email';
-import Phone from'@mui/icons-material/Phone';
-import Badge from'@mui/icons-material/Badge';
-import CalendarToday from'@mui/icons-material/CalendarToday';
-import CheckCircle from'@mui/icons-material/CheckCircle';
-import PhotoCamera from'@mui/icons-material/PhotoCamera';
+ Box, Typography, Paper, Grid, Card, CardContent, Avatar, Button,
+ Chip, Divider, LinearProgress, List, ListItem, ListItemAvatar,
+ ListItemText,
+} from '@mui/material';
+import TrendingUp from '@mui/icons-material/TrendingUp';
+import People from '@mui/icons-material/People';
+import Star from '@mui/icons-material/Star';
+import Schedule from '@mui/icons-material/Schedule';
+import ArrowForward from '@mui/icons-material/ArrowForward';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import Bolt from '@mui/icons-material/Bolt';
+import EmojiEvents from '@mui/icons-material/EmojiEvents';
+import Visibility from '@mui/icons-material/Visibility';
+import FiberManualRecord from '@mui/icons-material/FiberManualRecord';
 
-export function MembersProfilePage() {
- const [editing, setEditing] = useState(false);
- const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
- const [profile, setProfile] = useState({
- firstName:'Jane',
- lastName:'Doe',
- email:'jane@example.com',
- phone:'+1 555-0123',
- bio:'Active ${p.appName} user since 2025.',
- joinDate:'2025-06-15',
- plan:'Pro',
- });
- const [draft, setDraft] = useState({ ...profile });
+${SB}
 
- const handleSave = () => {
- setProfile({ ...draft });
- setEditing(false);
- setSnackbar({ open: true, message:'Profile updated successfully!', severity:'success' });
- };
+export function MembersDashboardPage() {
+ const stats = [
+  { label: 'Total Views', value: '2,847', change: '+12%', icon: <Visibility />, color: COLORS.primary },
+  { label: 'Active Users', value: '184', change: '+8%', icon: <People />, color: COLORS.blue },
+  { label: 'Engagement', value: '94%', change: '+3%', icon: <TrendingUp />, color: COLORS.success },
+  { label: 'Rating', value: '4.9', change: 'Top 5%', icon: <Star />, color: COLORS.warning },
+ ];
 
- const handleCancel = () => {
- setDraft({ ...profile });
- setEditing(false);
- };
+ const recentActivity = [
+  { title: 'New member joined', desc: 'Sarah K. signed up for Pro plan', time: '2 min ago', color: COLORS.success, icon: <People /> },
+  { title: 'Achievement unlocked', desc: 'Completed onboarding milestone', time: '1 hour ago', color: COLORS.warning, icon: <EmojiEvents /> },
+  { title: 'Content published', desc: 'New resource added to library', time: '3 hours ago', color: COLORS.primary, icon: <Bolt /> },
+  { title: 'Feedback received', desc: '5-star review from Alex M.', time: '5 hours ago', color: COLORS.blue, icon: <Star /> },
+ ];
+
+ const quickLinks = [
+  { label: 'View Profile', desc: 'Update your info', icon: <People /> },
+  { label: 'Settings', desc: 'Preferences', icon: <Schedule /> },
+  { label: 'Contact Us', desc: 'Get in touch', icon: <Bolt /> },
+ ];
 
  return (
- <Box sx={{ maxWidth: 900, mx:'auto' }}>
- {/* Hero header */}
- <Paper sx={{
- p: 4, mb: 3, borderRadius: 3,
- background:'linear-gradient(135deg, ${p.primaryColor} 0%, ${sec} 100%)',
- color:'#fff', position:'relative', overflow:'hidden',
- }}>
- <Box sx={{ position:'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius:'50%', background:'rgba(255,255,255,0.08)' }} />
- <Box sx={{ display:'flex', alignItems:'center', gap: 3 }}>
- <Box sx={{ position:'relative' }}>
- <Avatar sx={{ width: 100, height: 100, fontSize: 40, bgcolor:'rgba(255,255,255,0.2)', border:'3px solid rgba(255,255,255,0.5)' }}>
- {profile.firstName[0]}{profile.lastName[0]}
- </Avatar>
- <IconButton size="small" sx={{ position:'absolute', bottom: 0, right: 0, bgcolor:'rgba(255,255,255,0.9)','&:hover': { bgcolor:'#fff' } }}>
- <PhotoCamera sx={{ fontSize: 16 }} />
- </IconButton>
- </Box>
- <Box>
- <Typography variant="h4" fontWeight={700}>{profile.firstName} {profile.lastName}</Typography>
- <Box sx={{ display:'flex', gap: 1, mt: 1 }}>
- <Chip icon={<CheckCircle />} label={profile.plan +' Plan'} size="small" sx={{ bgcolor:'rgba(255,255,255,0.2)', color:'#fff' }} />
- <Chip icon={<CalendarToday />} label={'Joined' + new Date(profile.joinDate).toLocaleDateString()} size="small" sx={{ bgcolor:'rgba(255,255,255,0.2)', color:'#fff' }} />
- </Box>
- </Box>
- <Box sx={{ ml:'auto' }}>
- {!editing ? (
- <Button variant="contained" startIcon={<Edit />} onClick={() => setEditing(true)}
- sx={{ bgcolor:'rgba(255,255,255,0.2)','&:hover': { bgcolor:'rgba(255,255,255,0.3)' } }}>
- Edit Profile
- </Button>
- ) : (
- <Box sx={{ display:'flex', gap: 1 }}>
- <Button variant="contained" startIcon={<Save />} onClick={handleSave} sx={{ bgcolor:'#4caf50','&:hover': { bgcolor:'#388e3c' } }}>Save</Button>
- <Button variant="outlined" startIcon={<Cancel />} onClick={handleCancel} sx={{ color:'#fff', borderColor:'rgba(255,255,255,0.5)' }}>Cancel</Button>
- </Box>
- )}
- </Box>
- </Box>
- </Paper>
+  <Box>
+   <Paper sx={heroSx}>
+    <Box sx={floatingCircle(200, -60, -40)} />
+    <Box sx={floatingCircle(120, 20, 120, 0.05)} />
+    <Box sx={floatingCircle(80, -20, 300, 0.06)} />
+    <Box sx={{ position: 'relative', zIndex: 1 }}>
+     <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', mb: 0.5 }}>Welcome back</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, maxWidth: 500 }}>Here's what's happening with your ${p.appName} account today.</Typography>
+    </Box>
+   </Paper>
 
- {/* Details cards */}
- <Grid container spacing={3}>
- <Grid item xs={12} md={8}>
- <Paper sx={{ p: 3, borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
- <Typography variant="h6" fontWeight={600} sx={{ mb: 2, display:'flex', alignItems:'center', gap: 1 }}>
- <Badge sx={{ color:'${p.primaryColor}' }} /> Personal Information
- </Typography>
- <Divider sx={{ mb: 3 }} />
- <Grid container spacing={2}>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth label="First Name" value={editing ? draft.firstName : profile.firstName}
- onChange={e => setDraft({ ...draft, firstName: e.target.value })} disabled={!editing} size="small" />
- </Grid>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth label="Last Name" value={editing ? draft.lastName : profile.lastName}
- onChange={e => setDraft({ ...draft, lastName: e.target.value })} disabled={!editing} size="small" />
- </Grid>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth label="Email" value={editing ? draft.email : profile.email}
- onChange={e => setDraft({ ...draft, email: e.target.value })} disabled={!editing} size="small"
- InputProps={{ startAdornment: <Email sx={{ mr: 1, color:'text.secondary', fontSize: 20 }} /> }} />
- </Grid>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth label="Phone" value={editing ? draft.phone : profile.phone}
- onChange={e => setDraft({ ...draft, phone: e.target.value })} disabled={!editing} size="small"
- InputProps={{ startAdornment: <Phone sx={{ mr: 1, color:'text.secondary', fontSize: 20 }} /> }} />
- </Grid>
- <Grid item xs={12}>
- <TextField fullWidth label="Bio" value={editing ? draft.bio : profile.bio}
- onChange={e => setDraft({ ...draft, bio: e.target.value })} disabled={!editing} multiline rows={3} size="small" />
- </Grid>
- </Grid>
- </Paper>
- </Grid>
+   <Grid container spacing={2.5} sx={{ mb: 4 }}>
+    {stats.map((s, i) => (
+     <Grid item xs={12} sm={6} md={3} key={i}>
+      <Card sx={cardSx}>
+       <CardContent sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+         <Avatar sx={{ width: 44, height: 44, bgcolor: s.color + '15', color: s.color }}>{s.icon}</Avatar>
+         <Chip label={s.change} size="small" sx={{ bgcolor: COLORS.success + '15', color: COLORS.success, fontWeight: 600, fontSize: '0.75rem' }} />
+        </Box>
+        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', mb: 0.25 }}>{s.value}</Typography>
+        <Typography sx={statLabelSx}>{s.label}</Typography>
+       </CardContent>
+      </Card>
+     </Grid>
+    ))}
+   </Grid>
 
- <Grid item xs={12} md={4}>
- <Card sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', height:'100%' }}>
- <CardContent>
- <Typography variant="h6" fontWeight={600} sx={{ mb: 2, display:'flex', alignItems:'center', gap: 1 }}>
- <AccountCircle sx={{ color:'${p.primaryColor}' }} /> Account Summary
- </Typography>
- <Divider sx={{ mb: 2 }} />
- <Box sx={{ display:'flex', flexDirection:'column', gap: 2 }}>
- <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
- <Typography color="text.secondary" variant="body2">Plan</Typography>
- <Chip label={profile.plan} size="small" color="primary" />
- </Box>
- <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
- <Typography color="text.secondary" variant="body2">Status</Typography>
- <Chip label="Active" size="small" color="success" />
- </Box>
- <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
- <Typography color="text.secondary" variant="body2">Member Since</Typography>
- <Typography variant="body2" fontWeight={500}>{new Date(profile.joinDate).toLocaleDateString()}</Typography>
- </Box>
- </Box>
- </CardContent>
- </Card>
- </Grid>
- </Grid>
+   <Grid container spacing={3}>
+    <Grid item xs={12} md={8}>
+     <Paper sx={sectionSx}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+       <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem' }}>Recent Activity</Typography>
+       <Chip label="Live" size="small" icon={<FiberManualRecord sx={{ fontSize: '10px !important', color: COLORS.success + ' !important' }} />}
+        sx={{ bgcolor: COLORS.success + '15', color: COLORS.success, fontWeight: 600 }} />
+      </Box>
+      <List disablePadding>
+       {recentActivity.map((a, i) => (
+        <ListItem key={i} sx={{ px: 0, py: 1.5, borderBottom: i < recentActivity.length - 1 ? '1px solid ' + COLORS.border : 'none' }}>
+         <ListItemAvatar>
+          <Avatar sx={{ bgcolor: a.color + '15', color: a.color, width: 40, height: 40 }}>{a.icon}</Avatar>
+         </ListItemAvatar>
+         <ListItemText primary={<Typography variant="body2" fontWeight={600}>{a.title}</Typography>} secondary={a.desc} />
+         <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{a.time}</Typography>
+        </ListItem>
+       ))}
+      </List>
+     </Paper>
+    </Grid>
 
- <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
- <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
- </Snackbar>
- </Box>
+    <Grid item xs={12} md={4}>
+     <Paper sx={sectionSx}>
+      <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 2 }}>Quick Links</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+       {quickLinks.map((q, i) => (
+        <Card key={i} sx={{ ...cardSx, cursor: 'pointer', '&:hover': { ...cardSx['&:hover'], bgcolor: COLORS.tint } }}>
+         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 }, display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Avatar sx={{ bgcolor: COLORS.tint, color: COLORS.primary, width: 40, height: 40 }}>{q.icon}</Avatar>
+          <Box sx={{ flex: 1 }}>
+           <Typography variant="body2" fontWeight={700}>{q.label}</Typography>
+           <Typography variant="caption" color="text.secondary">{q.desc}</Typography>
+          </Box>
+          <ArrowForward sx={{ color: 'text.disabled', fontSize: 18 }} />
+         </CardContent>
+        </Card>
+       ))}
+      </Box>
+     </Paper>
+
+     <Paper sx={{ ...sectionSx, mt: 3, background: 'linear-gradient(135deg, ${p.primaryColor}08 0%, ${sec}08 100%)' }}>
+      <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 1 }}>Getting Started</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Complete your setup</Typography>
+      <LinearProgress variant="determinate" value={75} sx={{ height: 8, borderRadius: 4, mb: 1.5, bgcolor: COLORS.border,
+       '& .MuiLinearProgress-bar': { borderRadius: 4, background: 'linear-gradient(90deg, ${p.primaryColor}, ${sec})' } }} />
+      <Typography variant="caption" color="text.secondary">3 of 4 steps completed</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
+       {[{ done: true, label: 'Create your account' }, { done: true, label: 'Complete your profile' }, { done: true, label: 'Explore features' }, { done: false, label: 'Invite team members' }].map((s, i) => (
+        <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+         <CheckCircle sx={{ fontSize: 18, color: s.done ? COLORS.success : 'text.disabled' }} />
+         <Typography variant="body2" sx={{ color: s.done ? 'text.secondary' : 'text.primary', textDecoration: s.done ? 'line-through' : 'none' }}>{s.label}</Typography>
+        </Box>
+       ))}
+      </Box>
+     </Paper>
+    </Grid>
+   </Grid>
+  </Box>
  );
 }`;
 }
 
-// --- Settings Page -----------------------------------------------------------
+// ============================================================================
+// PROFILE PAGE
+// ============================================================================
+
+export function profileTemplate(p: TemplateParams): string {
+ const sec = darken(p.primaryColor, 0.15);
+ const SB = sharedBlock(p.primaryColor, sec);
+ return `import { useState } from 'react';
+import {
+ Box, Typography, Paper, Grid, Avatar, Button, TextField, Divider,
+ Chip, Snackbar, Alert, IconButton, Card, CardContent,
+} from '@mui/material';
+import AccountCircle from '@mui/icons-material/AccountCircle';
+import Edit from '@mui/icons-material/Edit';
+import Save from '@mui/icons-material/Save';
+import Cancel from '@mui/icons-material/Cancel';
+import Email from '@mui/icons-material/Email';
+import Phone from '@mui/icons-material/Phone';
+import Badge from '@mui/icons-material/Badge';
+import CalendarToday from '@mui/icons-material/CalendarToday';
+import PhotoCamera from '@mui/icons-material/PhotoCamera';
+import WorkspacePremium from '@mui/icons-material/WorkspacePremium';
+import VerifiedUser from '@mui/icons-material/VerifiedUser';
+
+${SB}
+
+export function MembersProfilePage() {
+ const [editing, setEditing] = useState(false);
+ const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+ const [profile, setProfile] = useState({
+  firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com', phone: '+1 555-0123',
+  bio: 'Active ${p.appName} user since 2025.', joinDate: '2025-06-15', plan: 'Pro',
+ });
+ const [draft, setDraft] = useState({ ...profile });
+
+ const handleSave = () => { setProfile({ ...draft }); setEditing(false); setSnackbar({ open: true, message: 'Profile updated successfully!', severity: 'success' }); };
+ const handleCancel = () => { setDraft({ ...profile }); setEditing(false); };
+
+ return (
+  <Box sx={{ maxWidth: 960, mx: 'auto' }}>
+   <Paper sx={heroSx}>
+    <Box sx={floatingCircle(220, -70, -50)} />
+    <Box sx={floatingCircle(140, 30, 140, 0.05)} />
+    <Box sx={floatingCircle(90, -30, 350, 0.06)} />
+    <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+     <Box sx={{ position: 'relative' }}>
+      <Avatar sx={{ width: 100, height: 100, fontSize: 36, bgcolor: 'rgba(255,255,255,0.2)', border: '3px solid rgba(255,255,255,0.4)', fontWeight: 700 }}>
+       {profile.firstName[0]}{profile.lastName[0]}
+      </Avatar>
+      <IconButton size="small" sx={{ position: 'absolute', bottom: 2, right: 2, bgcolor: 'rgba(255,255,255,0.9)', '&:hover': { bgcolor: '#fff' }, width: 28, height: 28 }}>
+       <PhotoCamera sx={{ fontSize: 14 }} />
+      </IconButton>
+     </Box>
+     <Box sx={{ flex: 1 }}>
+      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>{profile.firstName} {profile.lastName}</Typography>
+      <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+       <Chip icon={<WorkspacePremium sx={{ color: '#fff !important' }} />} label={profile.plan + ' Plan'} size="small"
+        sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 600, backdropFilter: 'blur(4px)' }} />
+       <Chip icon={<CalendarToday sx={{ color: '#fff !important' }} />} label={'Joined ' + new Date(profile.joinDate).toLocaleDateString()} size="small"
+        sx={{ bgcolor: 'rgba(255,255,255,0.15)', color: '#fff', fontWeight: 600 }} />
+      </Box>
+     </Box>
+     <Box>
+      {!editing ? (
+       <Button variant="contained" startIcon={<Edit />} onClick={() => setEditing(true)}
+        sx={{ bgcolor: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)', fontWeight: 600, '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
+        Edit Profile
+       </Button>
+      ) : (
+       <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button variant="contained" startIcon={<Save />} onClick={handleSave}
+         sx={{ bgcolor: COLORS.success, fontWeight: 600, '&:hover': { bgcolor: '#388e3c' } }}>Save</Button>
+        <Button variant="outlined" startIcon={<Cancel />} onClick={handleCancel}
+         sx={{ color: '#fff', borderColor: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>Cancel</Button>
+       </Box>
+      )}
+     </Box>
+    </Box>
+   </Paper>
+
+   <Grid container spacing={3}>
+    <Grid item xs={12} md={8}>
+     <Paper sx={sectionSx}>
+      <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+       <Badge sx={{ color: COLORS.primary }} /> Personal Information
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>Manage your personal details</Typography>
+      <Divider sx={{ mb: 3 }} />
+      <Grid container spacing={2.5}>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth label="First Name" value={editing ? draft.firstName : profile.firstName}
+         onChange={e => setDraft({ ...draft, firstName: e.target.value })} disabled={!editing} />
+       </Grid>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth label="Last Name" value={editing ? draft.lastName : profile.lastName}
+         onChange={e => setDraft({ ...draft, lastName: e.target.value })} disabled={!editing} />
+       </Grid>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth label="Email" value={editing ? draft.email : profile.email}
+         onChange={e => setDraft({ ...draft, email: e.target.value })} disabled={!editing}
+         InputProps={{ startAdornment: <Email sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} /> }} />
+       </Grid>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth label="Phone" value={editing ? draft.phone : profile.phone}
+         onChange={e => setDraft({ ...draft, phone: e.target.value })} disabled={!editing}
+         InputProps={{ startAdornment: <Phone sx={{ mr: 1, color: 'text.secondary', fontSize: 20 }} /> }} />
+       </Grid>
+       <Grid item xs={12}>
+        <TextField fullWidth label="Bio" value={editing ? draft.bio : profile.bio}
+         onChange={e => setDraft({ ...draft, bio: e.target.value })} disabled={!editing} multiline rows={3} />
+       </Grid>
+      </Grid>
+     </Paper>
+    </Grid>
+
+    <Grid item xs={12} md={4}>
+     <Card sx={{ ...cardSx, height: '100%' }}>
+      <CardContent sx={{ p: 3 }}>
+       <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <AccountCircle sx={{ color: COLORS.primary }} /> Account
+       </Typography>
+       <Divider sx={{ mb: 2.5 }} />
+       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        {[
+         { label: 'Plan', value: <Chip label={profile.plan} size="small" sx={{ ...gradientBtnSx, height: 24, fontSize: '0.75rem' }} /> },
+         { label: 'Status', value: <Chip icon={<VerifiedUser sx={{ fontSize: '14px !important', color: COLORS.success + ' !important' }} />} label="Active" size="small" sx={{ bgcolor: COLORS.success + '15', color: COLORS.success, fontWeight: 600 }} /> },
+         { label: 'Member Since', value: <Typography variant="body2" fontWeight={600}>{new Date(profile.joinDate).toLocaleDateString()}</Typography> },
+        ].map((row, i) => (
+         <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography sx={statLabelSx}>{row.label}</Typography>
+          {row.value}
+         </Box>
+        ))}
+       </Box>
+      </CardContent>
+     </Card>
+    </Grid>
+   </Grid>
+
+   <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+    <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
+   </Snackbar>
+  </Box>
+ );
+}`;
+}
+
+// ============================================================================
+// SETTINGS PAGE
+// ============================================================================
 
 export function settingsTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
- return`import { useState } from'react';
+ const SB = sharedBlock(p.primaryColor, sec);
+ return `import { useState } from 'react';
 import {
- Box, Typography, Paper, Grid, Switch, FormControlLabel,
+ Box, Typography, Paper, Grid, Switch,
  Button, Divider, Select, MenuItem, FormControl, InputLabel,
- Snackbar, Alert, Chip, Card, CardContent,
-} from'@mui/material';
-import Settings from'@mui/icons-material/Settings';
-import Notifications from'@mui/icons-material/Notifications';
-import Lock from'@mui/icons-material/Lock';
-import Palette from'@mui/icons-material/Palette';
-import Language from'@mui/icons-material/Language';
-import Save from'@mui/icons-material/Save';
-import Security from'@mui/icons-material/Security';
-import Visibility from'@mui/icons-material/Visibility';
-import DarkMode from'@mui/icons-material/DarkMode';
-import DeleteForever from'@mui/icons-material/DeleteForever';
+ Snackbar, Alert, Chip, Avatar,
+} from '@mui/material';
+import Settings from '@mui/icons-material/Settings';
+import Palette from '@mui/icons-material/Palette';
+import Save from '@mui/icons-material/Save';
+import DeleteForever from '@mui/icons-material/DeleteForever';
+import Shield from '@mui/icons-material/Shield';
+import NotificationsActive from '@mui/icons-material/NotificationsActive';
+
+${SB}
 
 export function MembersSettingsPage() {
  const [snackbar, setSnackbar] = useState(false);
  const [settings, setSettings] = useState({
- emailNotifications: true,
- pushNotifications: false,
- marketingEmails: false,
- weeklyDigest: true,
- theme:'light',
- language:'en',
- profileVisibility:'public',
- twoFactor: false,
- loginAlerts: true,
- dataSharing: false,
+  emailNotifications: true, pushNotifications: false, marketingEmails: false, weeklyDigest: true,
+  theme: 'light', language: 'en', profileVisibility: 'public', twoFactor: false, loginAlerts: true, dataSharing: false,
  });
-
  const update = (key: string, value: any) => setSettings(s => ({ ...s, [key]: value }));
  const handleSave = () => setSnackbar(true);
 
- const Section = ({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) => (
- <Paper sx={{ p: 3, borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', mb: 3 }}>
- <Typography variant="h6" fontWeight={600} sx={{ mb: 1, display:'flex', alignItems:'center', gap: 1 }}>{icon} {title}</Typography>
- <Divider sx={{ mb: 2 }} />{children}
- </Paper>
+ const Section = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }) => (
+  <Paper sx={sectionSx}>
+   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+    <Avatar sx={{ width: 36, height: 36, bgcolor: COLORS.tint, color: COLORS.primary }}>{icon}</Avatar>
+    <Box>
+     <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem' }}>{title}</Typography>
+     {subtitle && <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>{subtitle}</Typography>}
+    </Box>
+   </Box>
+   <Divider sx={{ my: 2 }} />
+   {children}
+  </Paper>
+ );
+
+ const SettingRow = ({ label, sub, control }: { label: string; sub?: string; control: React.ReactNode }) => (
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, px: 1, borderRadius: 2,
+   transition: 'all 0.15s', '&:hover': { bgcolor: COLORS.tint } }}>
+   <Box>
+    <Typography variant="body2" fontWeight={600}>{label}</Typography>
+    {sub && <Typography variant="caption" color="text.secondary">{sub}</Typography>}
+   </Box>
+   {control}
+  </Box>
  );
 
  return (
- <Box sx={{ maxWidth: 800, mx:'auto' }}>
- <Paper sx={{
- p: 3, mb: 3, borderRadius: 3,
- background:'linear-gradient(135deg, ${p.primaryColor} 0%, ${sec} 100%)',
- color:'#fff',
- }}>
- <Typography variant="h4" fontWeight={700} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Settings /> Settings
- </Typography>
- <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>Manage your ${p.appName} account preferences</Typography>
- </Paper>
+  <Box sx={{ maxWidth: 840, mx: 'auto' }}>
+   <Paper sx={heroSx}>
+    <Box sx={floatingCircle(180, -50, -30)} />
+    <Box sx={floatingCircle(100, 10, 100, 0.05)} />
+    <Box sx={{ position: 'relative', zIndex: 1 }}>
+     <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Settings /> Settings
+     </Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Manage your ${p.appName} account preferences</Typography>
+    </Box>
+   </Paper>
 
- <Section icon={<Notifications sx={{ color:'${p.primaryColor}' }} />} title="Notifications">
- <Box sx={{ display:'flex', flexDirection:'column', gap: 1 }}>
- <FormControlLabel control={<Switch checked={settings.emailNotifications} onChange={e => update('emailNotifications', e.target.checked)} />} label="Email notifications" />
- <FormControlLabel control={<Switch checked={settings.pushNotifications} onChange={e => update('pushNotifications', e.target.checked)} />} label="Push notifications" />
- <FormControlLabel control={<Switch checked={settings.weeklyDigest} onChange={e => update('weeklyDigest', e.target.checked)} />} label="Weekly digest email" />
- <FormControlLabel control={<Switch checked={settings.marketingEmails} onChange={e => update('marketingEmails', e.target.checked)} />} label="Marketing & product updates" />
- </Box>
- </Section>
+   <Section icon={<NotificationsActive />} title="Notifications" subtitle="Choose how you want to be notified">
+    <SettingRow label="Email notifications" sub="Get notified about important updates" control={<Switch checked={settings.emailNotifications} onChange={e => update('emailNotifications', e.target.checked)} />} />
+    <SettingRow label="Push notifications" sub="Browser push notifications" control={<Switch checked={settings.pushNotifications} onChange={e => update('pushNotifications', e.target.checked)} />} />
+    <SettingRow label="Weekly digest" sub="Summary of activity each week" control={<Switch checked={settings.weeklyDigest} onChange={e => update('weeklyDigest', e.target.checked)} />} />
+    <SettingRow label="Marketing emails" sub="Product updates and offers" control={<Switch checked={settings.marketingEmails} onChange={e => update('marketingEmails', e.target.checked)} />} />
+   </Section>
 
- <Section icon={<Palette sx={{ color:'${p.primaryColor}' }} />} title="Appearance">
- <Grid container spacing={2}>
- <Grid item xs={12} sm={6}>
- <FormControl fullWidth size="small">
- <InputLabel><DarkMode sx={{ fontSize: 16, mr: 0.5 }} /> Theme</InputLabel>
- <Select value={settings.theme} label="Theme" onChange={e => update('theme', e.target.value)}>
- <MenuItem value="light">Light</MenuItem>
- <MenuItem value="dark">Dark</MenuItem>
- <MenuItem value="system">System</MenuItem>
- </Select>
- </FormControl>
- </Grid>
- <Grid item xs={12} sm={6}>
- <FormControl fullWidth size="small">
- <InputLabel><Language sx={{ fontSize: 16, mr: 0.5 }} /> Language</InputLabel>
- <Select value={settings.language} label="Language" onChange={e => update('language', e.target.value)}>
- <MenuItem value="en">English</MenuItem>
- <MenuItem value="es">Español</MenuItem>
- <MenuItem value="fr">Français</MenuItem>
- <MenuItem value="de">Deutsch</MenuItem>
- </Select>
- </FormControl>
- </Grid>
- </Grid>
- </Section>
+   <Section icon={<Palette />} title="Appearance" subtitle="Customise how the app looks">
+    <Grid container spacing={2.5}>
+     <Grid item xs={12} sm={6}>
+      <FormControl fullWidth>
+       <InputLabel>Theme</InputLabel>
+       <Select value={settings.theme} label="Theme" onChange={e => update('theme', e.target.value)}>
+        <MenuItem value="light">Light</MenuItem>
+        <MenuItem value="dark">Dark</MenuItem>
+        <MenuItem value="system">System</MenuItem>
+       </Select>
+      </FormControl>
+     </Grid>
+     <Grid item xs={12} sm={6}>
+      <FormControl fullWidth>
+       <InputLabel>Language</InputLabel>
+       <Select value={settings.language} label="Language" onChange={e => update('language', e.target.value)}>
+        <MenuItem value="en">English</MenuItem>
+        <MenuItem value="es">Espanol</MenuItem>
+        <MenuItem value="fr">Francais</MenuItem>
+        <MenuItem value="de">Deutsch</MenuItem>
+       </Select>
+      </FormControl>
+     </Grid>
+    </Grid>
+   </Section>
 
- <Section icon={<Security sx={{ color:'${p.primaryColor}' }} />} title="Privacy & Security">
- <Box sx={{ display:'flex', flexDirection:'column', gap: 1 }}>
- <FormControlLabel control={<Switch checked={settings.twoFactor} onChange={e => update('twoFactor', e.target.checked)} />} label="Two-factor authentication" />
- <FormControlLabel control={<Switch checked={settings.loginAlerts} onChange={e => update('loginAlerts', e.target.checked)} />} label="Login alerts" />
- <FormControlLabel control={<Switch checked={settings.dataSharing} onChange={e => update('dataSharing', e.target.checked)} />} label="Data sharing with third parties" />
- <Box sx={{ display:'flex', alignItems:'center', gap: 1, mt: 1 }}>
- <Visibility sx={{ color:'text.secondary', fontSize: 20 }} />
- <Typography variant="body2" color="text.secondary">Profile visibility:</Typography>
- <Chip label={settings.profileVisibility} size="small" color={settings.profileVisibility ==='public' ?'success' :'default'}
- onClick={() => update('profileVisibility', settings.profileVisibility ==='public' ?'private' :'public')} />
- </Box>
- </Box>
- </Section>
+   <Section icon={<Shield />} title="Privacy & Security" subtitle="Control your account security">
+    <SettingRow label="Two-factor authentication" sub="Add an extra layer of security" control={<Switch checked={settings.twoFactor} onChange={e => update('twoFactor', e.target.checked)} />} />
+    <SettingRow label="Login alerts" sub="Get notified of new sign-ins" control={<Switch checked={settings.loginAlerts} onChange={e => update('loginAlerts', e.target.checked)} />} />
+    <SettingRow label="Data sharing" sub="Share anonymised usage data" control={<Switch checked={settings.dataSharing} onChange={e => update('dataSharing', e.target.checked)} />} />
+    <SettingRow label="Profile visibility" sub="Who can see your profile" control={
+     <Chip label={settings.profileVisibility} size="small"
+      sx={{ cursor: 'pointer', fontWeight: 600, bgcolor: settings.profileVisibility === 'public' ? COLORS.success + '15' : 'grey.200', color: settings.profileVisibility === 'public' ? COLORS.success : 'text.secondary' }}
+      onClick={() => update('profileVisibility', settings.profileVisibility === 'public' ? 'private' : 'public')} />
+    } />
+   </Section>
 
- <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
- <Button variant="outlined" color="error" startIcon={<DeleteForever />}>Delete Account</Button>
- <Button variant="contained" startIcon={<Save />} onClick={handleSave}
- sx={{ bgcolor:'${p.primaryColor}','&:hover': { bgcolor:'${sec}' } }}>
- Save Changes
- </Button>
- </Box>
+   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+    <Button variant="outlined" color="error" startIcon={<DeleteForever />}
+     sx={{ fontWeight: 600, borderColor: COLORS.error + '40', color: COLORS.error, '&:hover': { bgcolor: COLORS.error + '08', borderColor: COLORS.error } }}>
+     Delete Account
+    </Button>
+    <Button variant="contained" startIcon={<Save />} onClick={handleSave} sx={gradientBtnSx}>Save Changes</Button>
+   </Box>
 
- <Snackbar open={snackbar} autoHideDuration={4000} onClose={() => setSnackbar(false)}>
- <Alert severity="success" onClose={() => setSnackbar(false)}>Settings saved successfully!</Alert>
- </Snackbar>
- </Box>
+   <Snackbar open={snackbar} autoHideDuration={4000} onClose={() => setSnackbar(false)}>
+    <Alert severity="success" onClose={() => setSnackbar(false)}>Settings saved successfully!</Alert>
+   </Snackbar>
+  </Box>
  );
 }`;
 }
 
-// --- Admin Page (Analytics + Contact Submissions) ----------------------------
+// ============================================================================
+// ADMIN PAGE (Analytics + Contact Submissions)
+// ============================================================================
 
 export function adminTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
- return`import { useEffect, useState, useCallback } from'react';
+ const SB = sharedBlock(p.primaryColor, sec);
+ return `import { useEffect, useState, useCallback } from 'react';
 import {
  Box, Typography, Paper, Grid, Card, CardContent, Chip, Button,
  Table, TableHead, TableRow, TableCell, TableBody, Tabs, Tab,
  Avatar, Skeleton, LinearProgress, Alert, Snackbar, IconButton,
- Tooltip, Menu, MenuItem,
-} from'@mui/material';
-import Dashboard from'@mui/icons-material/Dashboard';
-import People from'@mui/icons-material/People';
-import TrendingUp from'@mui/icons-material/TrendingUp';
-import AttachMoney from'@mui/icons-material/AttachMoney';
-import Visibility from'@mui/icons-material/Visibility';
-import Refresh from'@mui/icons-material/Refresh';
-import Email from'@mui/icons-material/Email';
-import MarkEmailRead from'@mui/icons-material/MarkEmailRead';
-import Delete from'@mui/icons-material/Delete';
-import MoreVert from'@mui/icons-material/MoreVert';
-import Inbox from'@mui/icons-material/Inbox';
-import FiberNew from'@mui/icons-material/FiberNew';
+ Menu, MenuItem,
+} from '@mui/material';
+import Dashboard from '@mui/icons-material/Dashboard';
+import People from '@mui/icons-material/People';
+import TrendingUp from '@mui/icons-material/TrendingUp';
+import AttachMoney from '@mui/icons-material/AttachMoney';
+import Visibility from '@mui/icons-material/Visibility';
+import Refresh from '@mui/icons-material/Refresh';
+import Email from '@mui/icons-material/Email';
+import MarkEmailRead from '@mui/icons-material/MarkEmailRead';
+import Delete from '@mui/icons-material/Delete';
+import MoreVert from '@mui/icons-material/MoreVert';
+import Inbox from '@mui/icons-material/Inbox';
+import FiberNew from '@mui/icons-material/FiberNew';
+import Analytics from '@mui/icons-material/Analytics';
 
-const API_BASE = window.location.origin.includes('localhost') ?'http://localhost:3000' :'';
+const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
+
+${SB}
 
 interface AppStats { app_id: number; name: string; active_subscriptions: number; total_subscriptions: number; total_revenue: number; created_at: string; }
-interface Analytics { app_id: number; total_page_views: number; unique_visitors: number; page_stats: Record<string, number>; views_by_date: Record<string, number>; recent_views: any[]; }
+interface AnalyticsData { app_id: number; total_page_views: number; unique_visitors: number; page_stats: Record<string, number>; views_by_date: Record<string, number>; recent_views: any[]; }
 interface ContactSubmission { id: number; app_id?: number; name: string; email: string; subject: string; message: string; status: 'new' | 'read' | 'replied' | 'archived'; created_at: string; }
 
 export function MembersAdminPage() {
  const [tab, setTab] = useState(0);
  const [loading, setLoading] = useState(true);
  const [stats, setStats] = useState<AppStats | null>(null);
- const [analytics, setAnalytics] = useState<Analytics | null>(null);
+ const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
  const [contacts, setContacts] = useState<ContactSubmission[]>([]);
- const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
+ const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement | null; id: number | null }>({ el: null, id: null });
 
  const fetchAll = useCallback(async () => {
- setLoading(true);
- try {
- const [statsRes, analyticsRes, contactRes] = await Promise.all([
- fetch(\`\${API_BASE}/api/apps/${p.appId}/stats\`).then(r => r.json()).catch(() => null),
- fetch(\`\${API_BASE}/api/analytics/app/${p.appId}\`).then(r => r.json()).catch(() => null),
- fetch(\`\${API_BASE}/api/contact?app_id=${p.appId}\`).then(r => r.json()).catch(() => ({ data: [] })),
- ]);
- if (statsRes) setStats(statsRes);
- if (analyticsRes) setAnalytics(analyticsRes);
- setContacts(Array.isArray(contactRes?.data) ? contactRes.data : []);
- } catch (e) {
- setSnackbar({ open: true, message:'Failed to load some data', severity:'error' });
- } finally {
- setLoading(false);
- }
+  setLoading(true);
+  try {
+   const [sRes, aRes, cRes] = await Promise.all([
+    fetch(API + '/api/apps/${p.appId}/stats').then(r => r.json()).catch(() => null),
+    fetch(API + '/api/analytics/app/${p.appId}').then(r => r.json()).catch(() => null),
+    fetch(API + '/api/contact?app_id=${p.appId}').then(r => r.json()).catch(() => ({ data: [] })),
+   ]);
+   if (sRes) setStats(sRes);
+   if (aRes) setAnalytics(aRes);
+   setContacts(Array.isArray(cRes?.data) ? cRes.data : []);
+  } catch (e) {
+   setSnackbar({ open: true, message: 'Failed to load some data', severity: 'error' });
+  } finally { setLoading(false); }
  }, []);
 
  useEffect(() => { fetchAll(); }, [fetchAll]);
 
- const updateContactStatus = async (id: number, status: string) => {
- try {
- await fetch(\`\${API_BASE}/api/contact/\${id}/status\`, {
- method:'POST', headers: {'Content-Type':'application/json' }, body: JSON.stringify({ status }),
- });
- setContacts(prev => prev.map(c => c.id === id ? { ...c, status: status as any } : c));
- setSnackbar({ open: true, message:\`Marked as \${status}\`, severity:'success' });
- } catch { setSnackbar({ open: true, message:'Failed to update status', severity:'error' }); }
- setMenuAnchor({ el: null, id: null });
+ const updateStatus = async (id: number, status: string) => {
+  try {
+   await fetch(API + '/api/contact/' + id + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+   setContacts(prev => prev.map(c => c.id === id ? { ...c, status: status as any } : c));
+   setSnackbar({ open: true, message: 'Marked as ' + status, severity: 'success' });
+  } catch { setSnackbar({ open: true, message: 'Failed to update status', severity: 'error' }); }
+  setMenuAnchor({ el: null, id: null });
  };
 
  const deleteContact = async (id: number) => {
- try {
- await fetch(\`\${API_BASE}/api/contact/\${id}\`, { method:'DELETE' });
- setContacts(prev => prev.filter(c => c.id !== id));
- setSnackbar({ open: true, message:'Submission deleted', severity:'success' });
- } catch { setSnackbar({ open: true, message:'Failed to delete', severity:'error' }); }
- setMenuAnchor({ el: null, id: null });
+  try {
+   await fetch(API + '/api/contact/' + id, { method: 'DELETE' });
+   setContacts(prev => prev.filter(c => c.id !== id));
+   setSnackbar({ open: true, message: 'Submission deleted', severity: 'success' });
+  } catch { setSnackbar({ open: true, message: 'Failed to delete', severity: 'error' }); }
+  setMenuAnchor({ el: null, id: null });
  };
 
- const statusColor = (s: string) => s ==='new' ?'error' : s ==='read' ?'info' : s ==='replied' ?'success' :'default';
-
- const StatCard = ({ icon, label, value, color, sub }: { icon: React.ReactNode; label: string; value: string | number; color: string; sub?: string }) => (
- <Card sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', position:'relative', overflow:'hidden' }}>
- <Box sx={{ position:'absolute', top: 0, left: 0, width: 4, height:'100%', bgcolor: color }} />
- <CardContent sx={{ pl: 3 }}>
- <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
- <Box>
- <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>{label}</Typography>
- <Typography variant="h4" fontWeight={700}>{value}</Typography>
- {sub && <Typography variant="caption" color="text.secondary">{sub}</Typography>}
- </Box>
- <Avatar sx={{ bgcolor: color +'20', color }}>{icon}</Avatar>
- </Box>
- </CardContent>
- </Card>
- );
+ const chipColor = (s: string) => s === 'new' ? 'error' : s === 'read' ? 'info' : s === 'replied' ? 'success' : 'default';
 
  if (loading) {
- return (
- <Box sx={{ p: 2 }}>
- <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 3, mb: 3 }} />
- <Grid container spacing={2}>
- {[1,2,3,4].map(i => <Grid item xs={12} sm={6} md={3} key={i}><Skeleton variant="rectangular" height={120} sx={{ borderRadius: 3 }} /></Grid>)}
- </Grid>
- <Skeleton variant="rectangular" height={300} sx={{ borderRadius: 3, mt: 3 }} />
- </Box>
- );
+  return (
+   <Box>
+    <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 4, mb: 4 }} />
+    <Grid container spacing={2.5}>
+     {[1,2,3,4].map(i => <Grid item xs={12} sm={6} md={3} key={i}><Skeleton variant="rectangular" height={130} sx={{ borderRadius: 4 }} /></Grid>)}
+    </Grid>
+    <Skeleton variant="rectangular" height={300} sx={{ borderRadius: 4, mt: 4 }} />
+   </Box>
+  );
  }
 
- const newContacts = contacts.filter(c => c.status ==='new').length;
+ const newC = contacts.filter(c => c.status === 'new').length;
 
  return (
- <Box>
- {/* Header */}
- <Paper sx={{
- p: 3, mb: 3, borderRadius: 3,
- background:'linear-gradient(135deg, ${p.primaryColor} 0%, ${sec} 100%)',
- color:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center',
- }}>
- <Box>
- <Typography variant="h4" fontWeight={700} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Dashboard /> ${p.appName} Admin
- </Typography>
- <Typography variant="body2" sx={{ opacity: 0.85 }}>Analytics & contact form submissions</Typography>
- </Box>
- <Button variant="contained" startIcon={<Refresh />} onClick={fetchAll}
- sx={{ bgcolor:'rgba(255,255,255,0.2)','&:hover': { bgcolor:'rgba(255,255,255,0.3)' } }}>
- Refresh
- </Button>
- </Paper>
+  <Box>
+   <Paper sx={heroSx}>
+    <Box sx={floatingCircle(220, -70, -50)} />
+    <Box sx={floatingCircle(140, 30, 140, 0.05)} />
+    <Box sx={floatingCircle(90, -30, 350, 0.06)} />
+    <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+     <Box>
+      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
+       <Dashboard /> ${p.appName} Admin
+      </Typography>
+      <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Analytics and contact form submissions</Typography>
+     </Box>
+     <Button variant="contained" startIcon={<Refresh />} onClick={fetchAll}
+      sx={{ bgcolor: 'rgba(255,255,255,0.2)', fontWeight: 600, backdropFilter: 'blur(4px)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
+      Refresh
+     </Button>
+    </Box>
+   </Paper>
 
- {/* KPI Cards */}
- <Grid container spacing={2} sx={{ mb: 3 }}>
- <Grid item xs={12} sm={6} md={3}>
- <StatCard icon={<People />} label="Active Users" value={stats?.active_subscriptions ?? 0} color="${p.primaryColor}" sub={\`\${stats?.total_subscriptions ?? 0} total\`} />
- </Grid>
- <Grid item xs={12} sm={6} md={3}>
- <StatCard icon={<Visibility />} label="Page Views" value={analytics?.total_page_views ?? 0} color="#2196f3" sub={\`\${analytics?.unique_visitors ?? 0} unique visitors\`} />
- </Grid>
- <Grid item xs={12} sm={6} md={3}>
- <StatCard icon={<AttachMoney />} label="Revenue" value={'$' + (stats?.total_revenue ?? 0).toLocaleString()} color="#4caf50" />
- </Grid>
- <Grid item xs={12} sm={6} md={3}>
- <StatCard icon={<Email />} label="Contact Messages" value={contacts.length} color={newContacts > 0 ?'#ff9800' :'#9c27b0'} sub={newContacts > 0 ? \`\${newContacts} new\` :'All read'} />
- </Grid>
- </Grid>
+   <Grid container spacing={2.5} sx={{ mb: 4 }}>
+    {[
+     { label: 'Active Users', value: stats?.active_subscriptions ?? 0, icon: <People />, color: COLORS.primary, sub: (stats?.total_subscriptions ?? 0) + ' total' },
+     { label: 'Page Views', value: analytics?.total_page_views ?? 0, icon: <Visibility />, color: COLORS.blue, sub: (analytics?.unique_visitors ?? 0) + ' unique' },
+     { label: 'Revenue', value: '$' + (stats?.total_revenue ?? 0).toLocaleString(), icon: <AttachMoney />, color: COLORS.success },
+     { label: 'Messages', value: contacts.length, icon: <Email />, color: newC > 0 ? COLORS.warning : COLORS.purple, sub: newC > 0 ? newC + ' new' : 'All read' },
+    ].map((s, i) => (
+     <Grid item xs={12} sm={6} md={3} key={i}>
+      <Card sx={cardSx}>
+       <CardContent sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+         <Avatar sx={{ width: 44, height: 44, bgcolor: s.color + '15', color: s.color }}>{s.icon}</Avatar>
+         {s.sub && <Chip label={s.sub} size="small" sx={{ fontSize: '0.7rem', fontWeight: 600, bgcolor: s.color + '10', color: s.color }} />}
+        </Box>
+        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', mb: 0.25 }}>{s.value}</Typography>
+        <Typography sx={statLabelSx}>{s.label}</Typography>
+       </CardContent>
+      </Card>
+     </Grid>
+    ))}
+   </Grid>
 
- {/* Tabs */}
- <Paper sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
- <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom:'1px solid rgba(0,0,0,0.06)', px: 2 }}>
- <Tab icon={<TrendingUp />} label="Analytics" iconPosition="start" />
- <Tab icon={<Email />} label={\`Contact (\${contacts.length})\`} iconPosition="start" />
- </Tabs>
+   <Paper sx={{ ...sectionSx, p: 0 }}>
+    <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, borderBottom: '1px solid ' + COLORS.border }}>
+     <Tab icon={<Analytics />} label="Analytics" iconPosition="start" sx={{ fontWeight: 600, textTransform: 'none' }} />
+     <Tab icon={<Email />} label={'Messages (' + contacts.length + ')'} iconPosition="start" sx={{ fontWeight: 600, textTransform: 'none' }} />
+    </Tabs>
 
- <Box sx={{ p: 3 }}>
- {/* Analytics Tab */}
- {tab === 0 && (
- <Box>
- <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Page Performance</Typography>
- {analytics?.page_stats && Object.keys(analytics.page_stats).length > 0 ? (
- <Table size="small">
- <TableHead><TableRow sx={{ bgcolor:'grey.50' }}>
- <TableCell><Typography fontWeight={600}>Page</Typography></TableCell>
- <TableCell align="right"><Typography fontWeight={600}>Views</Typography></TableCell>
- <TableCell align="right"><Typography fontWeight={600}>Share</Typography></TableCell>
- </TableRow></TableHead>
- <TableBody>
- {Object.entries(analytics.page_stats).map(([page, views]) => {
- const total = analytics.total_page_views || 1;
- const pct = Math.round(((views as number) / total) * 100);
- return (
- <TableRow key={page} sx={{'&:nth-of-type(even)': { bgcolor:'grey.50' } }}>
- <TableCell>{page}</TableCell>
- <TableCell align="right"><Typography fontWeight={500}>{(views as number).toLocaleString()}</Typography></TableCell>
- <TableCell align="right">
- <Box sx={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap: 1 }}>
- <LinearProgress variant="determinate" value={pct} sx={{ width: 60, height: 6, borderRadius: 3 }} />
- <Typography variant="body2">{pct}%</Typography>
- </Box>
- </TableCell>
- </TableRow>
- );
- })}
- </TableBody>
- </Table>
- ) : (
- <Box sx={{ textAlign:'center', py: 4 }}>
- <TrendingUp sx={{ fontSize: 48, color:'text.disabled' }} />
- <Typography color="text.secondary">No analytics data yet</Typography>
- </Box>
- )}
- </Box>
- )}
+    <Box sx={{ p: 3 }}>
+     {tab === 0 && (
+      <Box>
+       <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 2 }}>Page Performance</Typography>
+       {analytics?.page_stats && Object.keys(analytics.page_stats).length > 0 ? (
+        <Table size="small">
+         <TableHead>
+          <TableRow>
+           <TableCell sx={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Page</TableCell>
+           <TableCell align="right" sx={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Views</TableCell>
+           <TableCell align="right" sx={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Share</TableCell>
+          </TableRow>
+         </TableHead>
+         <TableBody>
+          {Object.entries(analytics.page_stats).map(([page, views]) => {
+           const total = analytics.total_page_views || 1;
+           const pct = Math.round(((views as number) / total) * 100);
+           return (
+            <TableRow key={page} sx={{ transition: 'all 0.15s', '&:hover': { bgcolor: COLORS.tint } }}>
+             <TableCell><Typography variant="body2" fontWeight={600}>{page}</Typography></TableCell>
+             <TableCell align="right"><Typography variant="body2" fontWeight={700}>{(views as number).toLocaleString()}</Typography></TableCell>
+             <TableCell align="right">
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5 }}>
+               <LinearProgress variant="determinate" value={pct} sx={{ width: 80, height: 6, borderRadius: 3, bgcolor: COLORS.border,
+                '& .MuiLinearProgress-bar': { borderRadius: 3, background: 'linear-gradient(90deg, ${p.primaryColor}, ${sec})' } }} />
+               <Typography variant="body2" fontWeight={600} sx={{ minWidth: 32 }}>{pct}%</Typography>
+              </Box>
+             </TableCell>
+            </TableRow>
+           );
+          })}
+         </TableBody>
+        </Table>
+       ) : (
+        <Box sx={{ textAlign: 'center', py: 6, border: '2px dashed ' + COLORS.border, borderRadius: 3 }}>
+         <TrendingUp sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+         <Typography fontWeight={600} color="text.secondary">No analytics data yet</Typography>
+         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Data will appear as users visit your pages</Typography>
+        </Box>
+       )}
+      </Box>
+     )}
 
- {/* Contact Submissions Tab */}
- {tab === 1 && (
- <Box>
- {contacts.length > 0 ? (
- <Table size="small">
- <TableHead><TableRow sx={{ bgcolor:'grey.50' }}>
- <TableCell><Typography fontWeight={600}>Name</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Email</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Subject</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Status</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Date</Typography></TableCell>
- <TableCell align="center"><Typography fontWeight={600}>Actions</Typography></TableCell>
- </TableRow></TableHead>
- <TableBody>
- {contacts.map(c => (
- <TableRow key={c.id} sx={{'&:nth-of-type(even)': { bgcolor:'grey.50' }, bgcolor: c.status ==='new' ?'rgba(255,152,0,0.04)' : undefined }}>
- <TableCell>
- <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- {c.status ==='new' && <FiberNew sx={{ color:'#ff9800', fontSize: 18 }} />}
- <Typography variant="body2" fontWeight={c.status ==='new' ? 600 : 400}>{c.name}</Typography>
- </Box>
- </TableCell>
- <TableCell><Typography variant="body2">{c.email}</Typography></TableCell>
- <TableCell><Typography variant="body2" sx={{ maxWidth: 200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.subject}</Typography></TableCell>
- <TableCell><Chip size="small" label={c.status} color={statusColor(c.status) as any} /></TableCell>
- <TableCell><Typography variant="body2">{new Date(c.created_at).toLocaleDateString()}</Typography></TableCell>
- <TableCell align="center">
- <IconButton size="small" onClick={e => setMenuAnchor({ el: e.currentTarget, id: c.id })}><MoreVert /></IconButton>
- </TableCell>
- </TableRow>
- ))}
- </TableBody>
- </Table>
- ) : (
- <Box sx={{ textAlign:'center', py: 4 }}>
- <Inbox sx={{ fontSize: 48, color:'text.disabled' }} />
- <Typography color="text.secondary">No contact submissions yet</Typography>
- <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Messages from your contact form will appear here</Typography>
- </Box>
- )}
+     {tab === 1 && (
+      <Box>
+       {contacts.length > 0 ? (
+        <Table size="small">
+         <TableHead>
+          <TableRow>
+           {['Name','Email','Subject','Status','Date',''].map((h, i) => (
+            <TableCell key={i} align={i === 5 ? 'center' : 'left'}
+             sx={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>{h}</TableCell>
+           ))}
+          </TableRow>
+         </TableHead>
+         <TableBody>
+          {contacts.map(c => (
+           <TableRow key={c.id} sx={{ transition: 'all 0.15s', '&:hover': { bgcolor: COLORS.tint }, bgcolor: c.status === 'new' ? COLORS.warning + '06' : undefined }}>
+            <TableCell>
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {c.status === 'new' && <FiberNew sx={{ color: COLORS.warning, fontSize: 18 }} />}
+              <Typography variant="body2" fontWeight={c.status === 'new' ? 700 : 500}>{c.name}</Typography>
+             </Box>
+            </TableCell>
+            <TableCell><Typography variant="body2" color="text.secondary">{c.email}</Typography></TableCell>
+            <TableCell><Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</Typography></TableCell>
+            <TableCell><Chip size="small" label={c.status} color={chipColor(c.status) as any} sx={{ fontWeight: 600, fontSize: '0.7rem' }} /></TableCell>
+            <TableCell><Typography variant="body2" color="text.secondary">{new Date(c.created_at).toLocaleDateString()}</Typography></TableCell>
+            <TableCell align="center">
+             <IconButton size="small" onClick={e => setMenuAnchor({ el: e.currentTarget, id: c.id })} sx={{ '&:hover': { bgcolor: COLORS.tint } }}><MoreVert /></IconButton>
+            </TableCell>
+           </TableRow>
+          ))}
+         </TableBody>
+        </Table>
+       ) : (
+        <Box sx={{ textAlign: 'center', py: 6, border: '2px dashed ' + COLORS.border, borderRadius: 3 }}>
+         <Inbox sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+         <Typography fontWeight={600} color="text.secondary">No contact submissions yet</Typography>
+         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Messages from your contact form will appear here</Typography>
+        </Box>
+       )}
 
- {/* Status action menu */}
- <Menu anchorEl={menuAnchor.el} open={Boolean(menuAnchor.el)} onClose={() => setMenuAnchor({ el: null, id: null })}>
- <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'read')}><MarkEmailRead sx={{ mr: 1, fontSize: 18 }} /> Mark as Read</MenuItem>
- <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'replied')}><Email sx={{ mr: 1, fontSize: 18 }} /> Mark as Replied</MenuItem>
- <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'archived')}><Inbox sx={{ mr: 1, fontSize: 18 }} /> Archive</MenuItem>
- <MenuItem onClick={() => menuAnchor.id && deleteContact(menuAnchor.id)} sx={{ color:'error.main' }}><Delete sx={{ mr: 1, fontSize: 18 }} /> Delete</MenuItem>
- </Menu>
- </Box>
- )}
- </Box>
- </Paper>
+       <Menu anchorEl={menuAnchor.el} open={Boolean(menuAnchor.el)} onClose={() => setMenuAnchor({ el: null, id: null })}>
+        <MenuItem onClick={() => menuAnchor.id && updateStatus(menuAnchor.id, 'read')}><MarkEmailRead sx={{ mr: 1.5, fontSize: 18, color: COLORS.blue }} /> Mark as Read</MenuItem>
+        <MenuItem onClick={() => menuAnchor.id && updateStatus(menuAnchor.id, 'replied')}><Email sx={{ mr: 1.5, fontSize: 18, color: COLORS.success }} /> Mark as Replied</MenuItem>
+        <MenuItem onClick={() => menuAnchor.id && updateStatus(menuAnchor.id, 'archived')}><Inbox sx={{ mr: 1.5, fontSize: 18, color: COLORS.purple }} /> Archive</MenuItem>
+        <MenuItem onClick={() => menuAnchor.id && deleteContact(menuAnchor.id)} sx={{ color: COLORS.error }}><Delete sx={{ mr: 1.5, fontSize: 18 }} /> Delete</MenuItem>
+       </Menu>
+      </Box>
+     )}
+    </Box>
+   </Paper>
 
- <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
- <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
- </Snackbar>
- </Box>
+   <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+    <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
+   </Snackbar>
+  </Box>
  );
 }`;
 }
 
-// --- Contact Form Page -------------------------------------------------------
+// ============================================================================
+// CONTACT FORM PAGE
+// ============================================================================
 
 export function contactFormTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
- return`import { useState } from'react';
+ const SB = sharedBlock(p.primaryColor, sec);
+ return `import { useState } from 'react';
 import {
  Box, Typography, Paper, TextField, Button, Snackbar, Alert,
- CircularProgress, Grid,
-} from'@mui/material';
-import Email from'@mui/icons-material/Email';
-import Send from'@mui/icons-material/Send';
-import CheckCircle from'@mui/icons-material/CheckCircle';
+ CircularProgress, Grid, Avatar, Card, CardContent,
+} from '@mui/material';
+import Email from '@mui/icons-material/Email';
+import Send from '@mui/icons-material/Send';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import AccessTime from '@mui/icons-material/AccessTime';
+import Chat from '@mui/icons-material/Chat';
+import SupportAgent from '@mui/icons-material/SupportAgent';
 
-const API_BASE = window.location.origin.includes('localhost') ?'http://localhost:3000' :'';
+const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
+
+${SB}
 
 export function MembersContactPage() {
- const [form, setForm] = useState({ name:'', email:'', subject:'', message:'' });
+ const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
  const [sending, setSending] = useState(false);
  const [sent, setSent] = useState(false);
- const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
+ const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
 
  const handleSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- if (!form.name || !form.email || !form.message) {
- setSnackbar({ open: true, message:'Please fill in all required fields', severity:'error' });
- return;
- }
- setSending(true);
- try {
- const res = await fetch(\`\${API_BASE}/api/contact\`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({ ...form, app_id: ${p.appId} }),
- });
- if (!res.ok) throw new Error('Failed');
- setSent(true);
- setForm({ name:'', email:'', subject:'', message:'' });
- setSnackbar({ open: true, message:'Message sent successfully!', severity:'success' });
- } catch {
- setSnackbar({ open: true, message:'Failed to send message. Please try again.', severity:'error' });
- } finally {
- setSending(false);
- }
+  e.preventDefault();
+  if (!form.name || !form.email || !form.message) {
+   setSnackbar({ open: true, message: 'Please fill in all required fields', severity: 'error' });
+   return;
+  }
+  setSending(true);
+  try {
+   const res = await fetch(API + '/api/contact', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...form, app_id: ${p.appId} }),
+   });
+   if (!res.ok) throw new Error('Failed');
+   setSent(true);
+   setForm({ name: '', email: '', subject: '', message: '' });
+   setSnackbar({ open: true, message: 'Message sent successfully!', severity: 'success' });
+  } catch {
+   setSnackbar({ open: true, message: 'Failed to send message. Please try again.', severity: 'error' });
+  } finally { setSending(false); }
  };
 
+ const infoCards = [
+  { icon: <Chat />, title: 'Live Chat', desc: 'Available 9am-5pm', color: COLORS.primary },
+  { icon: <AccessTime />, title: 'Response Time', desc: 'Within 24 hours', color: COLORS.blue },
+  { icon: <SupportAgent />, title: 'Support', desc: 'Dedicated team', color: COLORS.success },
+ ];
+
  return (
- <Box sx={{ maxWidth: 700, mx:'auto' }}>
- <Paper sx={{
- p: 3, mb: 3, borderRadius: 3,
- background:'linear-gradient(135deg, ${p.primaryColor} 0%, ${sec} 100%)',
- color:'#fff',
- }}>
- <Typography variant="h4" fontWeight={700} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Email /> Contact Us
- </Typography>
- <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>Have a question or feedback? We'd love to hear from you.</Typography>
- </Paper>
+  <Box sx={{ maxWidth: 800, mx: 'auto' }}>
+   <Paper sx={heroSx}>
+    <Box sx={floatingCircle(200, -60, -40)} />
+    <Box sx={floatingCircle(120, 20, 120, 0.05)} />
+    <Box sx={{ position: 'relative', zIndex: 1 }}>
+     <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Email /> Contact Us
+     </Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Have a question or feedback? We'd love to hear from you.</Typography>
+    </Box>
+   </Paper>
 
- {sent ? (
- <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
- <CheckCircle sx={{ fontSize: 64, color:'#4caf50', mb: 2 }} />
- <Typography variant="h5" fontWeight={600} sx={{ mb: 1 }}>Message Sent!</Typography>
- <Typography color="text.secondary" sx={{ mb: 3 }}>Thank you for reaching out. We'll get back to you as soon as possible.</Typography>
- <Button variant="contained" onClick={() => setSent(false)}
- sx={{ bgcolor:'${p.primaryColor}','&:hover': { bgcolor:'${sec}' } }}>
- Send Another Message
- </Button>
- </Paper>
- ) : (
- <Paper sx={{ p: 3, borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
- <form onSubmit={handleSubmit}>
- <Grid container spacing={2}>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth required label="Your Name" value={form.name}
- onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
- </Grid>
- <Grid item xs={12} sm={6}>
- <TextField fullWidth required label="Email Address" type="email" value={form.email}
- onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
- </Grid>
- <Grid item xs={12}>
- <TextField fullWidth label="Subject" value={form.subject}
- onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
- </Grid>
- <Grid item xs={12}>
- <TextField fullWidth required label="Message" multiline rows={5} value={form.message}
- onChange={e => setForm(f => ({ ...f, message: e.target.value }))} />
- </Grid>
- <Grid item xs={12}>
- <Button type="submit" variant="contained" size="large" disabled={sending}
- startIcon={sending ? <CircularProgress size={20} /> : <Send />}
- sx={{ bgcolor:'${p.primaryColor}','&:hover': { bgcolor:'${sec}' }, px: 4 }}>
- {sending ?'Sending...' :'Send Message'}
- </Button>
- </Grid>
- </Grid>
- </form>
- </Paper>
- )}
+   <Grid container spacing={2} sx={{ mb: 4 }}>
+    {infoCards.map((c, i) => (
+     <Grid item xs={12} sm={4} key={i}>
+      <Card sx={cardSx}>
+       <CardContent sx={{ p: 2.5, textAlign: 'center' }}>
+        <Avatar sx={{ width: 48, height: 48, bgcolor: c.color + '15', color: c.color, mx: 'auto', mb: 1.5 }}>{c.icon}</Avatar>
+        <Typography variant="body2" fontWeight={700}>{c.title}</Typography>
+        <Typography variant="caption" color="text.secondary">{c.desc}</Typography>
+       </CardContent>
+      </Card>
+     </Grid>
+    ))}
+   </Grid>
 
- <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
- <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
- </Snackbar>
- </Box>
+   {sent ? (
+    <Paper sx={{ ...sectionSx, textAlign: 'center', py: 6 }}>
+     <Avatar sx={{ width: 72, height: 72, bgcolor: COLORS.success + '15', color: COLORS.success, mx: 'auto', mb: 2 }}>
+      <CheckCircle sx={{ fontSize: 40 }} />
+     </Avatar>
+     <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Message Sent!</Typography>
+     <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>Thank you for reaching out. We'll get back to you as soon as possible.</Typography>
+     <Button variant="contained" onClick={() => setSent(false)} sx={gradientBtnSx}>Send Another Message</Button>
+    </Paper>
+   ) : (
+    <Paper sx={sectionSx}>
+     <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 0.5 }}>Send a Message</Typography>
+     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Fill in the form below and we'll respond within 24 hours</Typography>
+     <form onSubmit={handleSubmit}>
+      <Grid container spacing={2.5}>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth required label="Your Name" value={form.name}
+         onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+       </Grid>
+       <Grid item xs={12} sm={6}>
+        <TextField fullWidth required label="Email Address" type="email" value={form.email}
+         onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+       </Grid>
+       <Grid item xs={12}>
+        <TextField fullWidth label="Subject" value={form.subject}
+         onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
+       </Grid>
+       <Grid item xs={12}>
+        <TextField fullWidth required label="Message" multiline rows={5} value={form.message}
+         onChange={e => setForm(f => ({ ...f, message: e.target.value }))} />
+       </Grid>
+       <Grid item xs={12}>
+        <Button type="submit" variant="contained" size="large" disabled={sending}
+         startIcon={sending ? <CircularProgress size={20} /> : <Send />}
+         sx={{ ...gradientBtnSx, px: 4, py: 1.2 }}>
+         {sending ? 'Sending...' : 'Send Message'}
+        </Button>
+       </Grid>
+      </Grid>
+     </form>
+    </Paper>
+   )}
+
+   <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+    <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
+   </Snackbar>
+  </Box>
  );
 }`;
 }
 
-// --- Template registry -------------------------------------------------------
+// ============================================================================
+// TEMPLATE REGISTRY
+// ============================================================================
 
 /** Page types that use static templates instead of AI generation */
-export const TEMPLATE_PAGE_TYPES = ['profile','settings','admin','contact'] as const;
+export const TEMPLATE_PAGE_TYPES = ['dashboard','profile','settings','admin','contact'] as const;
 
 /** Get the static template for a page type, or null if it requires AI generation */
 export function getPageTemplate(pageType: string, params: TemplateParams): string | null {
  switch (pageType) {
- case'profile': return profileTemplate(params);
- case'settings': return settingsTemplate(params);
- case'admin': return adminTemplate(params);
- case'contact': return contactFormTemplate(params);
+ case 'dashboard': return dashboardTemplate(params);
+ case 'profile': return profileTemplate(params);
+ case 'settings': return settingsTemplate(params);
+ case 'admin': return adminTemplate(params);
+ case 'contact': return contactFormTemplate(params);
  default: return null;
  }
 }

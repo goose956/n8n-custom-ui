@@ -128,13 +128,14 @@ const MAX_TOKENS: Record<string, number> = {
 };
 
 // Estimated tokens per page for cost calculation
-// Template pages (profile, settings, admin) cost 0 AI tokens
+// Template pages (dashboard, profile, settings, admin, contact) cost 0 AI tokens
 const EST_TOKENS_PER_PAGE: Record<string, number> = {
- dashboard: 3500,
+ dashboard: 0, // static template
  custom: 3000,
  admin: 0, // static template
  profile: 0, // static template
  settings: 0, // static template
+ contact: 0, // static template
 };
 
 // --- Default members area pages ---------------------------------------------
@@ -672,7 +673,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  }
 
  // Step 2: Generate each page
- const complexPageTypes = ['dashboard','custom'];
+ const complexPageTypes = ['custom'];
  let stepId = 2;
 
  // Resolve app info for templates
