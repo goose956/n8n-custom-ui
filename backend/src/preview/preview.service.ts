@@ -392,20 +392,98 @@ class _EB extends React.Component<{ children: React.ReactNode }, { error: Error 
  }
 }
 
-// -- Stub fetch --
+// -- Stub fetch with safe proxy --
 const _realFetch = window.fetch.bind(window);
 const _cdnHosts = ['fonts.googleapis', 'unpkg.com', 'cdnjs.cloudflare', 'cdn.jsdelivr'];
+
+function _safeProxy(obj: any): any {
+ if (obj === null || obj === undefined) obj = {};
+ if (typeof obj !== 'object') return obj;
+ return new Proxy(Array.isArray(obj) ? [...obj] : { ...obj }, {
+ get(target: any, prop: string | symbol, receiver: any) {
+ if (typeof prop === 'symbol') {
+ const real = Reflect.get(target, prop, receiver);
+ if (real !== undefined) return real;
+ if (prop === Symbol.iterator) return function*() {};
+ if (prop === Symbol.toPrimitive) return () => '';
+ return real;
+ }
+ if (prop === 'toJSON') return () => target;
+ if (prop === 'then') return undefined;
+ if (prop in target) {
+ const v = target[prop];
+ if (v !== null && typeof v === 'object') return _safeProxy(v);
+ return v;
+ }
+ if (['map','filter','forEach','reduce','find','some','every','flat','flatMap',
+'slice','splice','concat','includes','indexOf','join','keys','values',
+'entries','sort','reverse','push','pop','shift','unshift'].includes(prop as string)) {
+ return ([] as any)[prop].bind([]);
+ }
+ if (prop === 'length') return target.length ?? 0;
+ if (prop === 'toString' || prop === 'valueOf') return () => '';
+ return _safeProxy({});
+ }
+ });
+}
+
+const _mockData: any = {
+ data: [], items: [], results: [], tickets: [], members: [],
+ activities: [], posts: [], comments: [], orders: [], invoices: [],
+ transactions: [], logs: [], events: [], tasks: [], scripts: [],
+ records: [], entries: [], notifications: [], messages: [], users: [],
+ visitors: [], errors: [], executions: [], apiUsage: [], recentTrends: [],
+ stats: { totalViews: 128, totalLikes: 47, totalShares: 23, totalComments: 12,
+ views: 128, likes: 47, shares: 23, comments: 12,
+ revenue: 1250, users: 89, sessions: 342, engagementRate: 4.7 },
+ metrics: { views: 128, likes: 47, shares: 23, comments: 12 },
+ analytics: { views: 128, likes: 47, shares: 23, comments: 12, engagementRate: 4.7 },
+ dashboard: { activities: [], stats: { totalViews: 128, totalLikes: 47, totalShares: 23 },
+ scriptsGenerated: 42, viralHooksFound: 15, videosAnalyzed: 87, recentTrends: [] },
+ profile: { id: 1, firstName: 'Jane', lastName: 'Doe', name: 'Jane Doe',
+ email: 'jane@example.com', avatar: '', phone: '', bio: '', username: 'janedoe' },
+ user: { id: 1, firstName: 'Jane', lastName: 'Doe', name: 'Jane Doe',
+ email: 'jane@example.com', role: 'member', avatar: '', plan: 'pro' },
+ settings: { theme: 'light', notifications: true, language: 'en', timezone: 'UTC' },
+ success: true, ok: true, total: 0, count: 0, page: 1, pages: 1, hasMore: false,
+ scriptsGenerated: 42, viralHooksFound: 15, videosAnalyzed: 87, recentTrends: [],
+ billing: { plan: 'Pro', status: 'active', nextBillingDate: '2026-03-01', history: [] },
+};
+
 (window as any).fetch = function(input: any, init?: any) {
  const url = typeof input === 'string' ? input : input?.url || '';
  if (_cdnHosts.some(h => url.includes(h))) return _realFetch(input, init);
  if (url.includes('localhost:3000') || url.startsWith('/api/')) {
  const absUrl = url.startsWith('/api/') ? 'http://localhost:3000' + url : url;
- return _realFetch(absUrl, init).catch(() => ({
- ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]'), clone() { return this; }
- } as any));
+ return _realFetch(absUrl, init).then(function(resp: any) {
+ if (!resp.ok) {
+ const _seg = url.replace(/\\/+$/, '').split('/').pop()?.replace(/\\?.*/, '') || '';
+ const _val = (_mockData as any)[_seg];
+ const _body = _val !== undefined ? _val : _mockData;
+ return { ok: true, status: 200, json: () => Promise.resolve(_safeProxy(_body)), text: () => Promise.resolve(JSON.stringify(_body)), clone: function() { return this; } };
  }
+ const origJson = resp.json.bind(resp);
+ resp.json = function() {
+ return origJson().then(function(body: any) {
+ if (body && typeof body === 'object' && 'data' in body && !Array.isArray(body)) return _safeProxy(body.data);
+ return _safeProxy(body);
+ });
+ };
+ return resp;
+ }).catch(function() {
+ const _seg = url.replace(/\\/+$/, '').split('/').pop()?.replace(/\\?.*/, '') || '';
+ const _val = (_mockData as any)[_seg];
+ const _body = _val !== undefined ? _val : [];
+ return { ok: true, status: 200, json: () => Promise.resolve(_safeProxy(_body)), text: () => Promise.resolve(JSON.stringify(_body)), clone: function() { return this; } };
+ });
+ }
+ const _seg = url.replace(/\\/+$/, '').split('/').pop()?.replace(/\\?.*/, '') || '';
+ const _val = (_mockData as any)[_seg];
+ const _body = _val !== undefined ? _val : _mockData;
+ const _jsonStr = JSON.stringify(_body);
  return Promise.resolve({
- ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]'), clone() { return this; }
+ ok: true, status: 200, json: () => Promise.resolve(_safeProxy(JSON.parse(_jsonStr))),
+ text: () => Promise.resolve(_jsonStr), clone: function() { return this; }
  } as any);
 } as typeof fetch;
 
