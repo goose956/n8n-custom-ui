@@ -1658,6 +1658,45 @@ export const PagesPage: React.FC = () => {
        onClick={handlePreviewClick}
        sx={{ flex: 1, overflow: 'auto', bgcolor: '#fff', cursor: 'default' }}
       >
+       {/* Persistent site nav bar (pulled from index page nav data) */}
+       {(() => {
+        const indexPage = pages.find(p => p.page_type === 'index');
+        const navData = (indexPage?.content_json as any)?.nav;
+        if (!navData) return null;
+        const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+        return (
+         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 3, py: 1.5, borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10, bgcolor: '#fff' }}>
+          <Typography
+           onClick={() => { const home = pages.find(p => p.page_type === 'index'); if (home) previewNavigateTo(home); }}
+           sx={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a1a2e', cursor: 'pointer', '&:hover': { color: primaryColor } }}
+          >
+           {navData.brand}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'center' }}>
+           {navData.links?.map((link: any, i: number) => {
+            const label = typeof link === 'string' ? link : link.label;
+            return (
+             <Typography
+              key={i}
+              onClick={() => { const target = resolvePageFromClick(label); if (target) previewNavigateTo(target); }}
+              sx={{ fontSize: '0.85rem', color: '#555', cursor: 'pointer', '&:hover': { color: primaryColor } }}
+             >
+              {label}
+             </Typography>
+            );
+           })}
+           <Button
+            size="small"
+            variant="contained"
+            onClick={() => { const target = resolvePageFromClick(navData.cta || 'Get Started'); if (target) previewNavigateTo(target); }}
+            sx={{ background: gradient, fontWeight: 700, fontSize: '0.8rem', borderRadius: 2, px: 2 }}
+           >
+            {navData.cta || 'Get Started'}
+           </Button>
+          </Box>
+         </Box>
+        );
+       })()}
        {previewActivePage?.content_json ? (
         <PreviewErrorBoundary>
          <RenderPage data={{ ...(previewActivePage.content_json as any), page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
