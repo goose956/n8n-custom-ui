@@ -748,6 +748,43 @@ root.render(
  return result.join('\n');
  }
 
+ /**
+  * Inject common globals that pages use but sometimes forget to define.
+  * e.g. API_BASE, API_URL, BASE_URL
+  */
+ private injectMissingGlobals(content: string): string {
+ const globals: { pattern: RegExp; declaration: string }[] = [
+ {
+ pattern: /\bAPI_BASE\b/,
+ declaration: `const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';`,
+ },
+ {
+ pattern: /\bAPI_URL\b/,
+ declaration: `const API_URL = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';`,
+ },
+ {
+ pattern: /\bBASE_URL\b/,
+ declaration: `const BASE_URL = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';`,
+ },
+ ];
+ for (const g of globals) {
+ if (!g.pattern.test(content)) continue;
+ // Check if it's already defined (const/let/var declaration)
+ const defPattern = new RegExp(`(?:const|let|var)\\s+${g.pattern.source}\\s*=`);
+ if (defPattern.test(content)) continue;
+ // Inject after the last import statement
+ const lastImportIdx = content.lastIndexOf('\nimport');
+ if (lastImportIdx >= 0) {
+ const eol = content.indexOf('\n', lastImportIdx + 1);
+ content = content.slice(0, eol) + '\n' + g.declaration + content.slice(eol);
+ } else {
+ content = g.declaration + '\n' + content;
+ }
+ this.logger.warn(`[PREVIEW] Injected missing global: ${g.pattern.source}`);
+ }
+ return content;
+ }
+
  private writeUserFiles(tmpDir: string, files: { path: string; content: string }[]) {
  for (const file of files) {
  const normalized = this.normalizePath(file.path);
@@ -757,6 +794,7 @@ root.render(
  content = this.rewriteIconBarrels(content);
  content = this.addMissingIconImports(content);
  content = this.deduplicateIconImports(content);
+ content = this.injectMissingGlobals(content);
  fs.writeFileSync(filePath, content,'utf-8');
  this.logger.warn(`[DEBUG] Wrote file: ${filePath} (${content.length} bytes, first 120: ${content.substring(0, 120).replace(/\n/g,'↵')})`);
  }
