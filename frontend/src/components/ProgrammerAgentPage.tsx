@@ -255,8 +255,6 @@ export function ProgrammerAgentPage() {
  const [activeFileTab, setActiveFileTab] = useState(0);
  const [showPreview, setShowPreview] = useState(true);
  const [splitView, setSplitView] = useState(false);
-  const [fullSiteMode, setFullSiteMode] = useState(false);
-  const [fullSitePort, setFullSitePort] = useState<number | null>(null);
   const [fullSiteLoading, setFullSiteLoading] = useState(false);
   const fullSiteSessionRef = useRef<string | null>(null);
 
@@ -2208,47 +2206,38 @@ export function ProgrammerAgentPage() {
  </IconButton>
  </Tooltip>
  )}
- <Tooltip title={fullSiteMode ? 'Exit Full Site' : 'Full Site Preview'}>
- <IconButton size="small" onClick={() => {
- if (fullSiteMode) {
- setFullSiteMode(false);
+ <Tooltip title="Open Full Site Preview">
+ <IconButton size="small" disabled={fullSiteLoading} onClick={async () => {
+ if (fullSiteLoading) return;
+ setFullSiteLoading(true);
+ try {
  if (fullSiteSessionRef.current) {
  fetch(`${API_BASE_URL}/api/preview/stop`, {
  method: 'POST', headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({ sessionId: fullSiteSessionRef.current }),
  }).catch(() => {});
  fullSiteSessionRef.current = null;
- setFullSitePort(null);
  }
- } else {
- setFullSiteMode(true);
- setShowPreview(true);
- setSplitView(false);
- setFullSiteLoading(true);
- fetch(`${API_BASE_URL}/api/preview/start-fullsite`, {
+ const res = await fetch(`${API_BASE_URL}/api/preview/start-fullsite`, {
  method: 'POST', headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
  files: files.map(f => ({ path: f.path, content: f.content })),
  primaryColor,
  appName: selectedApp?.name || 'Members Area',
  }),
- })
- .then(r => r.json())
- .then(data => {
+ });
+ const data = await res.json();
  fullSiteSessionRef.current = data.sessionId;
- setFullSitePort(data.port);
+ window.open(`http://localhost:${data.port}`, '_blank');
  setFullSiteLoading(false);
- })
- .catch(err => {
+ } catch (err: any) {
  console.error('Full site preview error:', err);
- setFullSiteMode(false);
  setFullSiteLoading(false);
  setSnack({ open: true, msg: 'Failed to start full site preview', severity: 'error' });
- });
  }
  }}
- sx={{ bgcolor: fullSiteMode ? '#fff' : 'transparent', borderRadius: 1, width: 28, height: 28, boxShadow: fullSiteMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
- <FullSiteIcon sx={{ fontSize: 15, color: fullSiteMode ? primaryColor : '#888' }} />
+ sx={{ bgcolor: 'transparent', borderRadius: 1, width: 28, height: 28 }}>
+ {fullSiteLoading ? <CircularProgress size={14} sx={{ color: primaryColor }} /> : <FullSiteIcon sx={{ fontSize: 15, color: '#888' }} />}
  </IconButton>
  </Tooltip>
  </Box>
@@ -2280,25 +2269,7 @@ export function ProgrammerAgentPage() {
  </Box>
 
  {/* "€"€"€ Content: Preview / Code / Split (iframe renders actual TSX) "€"€"€ */}
- {fullSiteMode ? (
- /* Full-site preview with all pages + navigation sidebar */
- <Box sx={{ flex: 1, bgcolor: '#fff', position: 'relative', minHeight: 580 }}>
- {fullSiteLoading && (
- <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.95)', zIndex: 10, gap: 2 }}>
- <CircularProgress size={32} sx={{ color: primaryColor }} />
- <Typography variant="body2" sx={{ color: '#888', fontWeight: 500 }}>Starting full site preview...</Typography>
- <Typography variant="caption" sx={{ color: '#bbb' }}>Building all {files.length} pages with navigation</Typography>
- </Box>
- )}
- {fullSitePort && (
- <iframe
- src={`http://localhost:${fullSitePort}`}
- style={{ width: '100%', height: '100%', minHeight: 580, border: 'none' }}
- title="Full Site Preview"
- />
- )}
- </Box>
- ) : splitView && canPreview ? (
+ {splitView && canPreview ? (
  /* Split view: preview left, code right */
  <Box sx={{ flex: 1, display:'grid', gridTemplateColumns:'1fr 1fr', minHeight: 580 }}>
  <Box sx={{ bgcolor:'#fff', overflow:'hidden', borderRight:'1px solid rgba(0,0,0,0.08)', position:'relative' }}>
