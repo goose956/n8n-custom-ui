@@ -52,6 +52,21 @@ import {
  RadioButtonUnchecked as PendingIcon,
  Palette as PaletteIcon,
  Check as CheckIcon,
+ ArrowBack as ArrowBackIcon,
+ ArrowForward as ArrowForwardIcon,
+ Lock as LockIcon,
+ ViewStream as ViewStreamIcon,
+ WebAsset as SinglePageIcon,
+ OpenInNew as OpenInNewIcon,
+ Home as HomeIcon,
+ CreditCard as CreditCardIcon,
+ Dashboard as DashboardIcon,
+ Person as PersonIcon,
+ Celebration as CelebrationIcon,
+ MonetizationOn as PricingIcon,
+ Info as AboutIcon,
+ QuestionAnswer as FaqIcon,
+ ContactMail as ContactIcon,
 } from'@mui/icons-material';
 import LinearProgress from'@mui/material/LinearProgress';
 import Chip from'@mui/material/Chip';
@@ -271,6 +286,88 @@ export const PagesPage: React.FC = () => {
 
  // State for chat panel toggle on preview
  const [chatPanelOpen, setChatPanelOpen] = useState(true);
+
+ // Full-site preview dialog state
+ const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
+ const [previewActivePage, setPreviewActivePage] = useState<Page | null>(null);
+ const [previewScrollAll, setPreviewScrollAll] = useState(true);
+ const [previewHistory, setPreviewHistory] = useState<string[]>([]);
+ const [previewHistoryIdx, setPreviewHistoryIdx] = useState(-1);
+ const [previewAddress, setPreviewAddress] = useState('');
+
+ const selectedApp = apps.find(a => String(a.id) === selectedProjectId);
+ const primaryColor = selectedApp?.primary_color || '#667eea';
+
+ const previewGetPageIcon = (type: string) => {
+  switch (type) {
+   case 'index': return <HomeIcon sx={{ fontSize: 16 }} />;
+   case 'checkout': return <CreditCardIcon sx={{ fontSize: 16 }} />;
+   case 'admin': return <DashboardIcon sx={{ fontSize: 16 }} />;
+   case 'members': return <PersonIcon sx={{ fontSize: 16 }} />;
+   case 'thanks': return <CelebrationIcon sx={{ fontSize: 16 }} />;
+   case 'pricing': return <PricingIcon sx={{ fontSize: 16 }} />;
+   case 'about': return <AboutIcon sx={{ fontSize: 16 }} />;
+   case 'faq': return <FaqIcon sx={{ fontSize: 16 }} />;
+   case 'contact': return <ContactIcon sx={{ fontSize: 16 }} />;
+   default: return <HomeIcon sx={{ fontSize: 16 }} />;
+  }
+ };
+
+ const openFullPreview = () => {
+  const home = pages.find(p => p.page_type === 'index') || pages[0];
+  if (home) {
+   const slug = selectedApp?.slug || 'app';
+   setPreviewActivePage(home);
+   setPreviewAddress(`https://${slug}.example.com/`);
+   setPreviewHistory([`/${slug}`]);
+   setPreviewHistoryIdx(0);
+  }
+  setPreviewScrollAll(true);
+  setFullPreviewOpen(true);
+ };
+
+ const previewNavigateTo = (page: Page) => {
+  const slug = selectedApp?.slug || 'app';
+  const path = page.page_type === 'index' ? `/${slug}` : `/${slug}/${page.page_type}`;
+  setPreviewActivePage(page);
+  setPreviewAddress(`https://${slug}.example.com${page.page_type === 'index' ? '/' : '/' + page.page_type}`);
+  setPreviewHistory(prev => {
+   const newH = [...prev.slice(0, previewHistoryIdx + 1), path];
+   setPreviewHistoryIdx(newH.length - 1);
+   return newH;
+  });
+ };
+
+ const previewCanGoBack = previewHistoryIdx > 0;
+ const previewCanGoForward = previewHistoryIdx < previewHistory.length - 1;
+
+ const previewGoBack = () => {
+  if (!previewCanGoBack) return;
+  const newIdx = previewHistoryIdx - 1;
+  setPreviewHistoryIdx(newIdx);
+  const path = previewHistory[newIdx];
+  const pageType = path.split('/')[2] || 'index';
+  const page = pages.find(p => p.page_type === pageType);
+  if (page) {
+   setPreviewActivePage(page);
+   const slug = selectedApp?.slug || 'app';
+   setPreviewAddress(`https://${slug}.example.com${pageType === 'index' ? '/' : '/' + pageType}`);
+  }
+ };
+
+ const previewGoForward = () => {
+  if (!previewCanGoForward) return;
+  const newIdx = previewHistoryIdx + 1;
+  setPreviewHistoryIdx(newIdx);
+  const path = previewHistory[newIdx];
+  const pageType = path.split('/')[2] || 'index';
+  const page = pages.find(p => p.page_type === pageType);
+  if (page) {
+   setPreviewActivePage(page);
+   const slug = selectedApp?.slug || 'app';
+   setPreviewAddress(`https://${slug}.example.com${pageType === 'index' ? '/' : '/' + pageType}`);
+  }
+ };
 
  // Backend Agent state
  const [agentMode, setAgentMode] = useState<'design' |'backend'>('design');
@@ -755,16 +852,32 @@ export const PagesPage: React.FC = () => {
  <Typography variant="h6" sx={{ fontWeight: 700, color:'#1a1a2e', fontSize:'1.1rem' }}>
  Pages {loading && <CircularProgress size={18} sx={{ ml: 1.5 }} />}
  </Typography>
+ <Box sx={{ display: 'flex', gap: 1 }}>
  <Button
- variant="outlined"
- size="small"
- startIcon={<RefreshIcon />}
- onClick={loadPages}
- disabled={loading}
- sx={{ borderColor:'#e0e0e0', color:'#666','&:hover': { borderColor:'#667eea', color:'#667eea', bgcolor:'#f8f8ff' } }}
+  variant="contained"
+  size="small"
+  startIcon={<OpenInNewIcon />}
+  onClick={openFullPreview}
+  disabled={loading || pages.length === 0}
+  sx={{
+   background: `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
+   fontWeight: 700, textTransform: 'none', borderRadius: 2,
+   '&:hover': { opacity: 0.9 },
+  }}
  >
- Refresh
+  Preview Site
  </Button>
+ <Button
+  variant="outlined"
+  size="small"
+  startIcon={<RefreshIcon />}
+  onClick={loadPages}
+  disabled={loading}
+  sx={{ borderColor:'#e0e0e0', color:'#666','&:hover': { borderColor:'#667eea', color:'#667eea', bgcolor:'#f8f8ff' } }}
+ >
+  Refresh
+ </Button>
+ </Box>
  </Box>
 
  {pages.length === 0 && !loading && (
@@ -1393,6 +1506,145 @@ export const PagesPage: React.FC = () => {
  </Box>
  </DialogActions>
  </Dialog>
+
+ {/* ═══ Full-Site Preview Dialog ═══ */}
+ <Dialog
+  open={fullPreviewOpen}
+  onClose={() => setFullPreviewOpen(false)}
+  maxWidth={false}
+  fullWidth
+  PaperProps={{ sx: { maxHeight: '98vh', height: '95vh', width: '98vw', maxWidth: '1400px', m: 0, overflow: 'hidden' } }}
+ >
+  <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#e8eaed' }}>
+   {/* Top bar — app name + page tabs */}
+   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1, bgcolor: '#fff', borderBottom: '1px solid #e0e0e0' }}>
+    <Button size="small" startIcon={<CloseIcon />} onClick={() => setFullPreviewOpen(false)} sx={{ color: '#888', fontWeight: 600 }}>
+     Close
+    </Button>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+     <Box sx={{ width: 24, height: 24, borderRadius: 1.5, background: `linear-gradient(135deg, ${primaryColor}, #764ba2)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: '0.7rem' }}>
+      {selectedApp?.name?.charAt(0) || 'A'}
+     </Box>
+     <Typography sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.95rem' }}>{selectedApp?.name || 'App'}</Typography>
+    </Box>
+    <Box sx={{ flex: 1 }} />
+    {!previewScrollAll && (
+     <Box sx={{ display: 'flex', gap: 0.5 }}>
+      {pages.map(page => (
+       <Chip
+        key={page.id}
+        icon={previewGetPageIcon(page.page_type)}
+        label={page.title}
+        size="small"
+        onClick={() => previewNavigateTo(page)}
+        sx={{
+         fontWeight: previewActivePage?.id === page.id ? 700 : 500,
+         fontSize: '0.78rem',
+         bgcolor: previewActivePage?.id === page.id ? `${primaryColor}15` : 'transparent',
+         color: previewActivePage?.id === page.id ? primaryColor : '#888',
+         border: previewActivePage?.id === page.id ? `1px solid ${primaryColor}40` : '1px solid transparent',
+         cursor: 'pointer',
+         '&:hover': { bgcolor: `${primaryColor}08` },
+        }}
+       />
+      ))}
+     </Box>
+    )}
+    {previewScrollAll && (
+     <Chip
+      icon={<ViewStreamIcon sx={{ fontSize: 14 }} />}
+      label={`${pages.filter(p => p.content_json).length} pages`}
+      size="small"
+      sx={{ fontWeight: 600, fontSize: '0.78rem', bgcolor: `${primaryColor}12`, color: primaryColor, border: `1px solid ${primaryColor}30` }}
+     />
+    )}
+   </Box>
+
+   {/* Browser chrome */}
+   <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pt: 2, flex: 1, overflow: 'hidden' }}>
+    <Box sx={{ width: '100%', maxWidth: 1200, display: 'flex', flexDirection: 'column', height: '100%' }}>
+     <Box sx={{ bgcolor: '#fff', borderRadius: '12px 12px 0 0', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* Title bar with traffic lights + address bar */}
+      <Box sx={{ bgcolor: '#f5f5f5', px: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1.5, borderBottom: '1px solid #d0d0d0', borderRadius: '12px 12px 0 0' }}>
+       <Box sx={{ display: 'flex', gap: 0.5 }}>
+        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ff5f56' }} />
+        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffbd2e' }} />
+        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#27c93f' }} />
+       </Box>
+       {/* Nav buttons */}
+       <Box sx={{ display: 'flex', gap: 0.25 }}>
+        <IconButton size="small" disabled={!previewCanGoBack} onClick={previewGoBack} sx={{ p: 0.5 }}>
+         <ArrowBackIcon sx={{ fontSize: 16, color: previewCanGoBack ? '#555' : '#ccc' }} />
+        </IconButton>
+        <IconButton size="small" disabled={!previewCanGoForward} onClick={previewGoForward} sx={{ p: 0.5 }}>
+         <ArrowForwardIcon sx={{ fontSize: 16, color: previewCanGoForward ? '#555' : '#ccc' }} />
+        </IconButton>
+        <IconButton size="small" onClick={() => previewActivePage && previewNavigateTo(previewActivePage)} sx={{ p: 0.5 }}>
+         <RefreshIcon sx={{ fontSize: 16, color: '#555' }} />
+        </IconButton>
+       </Box>
+       {/* Address bar */}
+       <Box sx={{ flex: 1, bgcolor: '#fff', borderRadius: '8px', border: '1px solid #ddd', px: 1.5, py: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <LockIcon sx={{ fontSize: 14, color: '#4caf50' }} />
+        <Typography sx={{ fontSize: '0.8rem', color: '#555', fontFamily: 'monospace', flex: 1 }}>
+         {previewScrollAll ? `https://${selectedApp?.slug || 'app'}.example.com/` : previewAddress}
+        </Typography>
+       </Box>
+       {/* View mode toggle */}
+       <Tooltip title={previewScrollAll ? 'Single page view' : 'Scroll all pages'} arrow>
+        <IconButton size="small" onClick={() => setPreviewScrollAll(!previewScrollAll)} sx={{ p: 0.5 }}>
+         {previewScrollAll ? <SinglePageIcon sx={{ fontSize: 18, color: primaryColor }} /> : <ViewStreamIcon sx={{ fontSize: 18, color: '#888' }} />}
+        </IconButton>
+       </Tooltip>
+      </Box>
+
+      {/* Page content */}
+      <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fff' }}>
+       {previewScrollAll ? (
+        pages.filter(p => p.content_json).length > 0 ? (
+         <Box>
+          {pages.filter(p => p.content_json).map((page, idx) => (
+           <Box key={page.id}>
+            {/* Page divider header */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 3, py: 1.5, bgcolor: idx === 0 ? 'transparent' : '#f8f9fa', borderTop: idx === 0 ? 'none' : '3px solid #e0e0e0' }}>
+             <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: `${primaryColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {previewGetPageIcon(page.page_type)}
+             </Box>
+             <Box>
+              <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', color: '#1a1a2e', lineHeight: 1.2 }}>{page.title}</Typography>
+              <Typography variant="caption" sx={{ color: '#bbb' }}>/{page.page_type === 'index' ? '' : page.page_type}</Typography>
+             </Box>
+            </Box>
+            {/* Rendered page */}
+            <PreviewErrorBoundary>
+             <RenderPage data={{ ...(page.content_json as any), page_type: page.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
+            </PreviewErrorBoundary>
+           </Box>
+          ))}
+         </Box>
+        ) : (
+         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300, flexDirection: 'column' }}>
+          <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No content</Typography>
+          <Typography variant="body2" sx={{ color: '#ddd' }}>None of the pages have content configured.</Typography>
+         </Box>
+        )
+       ) : previewActivePage?.content_json ? (
+        <PreviewErrorBoundary>
+         <RenderPage data={{ ...(previewActivePage.content_json as any), page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
+        </PreviewErrorBoundary>
+       ) : (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
+         <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No content</Typography>
+         <Typography variant="body2" sx={{ color: '#ddd' }}>This page has no content_json configured.</Typography>
+        </Box>
+       )}
+      </Box>
+     </Box>
+    </Box>
+   </Box>
+  </Box>
+ </Dialog>
+
  </Container>
  );
 };
