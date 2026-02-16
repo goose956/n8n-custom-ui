@@ -251,7 +251,7 @@ export class PreviewService implements OnModuleDestroy {
  ]);
  // Collect all already-imported identifiers
  const importedNames = new Set<string>();
- const importRe = /import\s+(\w+)\s+from\s+['"]@mui\/icons-material\/\w+['"]/g;
+ const importRe = /import\s+(\w+)\s+from\s*['"]@mui\/icons-material\/\w+['"]/g;
  let m: RegExpExecArray | null;
  while ((m = importRe.exec(content)) !== null) importedNames.add(m[1]);
  // Also check barrel-style (shouldn't exist after rewrite, but just in case)
