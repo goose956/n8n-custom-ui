@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Implementation Checklist
 
-**Last Updated:** February 13, 2026 (Session 4)
+**Last Updated:** February 16, 2026 (Session 6)
 
 ---
 
@@ -76,7 +76,27 @@
 - [x] AI-powered project creation with context questions
 - [x] Research page: OpenAI + Claude multi-model support
 
-## Phase 6: Export & Deployment - PLANNED
+## Phase 6: Preview & Templates - COMPLETE
+
+- [x] Full site preview mode (all pages as navigable website in new browser tab)
+- [x] Vite programmatic dev server for previews (ports 5200-5299)
+- [x] SafeProxy system for preview data (array methods, string methods, Symbol handling)
+- [x] Mock data injection for billing, profile, settings, stats in preview
+- [x] Auto-inject missing globals (API_BASE, API_URL, BASE_URL)
+- [x] Icon import deduplication for preview (barrel vs default import collisions)
+- [x] Stale preview session recovery (auto-reset on failed update)
+- [x] Route generation with human-friendly labels, basename slugs, layout/index skip
+- [x] Admin template slimmed to Analytics + Contact Submissions only
+- [x] Contact Form API (POST/GET/POST status/DELETE endpoints)
+- [x] Contact form page template (contactFormTemplate, 0 AI tokens)
+- [x] Contact page added to DEFAULT_MEMBERS_PAGES (required)
+- [x] 5 static templates (profile, settings, admin, contact, dashboard) = 0 AI token cost
+- [x] Finalize agent: cross-page awareness (contact forms auto-wire to admin panel)
+- [x] Finalize agent: AI-powered task implementation with SSE streaming
+- [x] Designer agent: add/delete elements, clarifying questions
+- [x] Save button: single-file save with confirmation
+
+## Phase 7: Export & Deployment - PLANNED
 
 - [ ] Export Module (standalone Next.js project generation)
 - [ ] Supabase migration (PostgreSQL + auth + RLS)
@@ -85,7 +105,7 @@
 - [ ] RBAC (role-based access control)
 - [ ] Audit logging
 
-## Phase 7: Platform Conversion - PLANNED
+## Phase 8: Platform Conversion - PLANNED
 
 - [ ] Convert/Export page UI (select app → pick target platform → generate)
 - [ ] Shopify App export (App Bridge scaffold, OAuth, embedded iframe wrapper)

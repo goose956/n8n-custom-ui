@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 13, 2026 (Session 4)
+**Last Updated:** February 16, 2026 (Session 6)
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -36,12 +36,13 @@ The platform is a fully functional multi-app SaaS management system with 19 back
 | BlogModule | `blog/` | Blog post CRUD + OpenAI generation |
 | ResearchModule | `research/` | Brave Search + Claude analysis pipeline |
 | AppPlannerModule | `app-planner/` | AI feature planning and roadmap generation |
-| AnalyticsModule | `analytics/` | Per-app usage statistics + error logging interceptor |
+| AnalyticsModule | `analytics/` | Per-app usage statistics, error logging interceptor, **contact form API** |
 | HealthModule | `health/` | Service health check |
 | MigrationsModule | `migrations/` | Legacy db.json to multi-app schema migration |
 | ProgrammerAgentModule | `programmer-agent/` | AI code generation with orchestrator + sub-agent model routing |
 | SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
 | StripeModule | `stripe/` | Stripe products, prices, checkout sessions, webhooks, payments |
+| PreviewModule | `preview/` | Vite-based live preview (single page + full site) with safeProxy + mock data |
 
 ### Shared Infrastructure
 
@@ -117,38 +118,40 @@ All app data scoped by app_id for clean per-app isolation:
 
 ---
 
-## Recent Changes (Feb 13, 2026 — Session 4)
+## Recent Changes (Feb 16, 2026 — Session 6)
 
-### New Modules (4)
-- **StripeModule** — Product/price CRUD, Checkout sessions, webhooks, payment tracking
-- **DashboardPage** — Stats overview, quick actions, activity summary
-- **GlobalSearch** — Ctrl+K command palette across all pages
-- **StatCard shared component** — Extracted for reuse
+### Full Site Preview (7 commits)
+- **Full site preview mode** — Preview ALL pages together as a navigable website in a new browser tab
+- Opens via `window.open()` instead of iframe, uses Vite programmatic API (ports 5200-5299)
+- React Router with sidebar navigation, auto-generated routes from project pages
+- **SafeProxy system** — Deep Proxy that handles array methods (.map, .filter), string methods (.toUpperCase, .toLowerCase), Symbol.iterator, and Symbol.toPrimitive
+- **Mock data injection** — Rich mock data for billing, profile, settings, stats, trends (no real API calls needed in preview)
+- **Auto-inject missing globals** — `injectMissingGlobals()` detects usage of API_BASE/API_URL without declaration and auto-injects
+- **Icon deduplication** — `deduplicateIconImports()` resolves barrel import collisions between @mui/material and @mui/icons-material
+- **Stale session recovery** — When `update()` fails (backend restarted), resets session so fresh `start()` happens
 
-### Major Enhancements (8)
-- Workflow Builder intelligence overhaul (architecture summaries, message type chips)
-- AI-powered project creation (region selector, AI page gen, context questions)
-- 4 new page templates (Pricing, About, FAQ, Contact)
-- Research page: OpenAI models added alongside Claude
-- Blog publishing → page template sync (published posts appear on blog-page)
-- Blog generate-all respects checkbox selection
-- Social Monitor: post delete button, draft reply fix (gpt-4 → gpt-4o)
-- Settings: Stripe integration key + Stripe tab
+### Admin Template Overhaul
+- **Slimmed admin template** to 2 tabs only: Analytics (page performance) + Contact Submissions (inbox with status management)
+- Removed: Visitors, Errors, API Usage tabs (was 4 tabs)
+- KPI cards: Active Users, Page Views, Revenue, Contact Messages (with new message count)
+- Contact submissions table with name/email/subject/status/date + action menu (mark read, replied, archive, delete)
 
-### Previous Session Security Fixes (8)
-- API key exposure - masked responses
-- n8n encrypted key bug - proper decryption in workflow-config
-- apps.service crash - undefined array guards
-- pages.controller 404s - NotFoundException
-- XSS vulnerabilities - DOMPurify
-- No input validation - ValidationPipe
-- Clone duplicates - skipDefaults parameter
-- Shutdown hooks - enableShutdownHooks()
+### Contact Form System (New)
+- **ContactController** — `POST /api/contact` (submit), `GET /api/contact` (list with filters), `POST /api/contact/:id/status` (update), `DELETE /api/contact/:id`
+- **contactFormTemplate()** — Static TSX template for members area contact page (posts to `/api/contact` with app_id)
+- Added `'contact'` to `DEFAULT_MEMBERS_PAGES` (required, 0 AI tokens) and `TEMPLATE_PAGE_TYPES`
+- Every new project gets analytics + contact form admin out of the box
 
-### Previous Session Structural Improvements (3)
-- Centralized API URL config (12 frontend files migrated)
-- Shared CryptoService (removed ~120 lines of duplicate code across 8 services)
-- Shared DatabaseService (standardized db.json path, 13 services migrated)
+### Session 5 Highlights (Coder Agent Rewrite)
+- Line-based edit system replacing string-matching (array.splice, descending sort, dedup guard)
+- Component library pre-reading for AI context
+- ProgrammerAgentPage UI overhaul (browser chrome, split view, 3-tab chat panel)
+- 13 members area components created by Coder Agent
+
+### Session 4 Highlights
+- StripeModule, DashboardPage, GlobalSearch, StatCard component
+- Workflow Builder intelligence overhaul, AI-powered project creation
+- Blog publish sync, Social Monitor fixes, 4 new page templates
 
 ---
 
@@ -158,6 +161,7 @@ All app data scoped by app_id for clean per-app isolation:
 - No authentication or user management yet
 - db.json file-based storage (Supabase migration planned)
 - Frontend chunk size warning in production build (non-blocking)
+- Preview mock data only — `generatePreviewData()` creates fake data; real API calls not made in preview
 
 ## Next Steps
 
@@ -165,3 +169,4 @@ All app data scoped by app_id for clean per-app isolation:
 2. Supabase Migration - PostgreSQL + auth + Row Level Security
 3. Per-App Deployment - Vercel/Railway pipeline
 4. Docker - Containerized deployment
+5. App cloning with admin template — duplicate admin database for instant setup

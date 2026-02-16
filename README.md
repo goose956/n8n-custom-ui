@@ -7,7 +7,9 @@ A multi-tenant SaaS management platform for creating, managing, and exporting st
 - **Multi-App Management** — Create, edit, clone, and delete SaaS applications with auto-generated pages and pricing plans
 - **Page Builder** — Visual page editor with JSON editing, live preview, and AI chat assistant (partial-patch updates)
 - **App Preview** — Full browser simulation to test apps page-by-page with navigation, history, and address bar
+- **Full Site Preview** — Preview all pages together as a navigable website in a new browser tab (Vite dev server, ports 5200-5299)
 - **Programmer Agent** — AI code generation with orchestrator + sub-agent model routing for cost optimization
+- **Members Area Templates** — Static TSX templates for profile, settings, admin (analytics + contact), and contact form (0 AI tokens)
 - **Social Monitor** — Reddit monitoring via Apify, keyword tracking, relevance scoring, and AI draft replies
 - **n8n Workflow Integration** — View, validate, configure, and trigger n8n workflows
 - **AI Workflow Builder** — Chat-based n8n workflow JSON generation with validation and node reference
@@ -15,6 +17,7 @@ A multi-tenant SaaS management platform for creating, managing, and exporting st
 - **Research Tool** — Web research via Brave Search + Claude analysis with PDF export
 - **App Planner** — AI-assisted feature planning and roadmap generation
 - **Analytics Dashboard** — Per-app usage tracking and error logging
+- **Contact Form API** — Contact form submissions with status management (new/read/replied/archived)
 - **API Key Vault** — Centralized encrypted credential storage (AES-256-CBC)
 - **Health Monitoring** — Live service status indicator
 
@@ -26,13 +29,14 @@ A multi-tenant SaaS management platform for creating, managing, and exporting st
 | Frontend | React 18, Vite 5, Material-UI 5 |
 | Automation | n8n (self-hosted) |
 | Database | File-based JSON (Supabase/PostgreSQL planned) |
+| Preview | Vite programmatic API (ports 5200-5299) |
 | Encryption | AES-256-CBC via shared CryptoService |
 
 ## Project Structure
 
 ```
 n8n surface/
-├── backend/                         # NestJS REST API (:3000)
+┌── backend/                         # NestJS REST API (:3000)
 │   └── src/
 │       ├── shared/                  # Global CryptoService + DatabaseService
 │       ├── apps/                    # Multi-app CRUD
@@ -47,8 +51,10 @@ n8n surface/
 │       ├── research/                # Brave Search + Claude research
 │       ├── app-planner/             # AI app planning
 │       ├── programmer-agent/        # AI code gen (orchestrator + sub-agent)
+│       ├── preview/                 # Vite-based live preview (single + full site)
 │       ├── social-monitor/          # Reddit monitoring + AI replies
-│       ├── analytics/               # Usage analytics + error logging
+│       ├── analytics/               # Usage analytics + error logging + contact API
+│       ├── stripe/                  # Stripe payments integration
 │       ├── health/                  # Health check endpoint
 │       ├── migrations/              # Database migration tools
 │       └── types/                   # Shared TypeScript types
@@ -126,7 +132,7 @@ Services:
 | POST | `/api/api-keys` | Store API key (encrypted) |
 | DELETE | `/api/api-keys/:name` | Delete API key |
 
-### Blog, Research, Chat, Analytics
+### Blog, Research, Chat, Analytics, Contact
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/blog/posts` | List blog posts |
@@ -135,6 +141,10 @@ Services:
 | POST | `/api/research/run/:id` | Run research (Brave + Claude) |
 | POST | `/api/chat/message` | Send chat message (partial-patch mode) |
 | GET | `/api/analytics/stats` | Get analytics |
+| POST | `/api/contact` | Submit contact form |
+| GET | `/api/contact` | List contact submissions (filterable by status/app_id) |
+| POST | `/api/contact/:id/status` | Update submission status (new/read/replied/archived) |
+| DELETE | `/api/contact/:id` | Delete contact submission |
 | GET | `/api/health` | Health check |
 
 ### Programmer Agent
@@ -161,7 +171,7 @@ Services:
 
 ## Architecture
 
-### Backend Modules (18)
+### Backend Modules (20)
 
 All services share a global `SharedModule` providing:
 - **CryptoService** — Single AES-256-CBC encrypt/decrypt implementation
@@ -223,6 +233,7 @@ npm run pm2:logs         # View logs
 - [ ] **Per-App Deployment** — Vercel/Railway deployment pipeline
 - [ ] **RBAC** — Role-based access control and audit logging
 - [ ] **Docker** — Containerized deployment
+- [ ] **Platform Conversion** — Export to Shopify, Android (Capacitor), Desktop (Electron), PWA
 
 ## License
 
