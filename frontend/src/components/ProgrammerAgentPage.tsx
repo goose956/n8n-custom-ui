@@ -1060,43 +1060,98 @@ export function ProgrammerAgentPage() {
  setSnack({ open: true, msg:'Copied to clipboard', severity:'info' });
  };
 
- /* "€"€"€ Finalize: analyze backend needs "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* --- Finalize Agent: analyze + implement all tasks --- */
 
- const handleFinalize = async () => {
- if (files.length === 0) return;
- setFinalizeLoading(true);
- setPhase('finalizing');
- setBackendTasks([]);
- setFinalizeSummary('');
+  const handleFinalize = async () => {
+    if (files.length === 0) return;
+    setFinalizeLoading(true);
+    setPhase('finalizing');
+    setBackendTasks([]);
+    setFinalizeSummary('Analyzing pages for backend requirements...');
 
- try {
- const res = await fetch(`${API.programmerAgent}/finalize`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({
- files,
- appId: selectedAppId || undefined,
- model: subAgentModel || undefined,
- }),
- });
- const data = await res.json();
- if (data.success) {
- setBackendTasks(data.tasks || []);
- setFinalizeSummary(data.summary ||'');
- setPhase('finalized');
- const autoCount = (data.tasks || []).filter((t: BackendTask) => t.status ==='pending' && t.implementation).length;
- setSnack({ open: true, msg:`Found ${data.tasks?.length || 0} backend tasks - ${autoCount} can be auto-implemented`, severity:'success' });
- } else {
- setSnack({ open: true, msg: data.error ||'Analysis failed', severity:'error' });
- setPhase('results');
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- setPhase('results');
- } finally {
- setFinalizeLoading(false);
- }
- };
+    try {
+      const res = await fetch(`${API.programmerAgent}/finalize-agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files,
+          appId: selectedAppId || undefined,
+          model: orchestratorModel || undefined,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        setSnack({ open: true, msg: `Server error (${res.status})`, severity: 'error' });
+        setPhase('results');
+        setFinalizeLoading(false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ') && eventType) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (eventType === 'status') {
+                setFinalizeSummary(data.message || '');
+                if (data.tasks) setBackendTasks(data.tasks);
+                if (data.phase === 'done') {
+                  setPhase('finalized');
+                  setFinalizeLoading(false);
+                  const doneCount = (data.tasks || []).filter((t) => t.status === 'done').length;
+                  const total = (data.tasks || []).length;
+                  setSnack({ open: true, msg: `Backend agent complete: ${doneCount}/${total} tasks implemented`, severity: 'success' });
+                }
+              } else if (eventType === 'tasks') {
+                setBackendTasks(data.tasks || []);
+                setFinalizeSummary(data.summary || '');
+              } else if (eventType === 'task-start') {
+                setBackendTasks(prev => prev.map(t =>
+                  t.id === data.taskId ? { ...t, status: 'in-progress' } : t
+                ));
+                setFinalizeSummary(`[${data.progress}] Working on: ${data.title}...`);
+              } else if (eventType === 'task-done') {
+                setBackendTasks(prev => prev.map(t =>
+                  t.id === data.taskId ? { ...t, status: data.success ? 'done' : 'pending' } : t
+                ));
+                if (data.success) {
+                  setFinalizeSummary(`Completed: ${data.message}`);
+                } else {
+                  setFinalizeSummary(`Failed: ${data.message}`);
+                }
+              } else if (eventType === 'error') {
+                setSnack({ open: true, msg: data.message || 'Agent error', severity: 'error' });
+              } else if (eventType === 'done') {
+                setFinalizeLoading(false);
+                setPhase('finalized');
+              }
+            } catch { /* ignore parse errors */ }
+            eventType = '';
+          }
+        }
+      }
+    } catch (err) {
+      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Network error', severity: 'error' });
+      setPhase('results');
+    } finally {
+      setFinalizeLoading(false);
+    }
+  };
 
  const handleImplementTask = async (task: BackendTask) => {
  setImplementingTask(task.id);
@@ -2078,15 +2133,16 @@ export function ProgrammerAgentPage() {
  <Button
  variant="outlined"
  fullWidth
- startIcon={<FinalizeIcon />}
+ startIcon={phase === 'finalizing' ? <CircularProgress size={16} color="inherit" /> : <FinalizeIcon />}
  onClick={handleFinalize}
+ disabled={phase === 'finalizing'}
  sx={{
  fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
  borderColor: primaryColor, color: primaryColor,
 '&:hover': { borderColor: primaryColor, bgcolor:`${primaryColor}08` },
  }}
  >
- Finalize &amp; Wire Up Backend
+ {phase === 'finalizing' ? 'Agent Working...' : 'Finalize & Wire Up Backend'}
  </Button>
  </Box>
  </Box>
@@ -2622,13 +2678,13 @@ export function ProgrammerAgentPage() {
 '& .MuiLinearProgress-bar': { background:`linear-gradient(90deg, ${primaryColor}, #764ba2)` },
  }} />
  <Typography variant="body2" color="text.secondary">
- The AI agent is examining each generated page to identify database seeding, API routes, integrations, and security work needed-..
+ {finalizeSummary || 'The AI agent is analyzing pages and implementing backend tasks one by one...'}-..
  </Typography>
  </Paper>
  )}
 
  {/* "€"€"€ PHASE: FINALIZED (backend tasks view) "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
- {phase ==='finalized' && (
+ {(phase ==='finalized' || phase ==='finalizing') && (
  <Box sx={{ display:'grid', gridTemplateColumns:'1fr 340px', gap: 3 }}>
  {/* Left: task list */}
  <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
@@ -2721,12 +2777,14 @@ export function ProgrammerAgentPage() {
  <Box key={task.id} sx={{
  display:'flex', alignItems:'flex-start', gap: 1.5, px: 2.5, py: 2,
  borderBottom:'1px solid rgba(0,0,0,0.03)',
- bgcolor: task.status ==='done' ?'rgba(76,175,80,0.03)' :'transparent',
+ bgcolor: task.status ==='done' ?'rgba(76,175,80,0.03)' : task.status ==='in-progress' ? `${primaryColor}08` :'transparent',
  opacity: task.status ==='done' ? 0.7 : 1,
  transition:'all 0.15s',
  }}>
  {task.status ==='done'
  ? <DoneIcon sx={{ fontSize: 20, color:'#4caf50', mt: 0.3 }} />
+ : task.status ==='in-progress'
+ ? <CircularProgress size={18} sx={{ color: primaryColor, mt: 0.3 }} />
  : <PendingIcon sx={{ fontSize: 20, color:'#bbb', mt: 0.3 }} />
  }
  <Box sx={{ flex: 1, minWidth: 0 }}>

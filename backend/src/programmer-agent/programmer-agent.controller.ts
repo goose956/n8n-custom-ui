@@ -293,6 +293,39 @@ export class ProgrammerAgentController {
  }
 
  /**
+ * Finalize Agent -- analyze pages + implement tasks one-by-one with SSE progress
+ */
+ @Post('finalize-agent')
+ async finalizeAgent(
+ @Body()
+ body: {
+ files: { path: string; content: string; language: string; description?: string }[];
+ appId?: number;
+ model?: string;
+ },
+ @Res() res: Response,
+ ) {
+ res.setHeader('Content-Type','text/event-stream');
+ res.setHeader('Cache-Control','no-cache');
+ res.setHeader('Connection','keep-alive');
+ res.setHeader('X-Accel-Buffering','no');
+ res.flushHeaders();
+
+ const sendEvent = (event: string, data: any) => {
+ res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+ };
+
+ try {
+ await this.agentService.finalizeAgentStream(body.files as any, body.appId, body.model, sendEvent);
+ } catch (err) {
+ sendEvent('error', { message: err instanceof Error ? err.message :'Unknown error' });
+ } finally {
+ sendEvent('done', {});
+ res.end();
+ }
+ }
+
+ /**
  * Coder Agent -- autonomous builder with SSE streaming for live progress
  */
  @Post('coder-chat')

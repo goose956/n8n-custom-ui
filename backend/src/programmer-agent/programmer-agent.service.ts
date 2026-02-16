@@ -1931,6 +1931,253 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  };
  }
 
+ // --- Finalize Agent: analyze + implement tasks one-by-one with AI ---------
+
+ async finalizeAgentStream(
+ files: GeneratedFile[],
+ appId: number | undefined,
+ model: string | undefined,
+ sendEvent: (event: string, data: any) => void,
+ ): Promise<void> {
+ const aiModel = model || DEFAULT_ORCHESTRATOR;
+
+ // Step 1: Analyze backend needs
+ sendEvent('status', { phase: 'analyzing', message: 'Analyzing pages for backend requirements...' });
+ const analysis = await this.analyzeBackendNeeds(files, appId, aiModel);
+
+ if (!analysis.success || analysis.tasks.length === 0) {
+ sendEvent('status', { phase: 'done', message: analysis.tasks.length === 0 ? 'No backend tasks needed -- your pages are self-contained!' : (analysis.error || 'Analysis failed') });
+ return;
+ }
+
+ const tasks = analysis.tasks;
+ sendEvent('tasks', { tasks, summary: analysis.summary });
+
+ // Step 2: Work through each pending task
+ let completedCount = 0;
+ const totalPending = tasks.filter(t => t.status === 'pending').length;
+
+ for (const task of tasks) {
+ if (task.status === 'done') {
+ completedCount++;
+ continue;
+ }
+
+ sendEvent('task-start', {
+ taskId: task.id,
+ title: task.title,
+ category: task.category,
+ progress: `${completedCount + 1}/${totalPending}`,
+ });
+
+ try {
+ // For db_seed tasks with existing implementation data, just execute directly
+ if (task.implementation?.type === 'db_seed' && task.implementation.payload?.records) {
+ const seedResult = this.executeSeedTask(task, appId);
+ if (seedResult.success) {
+ task.status = 'done';
+ sendEvent('task-done', { taskId: task.id, success: true, message: seedResult.message });
+ } else {
+ sendEvent('task-done', { taskId: task.id, success: false, message: seedResult.message });
+ }
+ completedCount++;
+ continue;
+ }
+
+ // For all other tasks, use AI to generate and execute the implementation
+ const implResult = await this.aiImplementTask(task, files, appId, aiModel);
+ if (implResult.success) {
+ task.status = 'done';
+ sendEvent('task-done', { taskId: task.id, success: true, message: implResult.message });
+ } else {
+ sendEvent('task-done', { taskId: task.id, success: false, message: implResult.message });
+ }
+ } catch (err) {
+ const msg = err instanceof Error ? err.message : String(err);
+ sendEvent('task-done', { taskId: task.id, success: false, message: `Error: ${msg}` });
+ }
+ completedCount++;
+ }
+
+ // Final summary
+ const doneCount = tasks.filter(t => t.status === 'done').length;
+ sendEvent('status', {
+ phase: 'done',
+ message: `Completed ${doneCount}/${tasks.length} tasks.`,
+ tasks,
+ });
+ }
+
+ /** Use AI to figure out and execute a backend task */
+ private async aiImplementTask(
+ task: BackendTask,
+ files: GeneratedFile[],
+ appId: number | undefined,
+ model: string,
+ ): Promise<{ success: boolean; message: string }> {
+ const db = this.db.readSync();
+
+ // Build context about the current DB state
+ const dbContext: string[] = [];
+ for (const key of Object.keys(db)) {
+ if (Array.isArray(db[key])) {
+ const items = appId ? (db[key] as any[]).filter((r: any) => !r.app_id || r.app_id === appId) : db[key] as any[];
+ if (items.length > 0) {
+ const sample = JSON.stringify(items[0]).slice(0, 200);
+ dbContext.push(`${key}: ${items.length} records (sample: ${sample})`);
+ } else {
+ dbContext.push(`${key}: 0 records`);
+ }
+ }
+ }
+
+ // Get relevant file context
+ const relevantFiles = files.filter(f => {
+ const content = f.content.toLowerCase();
+ return content.includes(task.category) ||
+ content.includes(task.title.toLowerCase().split(' ')[0]) ||
+ task.description.toLowerCase().split(' ').some(w => w.length > 4 && content.includes(w));
+ }).slice(0, 3);
+
+ const filesContext = relevantFiles.map(f => {
+ const truncated = f.content.length > 2000 ? f.content.slice(0, 2000) + '\n// ... truncated' : f.content;
+ return `--- ${f.path} ---\n${truncated}\n--- END ---`;
+ }).join('\n\n');
+
+ const systemPrompt = `You are a backend infrastructure agent. You implement backend tasks for a SaaS application that uses:
+- NestJS backend with a JSON file database (db.json)
+- The database is a flat JSON object where each key is a "table" containing an array of records
+- Each record has an id (number), optional app_id, created_at, updated_at fields
+
+CURRENT DATABASE STATE:
+${dbContext.join('\n')}
+
+APP ID: ${appId || 'none'}
+
+YOUR TASK: "${task.title}"
+Category: ${task.category}
+Description: ${task.description}
+
+RELEVANT FRONTEND CODE:
+${filesContext}
+
+You must return a JSON object with the actions to take. Available action types:
+
+1. SEED DATA: Create records in a table
+{
+  "action": "seed",
+  "table": "table_name",
+  "records": [{ "field1": "value1", ... }]
+}
+
+2. CREATE TABLE: Initialize a new table with seed data
+{
+  "action": "create_table",
+  "table": "table_name",
+  "records": [{ "field1": "value1", ... }]
+}
+
+3. UPDATE RECORDS: Modify existing records
+{
+  "action": "update",
+  "table": "table_name",
+  "filter": { "field": "value" },
+  "updates": { "field": "newValue" }
+}
+
+Rules:
+- Return ONLY valid JSON, no markdown fences
+- Provide realistic, domain-appropriate data
+- Include 5-10 records for seed data
+- Always include app_id: ${appId || 'null'} in records if the table is app-scoped
+- Field names should be snake_case
+- Include sensible timestamps, amounts, statuses
+- For API endpoint tasks, create a record in an "api_routes" table documenting the endpoint
+- Be thorough -- make the data look real and useful`;
+
+ try {
+ const result = await this.callAI(model, systemPrompt, `Implement this task now. Return the JSON action to execute.`);
+
+ // Parse the AI response
+ let action: any;
+ try {
+ const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+ if (jsonMatch) {
+ action = JSON.parse(jsonMatch[0]);
+ }
+ } catch {
+ return { success: false, message: `Could not parse AI response for "${task.title}"` };
+ }
+
+ if (!action || !action.action) {
+ return { success: false, message: `AI did not return a valid action for "${task.title}"` };
+ }
+
+ // Execute the action
+ if (action.action === 'seed' || action.action === 'create_table') {
+ const table = action.table as string;
+ const records = action.records as any[];
+
+ if (!table || !Array.isArray(records) || records.length === 0) {
+ return { success: false, message: `Invalid seed data for "${task.title}"` };
+ }
+
+ if (!db[table]) db[table] = [];
+
+ const maxId = Math.max(0, ...(db[table] as any[]).map((r: any) => r.id || 0));
+ let nextId = maxId + 1;
+ let created = 0;
+
+ for (const record of records) {
+ (db[table] as any[]).push({
+ id: nextId++,
+ ...(appId ? { app_id: appId } : {}),
+ ...record,
+ created_at: new Date().toISOString(),
+ updated_at: new Date().toISOString(),
+ });
+ created++;
+ }
+
+ db.last_updated = new Date().toISOString();
+ this.db.writeSync(db);
+
+ return { success: true, message: `Created ${created} records in "${table}"` };
+ }
+
+ if (action.action === 'update') {
+ const table = action.table as string;
+ const filter = action.filter || {};
+ const updates = action.updates || {};
+
+ if (!db[table] || !Array.isArray(db[table])) {
+ return { success: false, message: `Table "${table}" not found` };
+ }
+
+ let updated = 0;
+ for (const record of db[table] as any[]) {
+ const matches = Object.entries(filter).every(([k, v]) => record[k] === v);
+ if (matches) {
+ Object.assign(record, updates, { updated_at: new Date().toISOString() });
+ updated++;
+ }
+ }
+
+ if (updated > 0) {
+ db.last_updated = new Date().toISOString();
+ this.db.writeSync(db);
+ }
+
+ return { success: true, message: `Updated ${updated} records in "${table}"` };
+ }
+
+ return { success: false, message: `Unknown action type: ${action.action}` };
+ } catch (err) {
+ const msg = err instanceof Error ? err.message : String(err);
+ return { success: false, message: `AI implementation failed: ${msg}` };
+ }
+ }
+
  // --- QA Agent: review generated files for errors --------------------------
 
  async qaReview(
