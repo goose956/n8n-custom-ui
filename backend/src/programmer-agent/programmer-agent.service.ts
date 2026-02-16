@@ -36,11 +36,12 @@ export interface MembersAreaPage {
 
 export interface BackendTask {
  id: string;
- category:'database' |'api' |'integration' |'security' |'data';
+ category:'database' |'api' |'integration' |'security' |'data' |'frontend_wiring';
  title: string;
  description: string;
  status:'pending' |'done' |'in-progress';
  priority:'high' |'medium' |'low';
+ targetFile?: string;
  implementation?: {
  type:'db_seed' |'api_route' |'config' |'schema' |'create_api';
  payload: Record<string, any>;
@@ -1765,7 +1766,7 @@ ${appContext}
 Return ONLY a JSON array of task objects. Each task:
 {
  "id": "unique-slug",
- "category": "database" | "api" | "integration" | "security" | "data",
+ "category": "database" | "api" | "integration" | "security" | "data" | "frontend_wiring",
  "title": "Short title",
  "description": "What needs to be done and why",
  "priority": "high" | "medium" | "low",
@@ -1774,14 +1775,28 @@ Return ONLY a JSON array of task objects. Each task:
  "apiSpec": { "route": "/api/route-name", "methods": ["GET","POST"], "description": "What this API does" } // only if category is "api"
 }
 
+IMPORTANT -- CROSS-PAGE RELATIONSHIPS:
+Analyse how pages relate to each other. Common patterns:
+- Contact / enquiry / booking forms --> need a DB table AND the admin/dashboard page must display submissions
+- User profiles / settings forms --> need stored data AND admin visibility
+- Comment / review sections --> need a DB table AND admin moderation view
+- Order / purchase flows --> need orders table AND admin order management
+- Newsletter / subscription forms --> need subscribers table AND admin list view
+For each form or user-generated-content component, create TWO tasks:
+  1) "database" task to create the table with seed data
+  2) "frontend_wiring" task to amend the admin/dashboard page to display that data
+Set category:"frontend_wiring" for tasks that require editing an existing frontend page.
+Include "targetFile" in the task -- the file path of the page that needs editing.
+
 Rules:
 - Be practical and specific -- reference actual component names and data they display
 - Mark a task as autoImplement:true if it's a database seed (creating sample records) -- provide seedData
 - For API tasks, set category:"api" and include apiSpec -- these CAN be auto-implemented
+- For frontend_wiring tasks, set category:"frontend_wiring" and include targetFile (the path of the page to edit)
 - For seed data, provide realistic, domain-appropriate records (5-10 per table)
 - Include app_id in seed records where appropriate
 - Don't duplicate tasks
-- Order by priority (high first)
+- Order by priority (high first) -- database tasks before frontend_wiring tasks that depend on them
 - Typically 5-15 tasks for a full members area
 - Do NOT include security tasks (JWT auth, RBAC, input validation) unless specifically requested -- these are handled separately
 
@@ -1802,6 +1817,7 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  description: t.description ||'',
  priority: t.priority ||'medium',
  status:'pending' as const,
+ ...(t.targetFile ? { targetFile: t.targetFile } : {}),
  implementation: t.autoImplement && t.seedData ? {
  type:'db_seed' as const,
  payload: t.seedData,
@@ -1988,6 +2004,16 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  const implResult = await this.aiImplementTask(task, files, appId, aiModel);
  if (implResult.success) {
  task.status = 'done';
+ // If this task produced a file edit, send it to the frontend
+ if (implResult.fileEdit) {
+ const edit = implResult.fileEdit;
+ // Also update our local files array so subsequent tasks see the change
+ const fileIdx = files.findIndex(f => f.path.includes(edit.path) || edit.path.includes(f.path));
+ if (fileIdx >= 0) {
+ files[fileIdx] = { ...files[fileIdx], content: edit.content };
+ }
+ sendEvent('file-update', { path: edit.path, content: edit.content });
+ }
  sendEvent('task-done', { taskId: task.id, success: true, message: implResult.message });
  } else {
  sendEvent('task-done', { taskId: task.id, success: false, message: implResult.message });
@@ -2014,7 +2040,7 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  files: GeneratedFile[],
  appId: number | undefined,
  model: string,
- ): Promise<{ success: boolean; message: string }> {
+ ): Promise<{ success: boolean; message: string; fileEdit?: { path: string; content: string } }> {
  const db = this.db.readSync();
 
  // Build context about the current DB state
@@ -2031,16 +2057,27 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  }
  }
 
- // Get relevant file context
- const relevantFiles = files.filter(f => {
+ // Get relevant file context -- for frontend_wiring tasks, include the target file first
+ let relevantFiles: typeof files;
+ if (task.category === 'frontend_wiring' && task.targetFile) {
+ const targetFile = files.find(f => f.path.includes(task.targetFile!));
+ const others = files.filter(f => f !== targetFile && (
+ f.content.toLowerCase().includes(task.title.toLowerCase().split(' ')[0]) ||
+ task.description.toLowerCase().split(' ').some((w: string) => w.length > 4 && f.content.toLowerCase().includes(w))
+ )).slice(0, 2);
+ relevantFiles = targetFile ? [targetFile, ...others] : others;
+ } else {
+ relevantFiles = files.filter(f => {
  const content = f.content.toLowerCase();
  return content.includes(task.category) ||
  content.includes(task.title.toLowerCase().split(' ')[0]) ||
- task.description.toLowerCase().split(' ').some(w => w.length > 4 && content.includes(w));
+ task.description.toLowerCase().split(' ').some((w: string) => w.length > 4 && content.includes(w));
  }).slice(0, 3);
+ }
 
+ const maxLen = task.category === 'frontend_wiring' ? 12000 : 2000;
  const filesContext = relevantFiles.map(f => {
- const truncated = f.content.length > 2000 ? f.content.slice(0, 2000) + '\n// ... truncated' : f.content;
+ const truncated = f.content.length > maxLen ? f.content.slice(0, maxLen) + '\n// ... truncated' : f.content;
  return `--- ${f.path} ---\n${truncated}\n--- END ---`;
  }).join('\n\n');
 
@@ -2084,6 +2121,16 @@ You must return a JSON object with the actions to take. Available action types:
   "filter": { "field": "value" },
   "updates": { "field": "newValue" }
 }
+
+4. EDIT FRONTEND FILE: Modify an existing React page (e.g. add a section to admin panel to show contact submissions)
+{
+  "action": "edit_file",
+  "filePath": "pages/AdminDashboard.tsx",
+  "newContent": "... the COMPLETE updated file content ..."
+}
+Use this when you need to wire up an admin panel, dashboard, or any existing page to display new data.
+You MUST return the ENTIRE file content (not just a diff). Keep all existing functionality intact and add the new section/component.
+The file should be valid TSX/React code using Material UI (MUI) components.
 
 Rules:
 - Return ONLY valid JSON, no markdown fences
@@ -2169,6 +2216,16 @@ Rules:
  }
 
  return { success: true, message: `Updated ${updated} records in "${table}"` };
+ }
+
+ if (action.action === 'edit_file') {
+ const filePath = action.filePath as string;
+ const newContent = action.newContent as string;
+ if (!filePath || !newContent) {
+ return { success: false, message: `Invalid edit_file action for "${task.title}" -- missing filePath or newContent` };
+ }
+ // Return the file edit so the caller can send it to the frontend
+ return { success: true, message: `Updated ${filePath}`, fileEdit: { path: filePath, content: newContent } };
  }
 
  return { success: false, message: `Unknown action type: ${action.action}` };

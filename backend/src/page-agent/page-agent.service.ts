@@ -9,11 +9,12 @@ import { AnalyticsService } from'../analytics/analytics.service';
  */
 export interface BackendTask {
  id: string;
- category:'database' |'api' |'integration' |'security' |'data';
+ category:'database' |'api' |'integration' |'security' |'data' |'frontend_wiring';
  title: string;
  description: string;
  status:'pending' |'done' |'in-progress';
  priority:'high' |'medium' |'low';
+ targetFile?: string;
  /**
  * If the task can be auto-implemented, this contains the implementation details
  */

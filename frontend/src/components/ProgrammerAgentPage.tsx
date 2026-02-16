@@ -125,7 +125,7 @@ interface ApiKeyStatus {
 
 interface BackendTask {
  id: string;
- category:'database' |'api' |'integration' |'security' |'data';
+ category:'database' |'api' |'integration' |'security' |'data' |'frontend_wiring';
  title: string;
  description: string;
  status:'pending' |'done' |'in-progress';
@@ -1133,6 +1133,16 @@ export function ProgrammerAgentPage() {
                   setFinalizeSummary(`Completed: ${data.message}`);
                 } else {
                   setFinalizeSummary(`Failed: ${data.message}`);
+                }
+              } else if (eventType === 'file-update') {
+                // AI edited a frontend file (e.g. wired admin panel to show contact form submissions)
+                if (data.path && data.content) {
+                  setFiles(prev => prev.map(f =>
+                    (f.path.includes(data.path) || data.path.includes(f.path))
+                      ? { ...f, content: data.content }
+                      : f
+                  ));
+                  setSnack({ open: true, msg: `Updated ${data.path.split('/').pop()}`, severity: 'info' });
                 }
               } else if (eventType === 'error') {
                 setSnack({ open: true, msg: data.message || 'Agent error', severity: 'error' });
