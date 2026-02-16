@@ -30,6 +30,7 @@ export interface BlogPost {
  metaDescription: string;
  error?: string;
  featuredImage?: string; // DALL-E generated hero image URL path (e.g. /blog-images/slug.png)
+ views?: number; // Visitor view count
  // LLM optimization fields
  structuredData?: object; // JSON-LD schema.org data
  faqSchema?: { q: string; a: string }[]; // FAQ structured data
@@ -292,6 +293,7 @@ RULES:
  published: posts.filter((p) => p.status ==='published').length,
  failed: posts.filter((p) => p.status ==='failed').length,
  totalWords: posts.reduce((sum, p) => sum + (p.wordCount || 0), 0),
+ totalViews: posts.reduce((sum, p) => sum + (p.views || 0), 0),
  },
  };
  }
@@ -916,5 +918,123 @@ ${combinedSitemap}</urlset>`;
  await this.analyticsService.trackApiUsage({
  provider: provider as any, endpoint:'/chat/completions', model, tokensIn, tokensOut, cost, duration, statusCode: 200, success: true, module,
  }).catch(() => {});
+ }
+
+ // --- Blog Visitor Tracking ---------------------------------------------------
+
+ trackBlogView(postId: string, visitorIp: string, userAgent: string, referrer: string): { success: boolean } {
+  const posts = this.getPosts();
+  const idx = posts.findIndex((p) => p.id === postId);
+  if (idx === -1) return { success: false };
+
+  // Increment view count on the post
+  posts[idx] = { ...posts[idx], views: (posts[idx].views || 0) + 1 };
+  this.savePosts(posts);
+
+  // Also track in analytics if the post has a projectId
+  if (posts[idx].projectId != null) {
+   this.analyticsService.trackPageView({
+    app_id: posts[idx].projectId!,
+    page_title: posts[idx].title,
+    page_url: `/blog/${posts[idx].slug}`,
+    visitor_id: this.hashVisitorId(visitorIp + (userAgent || '')),
+    timestamp: new Date().toISOString(),
+    referrer: referrer || '',
+    user_agent: userAgent || '',
+   }).catch(() => {});
+  }
+
+  return { success: true };
+ }
+
+ private hashVisitorId(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
+ }
+
+ getBlogViewStats(): { success: boolean; data: { id: string; slug: string; title: string; views: number }[] } {
+  const posts = this.getPosts().filter((p) => p.status !== 'queued');
+  return {
+   success: true,
+   data: posts.map((p) => ({ id: p.id, slug: p.slug, title: p.title, views: p.views || 0 })),
+  };
+ }
+
+ /**
+  * Render a published blog post as a full HTML page with embedded visitor tracking.
+  */
+ renderPublicBlogPost(slug: string): { success: boolean; html?: string; message?: string } {
+  const posts = this.getPosts();
+  const post = posts.find((p) => p.slug === slug && p.status === 'published');
+  if (!post) return { success: false, message: 'Post not found' };
+
+  const featuredImgHtml = post.featuredImage
+   ? `<img src="${post.featuredImage}" alt="${this.escapeHtml(post.title)}" style="width:100%;max-height:420px;object-fit:cover;border-radius:12px;margin-bottom:32px" />`
+   : '';
+
+  const tagsHtml = (post.tags || []).map((t) => `<span style="display:inline-block;background:#f0f2ff;color:#667eea;padding:4px 12px;border-radius:20px;font-size:0.78rem;font-weight:600;margin-right:6px">${this.escapeHtml(t)}</span>`).join('');
+
+  const structuredDataScript = post.structuredData
+   ? `<script type="application/ld+json">${JSON.stringify(post.structuredData)}</script>`
+   : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>${this.escapeHtml(post.title)}</title>
+ <meta name="description" content="${this.escapeHtml(post.metaDescription || post.excerpt || '')}">
+ <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+ ${structuredDataScript}
+ <style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#fafbfc;color:#333;line-height:1.7}
+  .container{max-width:780px;margin:0 auto;padding:40px 24px}
+  .hero-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+  h1{font-size:2.2rem;font-weight:800;color:#1a1a2e;margin-bottom:12px;line-height:1.3}
+  .excerpt{font-size:1.05rem;color:#666;font-style:italic;border-left:3px solid #667eea;padding:12px 16px;margin-bottom:28px;background:rgba(102,126,234,0.04);border-radius:0 8px 8px 0}
+  .meta{font-size:0.82rem;color:#999;margin-bottom:24px}
+  .content h2{font-size:1.4rem;font-weight:700;color:#1a1a2e;margin:28px 0 12px}
+  .content h3{font-size:1.15rem;font-weight:700;color:#333;margin:20px 0 8px}
+  .content p{font-size:0.96rem;line-height:1.8;color:#444;margin-bottom:16px}
+  .content ul,.content ol{padding-left:24px;margin-bottom:16px}
+  .content li{font-size:0.94rem;line-height:1.7;margin-bottom:4px}
+  .content table{width:100%;border-collapse:collapse;margin:16px 0}
+  .content th,.content td{padding:10px 14px;text-align:left;border:1px solid #e2e8f0;font-size:0.9rem}
+  .content th{background:#f7f8fc;font-weight:700;color:#1a1a2e}
+  .content svg{max-width:100%;height:auto;margin:16px 0}
+  .content strong{font-weight:700}
+  .content blockquote{border-left:3px solid #667eea;padding:8px 16px;margin:16px 0;color:#555;background:rgba(102,126,234,0.03);border-radius:0 8px 8px 0}
+  .footer{text-align:center;padding:40px 0;color:#bbb;font-size:0.78rem;border-top:1px solid #eee;margin-top:48px}
+ </style>
+</head>
+<body>
+ <div class="container">
+  ${featuredImgHtml}
+  <h1>${this.escapeHtml(post.title)}</h1>
+  <div class="hero-meta">${tagsHtml}</div>
+  <div class="meta">${post.wordCount || 0} words &bull; ${post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div>
+  ${post.excerpt ? `<div class="excerpt">${this.escapeHtml(post.excerpt)}</div>` : ''}
+  <div class="content">${post.content}</div>
+  <div class="footer">&copy; ${new Date().getFullYear()}</div>
+ </div>
+ <script>
+  // Visitor tracking pixel
+  (function(){
+   var d={postId:"${post.id}"};
+   var x=new XMLHttpRequest();
+   x.open("POST","/api/blog/track-view",true);
+   x.setRequestHeader("Content-Type","application/json");
+   x.send(JSON.stringify(d));
+  })();
+ </script>
+</body>
+</html>`;
+
+  return { success: true, html };
+ }
+
+ private escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
  }
 }

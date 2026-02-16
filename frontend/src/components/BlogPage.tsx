@@ -81,6 +81,7 @@ interface BlogPost {
  metaDescription: string;
  error?: string;
  featuredImage?: string;
+ views?: number;
 }
 
 interface BlogSettings {
@@ -100,6 +101,7 @@ interface Stats {
  published: number;
  failed: number;
  totalWords: number;
+ totalViews: number;
 }
 
 const BLOG_API = API_ENDPOINTS.blog;
@@ -715,7 +717,7 @@ export function BlogPage() {
 
  {/* "€"€"€ Stats "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
  {stats && (
- <Box sx={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap: 1.5, mb: 3 }}>
+ <Box sx={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 1.5, mb: 3 }}>
  {[
  { label:'Total', value: stats.total, color:'#667eea' },
  { label:'Queued', value: stats.queued, color:'#3498db' },
@@ -723,6 +725,7 @@ export function BlogPage() {
  { label:'Published', value: stats.published, color:'#27ae60' },
  { label:'Failed', value: stats.failed, color:'#e74c3c' },
  { label:'Total Words', value: stats.totalWords.toLocaleString(), color:'#764ba2' },
+ { label:'Total Views', value: (stats.totalViews || 0).toLocaleString(), color:'#e67e22' },
  ].map((s) => (
  <Paper
  key={s.label}
@@ -1592,6 +1595,15 @@ function PostRow({ post, selected, isGenerating, projectName, projectColor, onTo
  <Typography sx={{ fontSize:'0.72rem', color:'#bbb', fontWeight: 600, minWidth: 60, textAlign:'right' }}>
  {post.wordCount.toLocaleString()} words
  </Typography>
+ )}
+
+ {/* Views */}
+ {(post.views || 0) > 0 && (
+ <Tooltip title="Page views">
+ <Typography sx={{ fontSize:'0.72rem', color:'#e67e22', fontWeight: 700, minWidth: 50, textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap: 0.3 }}>
+ {(post.views || 0).toLocaleString()} views
+ </Typography>
+ </Tooltip>
  )}
 
  {/* Date */}

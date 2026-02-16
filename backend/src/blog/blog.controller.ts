@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Res, Query } from'@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Res, Query, Req, HttpCode } from'@nestjs/common';
 import { BlogService } from'./blog.service';
-import { Response } from'express';
+import { Response, Request } from'express';
 
 @Controller('api/blog')
 export class BlogController {
@@ -118,5 +118,44 @@ export class BlogController {
  const result = await this.blogService.getSitemap();
  res.set('Content-Type','application/xml');
  res.send(result.content ||'<?xml version="1.0" encoding="UTF-8"?><urlset/>');
+ }
+
+ // --- Visitor Tracking -------------------------------------------------------
+
+ @Post('track-view')
+ @HttpCode(200)
+ async trackView(@Body() body: { postId: string }, @Req() req: Request) {
+ const ip = (req.headers['x-forwarded-for'] as string || req.ip || '').split(',')[0].trim();
+ const userAgent = req.headers['user-agent'] || '';
+ const referrer = req.headers['referer'] || '';
+ const result = this.blogService.trackBlogView(body.postId, ip, userAgent, referrer);
+ return { success: result.success };
+ }
+
+ @Get('view-stats')
+ async getViewStats() {
+ return this.blogService.getBlogViewStats();
+ }
+
+ // --- Public Blog Page -------------------------------------------------------
+
+ @Get('view/:slug')
+ async viewBlogPost(@Param('slug') slug: string, @Res() res: Response, @Req() req: Request) {
+ const result = this.blogService.renderPublicBlogPost(slug);
+ if (!result.success || !result.html) {
+ res.status(404).send('<h1>Post not found</h1>');
+ return;
+ }
+ // Auto-track this view
+ const ip = (req.headers['x-forwarded-for'] as string || req.ip || '').split(',')[0].trim();
+ const userAgent = req.headers['user-agent'] || '';
+ const referrer = req.headers['referer'] || '';
+ const posts = (await this.blogService.getAllPosts()).data;
+ const post = posts.find(p => p.slug === slug);
+ if (post) {
+ this.blogService.trackBlogView(post.id, ip, userAgent as string, referrer as string);
+ }
+ res.set('Content-Type', 'text/html');
+ res.send(result.html);
  }
 }
