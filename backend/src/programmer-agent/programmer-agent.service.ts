@@ -1016,7 +1016,7 @@ ${routerRoutes}
 
  // --- Refine a single file ------------------------------------------------
 
- async refineFile(request: RefineRequest): Promise<{ success: boolean; file: GeneratedFile | null; tokensUsed: number; error?: string }> {
+ async refineFile(request: RefineRequest): Promise<{ success: boolean; file: GeneratedFile | null; tokensUsed: number; error?: string; question?: string }> {
  const model = request.model || DEFAULT_ORCHESTRATOR;
  try {
  const targetFile = request.files[request.fileIndex];
@@ -1026,15 +1026,60 @@ ${routerRoutes}
  .map((f, i) =>`--- ${f.path} ${i === request.fileIndex ?'(TARGET FILE -- modify this one)' :''} ---\n${f.content}\n--- End ---`)
  .join('\n\n');
 
- const prompt =`Here are the current generated files:\n\n${allFilesContext}\n\nInstruction for the TARGET file (${targetFile.path}):\n${request.instruction}\n\nReturn ONLY the complete updated file content. No markdown fences, no explanation. Just the raw code.`;
+ const systemPrompt = `You are an expert React/TypeScript UI designer and developer. You are modifying an existing React component file based on the user's instructions.
 
- const result = await this.callAI(
- model,
-`You are an expert React/TypeScript developer. You are modifying an existing file based on instructions. ${this.getDesignSystemContext()}\n\nReturn ONLY the complete updated file content.`,
- prompt,
- );
+${this.getDesignSystemContext()}
 
- const updatedContent = result.content
+CAPABILITIES -- you can and MUST do ALL of the following when asked:
+1. ADD new elements: Insert new JSX elements (Typography, Box, Button, Card, TextField, etc.) anywhere in the component tree. When asked to add text, headings, paragraphs, sections, form fields, buttons, images, dividers, or any other element -- DO IT by inserting the appropriate JSX.
+2. DELETE/REMOVE elements: Remove any JSX elements, sections, or components the user wants removed. When asked to remove, delete, or hide something -- find it in the JSX tree and remove it entirely.
+3. RESTRUCTURE/REORDER: Move elements around, wrap them in new containers, change the layout structure, reorder sections.
+4. MODIFY STYLES: Change colors, fonts, spacing, sizes, backgrounds, borders, shadows, gradients, etc. via the sx prop.
+5. MODIFY CONTENT: Change text content, labels, headings, placeholder text, button labels, etc.
+6. ADD/MODIFY INTERACTIVITY: Add state variables (useState), event handlers, toggles, dialogs, form submissions, etc.
+
+IMPORTANT RULES:
+- ALWAYS return the COMPLETE file content with your changes applied. Never return partial code or just the changed section.
+- Preserve ALL existing functionality, imports, and code that the user did NOT ask to change.
+- Add any necessary new imports at the top of the file (e.g. new MUI components, icons).
+- Make sure the JSX is valid and the component will compile without errors.
+- Be bold and thorough with changes -- if the user asks to add an element, add it with proper styling that matches the existing design.
+
+WHEN YOU ARE UNSURE:
+If the user's instruction is ambiguous or you need more information to make the right change (e.g. you don't know WHERE to place a new element, WHAT content it should have, or WHICH element they're referring to), respond with ONLY a JSON object in this exact format:
+{"question": "Your clarifying question here"}
+
+Examples of when to ask:
+- "Add a button" -- where? what label? what action?
+- "Change the color" -- which element? what color?
+- "Move it" -- move what? to where?
+
+Only ask ONE clear question at a time. If you can make a reasonable assumption, just do it rather than asking.
+
+OUTPUT FORMAT:
+- If you can fulfill the request: Return the complete updated file content. No markdown fences, no explanations.
+- If you need clarification: Return {"question": "your question"}`;
+
+ const prompt = `Here are the current generated files:\n\n${allFilesContext}\n\nInstruction for the TARGET file (${targetFile.path}):\n${request.instruction}\n\nApply the requested changes to the TARGET file. Remember: you can ADD new JSX elements, DELETE existing ones, RESTRUCTURE the layout, and MODIFY styles/content. Return the complete updated file content.`;
+
+ const result = await this.callAI(model, systemPrompt, prompt);
+
+ const rawContent = result.content.trim();
+
+ // Check if the AI is asking a clarifying question
+ const questionMatch = rawContent.match(/^\s*\{\s*"question"\s*:\s*"([^"]+)"\s*\}\s*$/);
+ if (questionMatch) {
+ return { success: true, file: null, tokensUsed: result.tokensUsed, question: questionMatch[1] };
+ }
+
+ // Also handle cases where the question JSON might be wrapped in markdown fences
+ const fenceStripped = rawContent.replace(/^```(?:json)?\n?/m,'').replace(/\n?```$/m,'').trim();
+ const questionMatch2 = fenceStripped.match(/^\s*\{\s*"question"\s*:\s*"([^"]+)"\s*\}\s*$/);
+ if (questionMatch2) {
+ return { success: true, file: null, tokensUsed: result.tokensUsed, question: questionMatch2[1] };
+ }
+
+ const updatedContent = rawContent
  .replace(/^```(?:tsx?|typescript|javascript)?\n?/m,'')
  .replace(/\n?```$/m,'')
  .trim();

@@ -563,7 +563,14 @@ export function ProgrammerAgentPage() {
  }),
  });
  const data = await res.json();
- if (data.success && data.file) {
+ if (data.success && data.question) {
+ // AI is asking a clarifying question instead of making changes
+ setChatMessages(prev => [...prev, {
+ id: (Date.now() + 1).toString(),
+ role: 'assistant',
+ content: `\u2753 ${data.question}`,
+ }]);
+ } else if (data.success && data.file) {
  const updated = [...files];
  updated[activeFileTab] = data.file;
  setFiles(updated);
@@ -625,7 +632,14 @@ export function ProgrammerAgentPage() {
  return;
  }
  const data = await res.json();
- if (data.success && data.file) {
+ if (data.success && data.question) {
+ // AI is asking a clarifying question
+ setChatMessages(prev => [...prev, {
+ id: (Date.now() + 1).toString(),
+ role: 'assistant',
+ content: `\u2753 ${data.question}`,
+ }]);
+ } else if (data.success && data.file) {
  const updated = [...files];
  updated[activeFileTab] = data.file;
  setFiles(updated);
