@@ -208,31 +208,52 @@ export class PreviewService implements OnModuleDestroy {
  const tsxFiles = req.files.filter(f => f.path.match(/\.(tsx|jsx)$/));
  const routes: { importPath: string; componentName: string; routePath: string; label: string }[] = [];
 
+ // Files to skip — layouts, indexes, barrel exports
+ const skipPatterns = [/MembersLayout/i, /\/index\.(tsx|jsx)$/i, /Layout\.(tsx|jsx)$/i];
+
  for (const file of tsxFiles) {
+ // Skip layout/index files
+ if (skipPatterns.some(p => p.test(file.path))) continue;
+
  const normalized = this.normalizePath(file.path);
  const importPath = './components/' + normalized.replace(/\.(tsx|jsx|ts|js)$/, '');
  const componentName = this.detectComponentNameFromContent(file.content) || normalized.replace(/\.(tsx|jsx)$/, '').replace(/[^a-zA-Z0-9]/g, '');
 
- // Derive route path from filename
- let routeName = normalized
+ // Derive route path from just the filename (not folder structure)
+ const basename = normalized.split('/').pop() || '';
+ let routeSlug = basename
  .replace(/\.(tsx|jsx)$/, '')
  .replace(/Page$/i, '')
+ .replace(/^Members/i, '')
  .replace(/([A-Z])/g, '-$1')
  .toLowerCase()
  .replace(/^-/, '')
- .replace(/\//g, '-');
- if (!routeName) routeName = 'home';
- const routePath = '/' + routeName;
+ .replace(/\s+/g, '-');
+ if (!routeSlug || routeSlug === 'home') routeSlug = 'home';
+ const routePath = '/' + routeSlug;
 
- // Derive label from filename
- let label = normalized
+ // Derive human-friendly label from filename
+ let label = basename
  .replace(/\.(tsx|jsx)$/, '')
  .replace(/Page$/i, '')
- .replace(/([A-Z])/g, ' $1')
+ .replace(/^Members/i, '')
+ // Split camelCase
+ .replace(/([a-z])([A-Z])/g, '$1 $2')
+ // Split kebab-case
+ .replace(/-/g, ' ')
+ // Title case each word
+ .replace(/\b\w/g, c => c.toUpperCase())
  .trim();
  if (!label) label = 'Home';
 
  routes.push({ importPath, componentName, routePath, label });
+ }
+
+ // Ensure dashboard (or first page) is first in the list
+ const dashIdx = routes.findIndex(r => r.routePath.includes('dashboard'));
+ if (dashIdx > 0) {
+ const [dash] = routes.splice(dashIdx, 1);
+ routes.unshift(dash);
  }
 
  // Generate main.tsx with router + sidebar
@@ -262,6 +283,7 @@ export class PreviewService implements OnModuleDestroy {
  define: {
  'import.meta.env.VITE_API_URL': JSON.stringify(''),
  },
+ appType: 'spa',
  logLevel: 'info',
  });
 
@@ -315,7 +337,7 @@ const ${r.componentName} = _Mod${i}.default || _Mod${i}['${r.componentName}'] ||
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createTheme, ThemeProvider, CssBaseline, Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, AppBar, IconButton } from '@mui/material';
-import { MemoryRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PersonIcon from '@mui/icons-material/Person';
@@ -442,8 +464,11 @@ function FullSiteApp() {
  React.createElement(_EB, null, React.createElement(r.Component))
  })
  ),
+ React.createElement(Route, { path: '/', element:
+ React.createElement(Navigate, { to: _routes[0]?.path || '/dashboard', replace: true })
+ }),
  React.createElement(Route, { path: '*', element:
- React.createElement(_EB, null, React.createElement(_routes[0]?.Component || 'div'))
+ React.createElement(Navigate, { to: _routes[0]?.path || '/dashboard', replace: true })
  })
  )
  )
@@ -460,7 +485,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 root.render(
  React.createElement(ThemeProvider, { theme },
  React.createElement(CssBaseline),
- React.createElement(MemoryRouter, { initialEntries: ['${routes[0]?.routePath || '/'}'] },
+ React.createElement(BrowserRouter, null,
  React.createElement(FullSiteApp)
  )
  )
