@@ -55,8 +55,6 @@ import {
  ArrowBack as ArrowBackIcon,
  ArrowForward as ArrowForwardIcon,
  Lock as LockIcon,
- ViewStream as ViewStreamIcon,
- WebAsset as SinglePageIcon,
  OpenInNew as OpenInNewIcon,
  Home as HomeIcon,
  CreditCard as CreditCardIcon,
@@ -290,10 +288,10 @@ export const PagesPage: React.FC = () => {
  // Full-site preview dialog state
  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
  const [previewActivePage, setPreviewActivePage] = useState<Page | null>(null);
- const [previewScrollAll, setPreviewScrollAll] = useState(true);
  const [previewHistory, setPreviewHistory] = useState<string[]>([]);
  const [previewHistoryIdx, setPreviewHistoryIdx] = useState(-1);
  const [previewAddress, setPreviewAddress] = useState('');
+ const previewContentRef = React.useRef<HTMLDivElement>(null);
 
  const selectedApp = apps.find(a => String(a.id) === selectedProjectId);
  const primaryColor = selectedApp?.primary_color || '#667eea';
@@ -313,29 +311,97 @@ export const PagesPage: React.FC = () => {
   }
  };
 
+ // Map link text / href to a page
+ const resolvePageFromClick = (text: string, href?: string): Page | undefined => {
+  const t = (text || '').toLowerCase().trim();
+  const h = (href || '').toLowerCase().trim();
+  // Direct page_type match from href (e.g. /pricing, /about, #pricing)
+  for (const page of pages) {
+   const pt = page.page_type.toLowerCase();
+   if (h.includes(pt) || h.includes(`/${pt}`)) return page;
+  }
+  // Match title or page_type from text
+  for (const page of pages) {
+   const pt = page.page_type.toLowerCase();
+   const title = page.title.toLowerCase();
+   if (t === pt || t === title) return page;
+   if (t.includes(pt) || pt.includes(t)) return page;
+   if (t.includes(title) || title.includes(t)) return page;
+  }
+  // Common aliases
+  const aliases: Record<string, string> = {
+   'home': 'index', 'get started': 'checkout', 'sign up': 'checkout', 'signup': 'checkout',
+   'start free': 'checkout', 'start building': 'checkout', 'try free': 'checkout',
+   'start building free': 'checkout', 'buy now': 'checkout', 'upgrade': 'checkout',
+   'subscribe': 'checkout', 'login': 'members', 'log in': 'members', 'sign in': 'members',
+   'my account': 'members', 'dashboard': 'members', 'member': 'members', 'membership': 'members',
+   'learn more': 'about', 'about us': 'about', 'our story': 'about',
+   'watch demo': 'about', 'see demo': 'about',
+   'features': 'features', 'what we offer': 'features',
+   'plans': 'pricing', 'pricing plans': 'pricing', 'view pricing': 'pricing', 'see pricing': 'pricing', 'compare plans': 'pricing',
+   'help': 'faq', 'faqs': 'faq', 'support': 'faq', 'questions': 'faq',
+   'blog': 'blog-page', 'articles': 'blog-page', 'news': 'blog-page',
+   'contact': 'contact', 'contact us': 'contact', 'get in touch': 'contact', 'reach out': 'contact',
+  };
+  const mapped = aliases[t];
+  if (mapped) return pages.find(p => p.page_type === mapped);
+  return undefined;
+ };
+
  const openFullPreview = () => {
   const home = pages.find(p => p.page_type === 'index') || pages[0];
   if (home) {
    const slug = selectedApp?.slug || 'app';
    setPreviewActivePage(home);
    setPreviewAddress(`https://${slug}.example.com/`);
-   setPreviewHistory([`/${slug}`]);
+   setPreviewHistory([home.page_type]);
    setPreviewHistoryIdx(0);
   }
-  setPreviewScrollAll(true);
   setFullPreviewOpen(true);
  };
 
  const previewNavigateTo = (page: Page) => {
   const slug = selectedApp?.slug || 'app';
-  const path = page.page_type === 'index' ? `/${slug}` : `/${slug}/${page.page_type}`;
   setPreviewActivePage(page);
   setPreviewAddress(`https://${slug}.example.com${page.page_type === 'index' ? '/' : '/' + page.page_type}`);
   setPreviewHistory(prev => {
-   const newH = [...prev.slice(0, previewHistoryIdx + 1), path];
+   const newH = [...prev.slice(0, previewHistoryIdx + 1), page.page_type];
    setPreviewHistoryIdx(newH.length - 1);
    return newH;
   });
+  // Scroll content to top when navigating
+  setTimeout(() => previewContentRef.current?.scrollTo(0, 0), 0);
+ };
+
+ // Intercept clicks inside the rendered preview to navigate between pages
+ const handlePreviewClick = (e: React.MouseEvent) => {
+  const target = e.target as HTMLElement;
+  // Walk up to find clickable element (button, a, or anything with cursor:pointer)
+  let el: HTMLElement | null = target;
+  let clickText = '';
+  let clickHref = '';
+  for (let i = 0; i < 6 && el; i++) {
+   const style = window.getComputedStyle(el);
+   const tag = el.tagName.toLowerCase();
+   if (tag === 'a') {
+    clickHref = (el as HTMLAnchorElement).href || '';
+    clickText = el.textContent?.trim() || '';
+    break;
+   }
+   if (tag === 'button' || style.cursor === 'pointer' || el.getAttribute('role') === 'button') {
+    clickText = el.textContent?.trim() || '';
+    clickHref = el.getAttribute('href') || '';
+    break;
+   }
+   el = el.parentElement;
+  }
+  if (!clickText && !clickHref) return;
+  const matched = resolvePageFromClick(clickText, clickHref);
+  if (matched && matched.id !== previewActivePage?.id) {
+   e.preventDefault();
+   e.stopPropagation();
+   previewNavigateTo(matched);
+  }
  };
 
  const previewCanGoBack = previewHistoryIdx > 0;
@@ -345,8 +411,7 @@ export const PagesPage: React.FC = () => {
   if (!previewCanGoBack) return;
   const newIdx = previewHistoryIdx - 1;
   setPreviewHistoryIdx(newIdx);
-  const path = previewHistory[newIdx];
-  const pageType = path.split('/')[2] || 'index';
+  const pageType = previewHistory[newIdx];
   const page = pages.find(p => p.page_type === pageType);
   if (page) {
    setPreviewActivePage(page);
@@ -359,8 +424,7 @@ export const PagesPage: React.FC = () => {
   if (!previewCanGoForward) return;
   const newIdx = previewHistoryIdx + 1;
   setPreviewHistoryIdx(newIdx);
-  const path = previewHistory[newIdx];
-  const pageType = path.split('/')[2] || 'index';
+  const pageType = previewHistory[newIdx];
   const page = pages.find(p => p.page_type === pageType);
   if (page) {
    setPreviewActivePage(page);
@@ -1528,36 +1592,26 @@ export const PagesPage: React.FC = () => {
      <Typography sx={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.95rem' }}>{selectedApp?.name || 'App'}</Typography>
     </Box>
     <Box sx={{ flex: 1 }} />
-    {!previewScrollAll && (
-     <Box sx={{ display: 'flex', gap: 0.5 }}>
-      {pages.map(page => (
-       <Chip
-        key={page.id}
-        icon={previewGetPageIcon(page.page_type)}
-        label={page.title}
-        size="small"
-        onClick={() => previewNavigateTo(page)}
-        sx={{
-         fontWeight: previewActivePage?.id === page.id ? 700 : 500,
-         fontSize: '0.78rem',
-         bgcolor: previewActivePage?.id === page.id ? `${primaryColor}15` : 'transparent',
-         color: previewActivePage?.id === page.id ? primaryColor : '#888',
-         border: previewActivePage?.id === page.id ? `1px solid ${primaryColor}40` : '1px solid transparent',
-         cursor: 'pointer',
-         '&:hover': { bgcolor: `${primaryColor}08` },
-        }}
-       />
-      ))}
-     </Box>
-    )}
-    {previewScrollAll && (
-     <Chip
-      icon={<ViewStreamIcon sx={{ fontSize: 14 }} />}
-      label={`${pages.filter(p => p.content_json).length} pages`}
-      size="small"
-      sx={{ fontWeight: 600, fontSize: '0.78rem', bgcolor: `${primaryColor}12`, color: primaryColor, border: `1px solid ${primaryColor}30` }}
-     />
-    )}
+    <Box sx={{ display: 'flex', gap: 0.5, overflow: 'auto' }}>
+     {pages.map(page => (
+      <Chip
+       key={page.id}
+       icon={previewGetPageIcon(page.page_type)}
+       label={page.title}
+       size="small"
+       onClick={() => previewNavigateTo(page)}
+       sx={{
+        fontWeight: previewActivePage?.id === page.id ? 700 : 500,
+        fontSize: '0.78rem',
+        bgcolor: previewActivePage?.id === page.id ? `${primaryColor}15` : 'transparent',
+        color: previewActivePage?.id === page.id ? primaryColor : '#888',
+        border: previewActivePage?.id === page.id ? `1px solid ${primaryColor}40` : '1px solid transparent',
+        cursor: 'pointer',
+        '&:hover': { bgcolor: `${primaryColor}08` },
+       }}
+      />
+     ))}
+    </Box>
    </Box>
 
    {/* Browser chrome */}
@@ -1579,7 +1633,7 @@ export const PagesPage: React.FC = () => {
         <IconButton size="small" disabled={!previewCanGoForward} onClick={previewGoForward} sx={{ p: 0.5 }}>
          <ArrowForwardIcon sx={{ fontSize: 16, color: previewCanGoForward ? '#555' : '#ccc' }} />
         </IconButton>
-        <IconButton size="small" onClick={() => previewActivePage && previewNavigateTo(previewActivePage)} sx={{ p: 0.5 }}>
+        <IconButton size="small" onClick={() => { if (previewActivePage) { previewContentRef.current?.scrollTo(0, 0); } }} sx={{ p: 0.5 }}>
          <RefreshIcon sx={{ fontSize: 16, color: '#555' }} />
         </IconButton>
        </Box>
@@ -1587,48 +1641,24 @@ export const PagesPage: React.FC = () => {
        <Box sx={{ flex: 1, bgcolor: '#fff', borderRadius: '8px', border: '1px solid #ddd', px: 1.5, py: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
         <LockIcon sx={{ fontSize: 14, color: '#4caf50' }} />
         <Typography sx={{ fontSize: '0.8rem', color: '#555', fontFamily: 'monospace', flex: 1 }}>
-         {previewScrollAll ? `https://${selectedApp?.slug || 'app'}.example.com/` : previewAddress}
+         {previewAddress}
         </Typography>
        </Box>
-       {/* View mode toggle */}
-       <Tooltip title={previewScrollAll ? 'Single page view' : 'Scroll all pages'} arrow>
-        <IconButton size="small" onClick={() => setPreviewScrollAll(!previewScrollAll)} sx={{ p: 0.5 }}>
-         {previewScrollAll ? <SinglePageIcon sx={{ fontSize: 18, color: primaryColor }} /> : <ViewStreamIcon sx={{ fontSize: 18, color: '#888' }} />}
+       {/* Home shortcut */}
+       <Tooltip title="Go to Home" arrow>
+        <IconButton size="small" onClick={() => { const home = pages.find(p => p.page_type === 'index') || pages[0]; if (home) previewNavigateTo(home); }} sx={{ p: 0.5 }}>
+         <HomeIcon sx={{ fontSize: 18, color: '#666' }} />
         </IconButton>
        </Tooltip>
       </Box>
 
-      {/* Page content */}
-      <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fff' }}>
-       {previewScrollAll ? (
-        pages.filter(p => p.content_json).length > 0 ? (
-         <Box>
-          {pages.filter(p => p.content_json).map((page, idx) => (
-           <Box key={page.id}>
-            {/* Page divider header */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 3, py: 1.5, bgcolor: idx === 0 ? 'transparent' : '#f8f9fa', borderTop: idx === 0 ? 'none' : '3px solid #e0e0e0' }}>
-             <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: `${primaryColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {previewGetPageIcon(page.page_type)}
-             </Box>
-             <Box>
-              <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', color: '#1a1a2e', lineHeight: 1.2 }}>{page.title}</Typography>
-              <Typography variant="caption" sx={{ color: '#bbb' }}>/{page.page_type === 'index' ? '' : page.page_type}</Typography>
-             </Box>
-            </Box>
-            {/* Rendered page */}
-            <PreviewErrorBoundary>
-             <RenderPage data={{ ...(page.content_json as any), page_type: page.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
-            </PreviewErrorBoundary>
-           </Box>
-          ))}
-         </Box>
-        ) : (
-         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300, flexDirection: 'column' }}>
-          <Typography sx={{ color: '#bbb', fontSize: '1.2rem', mb: 1 }}>No content</Typography>
-          <Typography variant="body2" sx={{ color: '#ddd' }}>None of the pages have content configured.</Typography>
-         </Box>
-        )
-       ) : previewActivePage?.content_json ? (
+      {/* Page content — click interception for navigation */}
+      <Box
+       ref={previewContentRef}
+       onClick={handlePreviewClick}
+       sx={{ flex: 1, overflow: 'auto', bgcolor: '#fff', cursor: 'default' }}
+      >
+       {previewActivePage?.content_json ? (
         <PreviewErrorBoundary>
          <RenderPage data={{ ...(previewActivePage.content_json as any), page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
         </PreviewErrorBoundary>
