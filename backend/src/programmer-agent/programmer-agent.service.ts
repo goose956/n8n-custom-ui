@@ -536,10 +536,18 @@ Return ONLY a JSON array of pages. Each page:
 - id: lowercase slug (e.g., "courses", "billing")
 - name: Display name
 - description: What this page contains and does -- be VERY specific to this app's domain. Include what real data/metrics/content a user of this app would see on this page. Do NOT use generic descriptions.
-- type: "dashboard" | "profile" | "settings" | "custom"
-- required: true for the 4 core pages, false for extras
+- type: "dashboard" | "profile" | "settings" | "admin" | "contact" | "custom"
+- required: true for the 5 core pages (dashboard, profile, settings, admin, contact), false for extras
 
-Include the 4 required pages plus any additional pages that make sense for this specific app.
+The 5 required pages are ALWAYS included:
+1. Dashboard (type: "dashboard") - Main overview with stats, activity, quick actions
+2. Profile (type: "profile") - User profile management
+3. Settings (type: "settings") - Account settings and preferences
+4. Admin (type: "admin") - Admin panel with analytics and contact form submissions
+5. Contact (type: "contact") - Contact form for users to reach out
+
+Include these 5 required pages plus any additional custom pages that make sense for this specific app.
+Use type "custom" ONLY for app-specific pages beyond the 5 core pages.
 
 Return ONLY the JSON array. No explanation, no markdown fences.`;
 
@@ -558,13 +566,19 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
 
  const aiPages: MembersAreaPage[] = parsed
  .filter((p: any) => !BLOCKED_IDS.has((p.id ||'').toLowerCase()) && !BLOCKED_IDS.has((p.type ||'').toLowerCase()))
- .map((p: any) => ({
- id: p.id ||'custom',
+ .map((p: any) => {
+ const id = (p.id ||'custom').toLowerCase();
+ // Force correct type for core pages regardless of what AI returns
+ const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', profile:'profile', settings:'settings', admin:'admin', contact:'contact' };
+ const type: MembersAreaPage['type'] = CORE_ID_TO_TYPE[id] || p.type ||'custom';
+ return {
+ id,
  name: p.name ||'Page',
  description: p.description ||'',
- type: p.type ||'custom',
- required: REQUIRED_IDS.has(p.id) ? true : false,
- }));
+ type,
+ required: REQUIRED_IDS.has(id) ? true : false,
+ };
+ });
  // Ensure all required default pages are always present
  const existingIds = new Set(aiPages.map(p => p.id));
  const missingRequired = DEFAULT_MEMBERS_PAGES.filter(dp => dp.required && !existingIds.has(dp.id));
@@ -590,11 +604,22 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const BLOCKED_PAGE_IDS = new Set(['support','support-ticket']);
  pages = pages.filter(p => !BLOCKED_PAGE_IDS.has(p.id) && !BLOCKED_PAGE_IDS.has(p.type));
 
+ // Force correct type for core pages regardless of what was passed in
+ const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', profile:'profile', settings:'settings', admin:'admin', contact:'contact' };
+ pages = pages.map(p => CORE_ID_TO_TYPE[p.id] ? { ...p, type: CORE_ID_TO_TYPE[p.id] } : p);
+
  // Ensure admin page is always included even if the plan didn't have it
  const hasAdmin = pages.some(p => p.id ==='admin' || p.type ==='admin');
  if (!hasAdmin) {
  const adminPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='admin');
  if (adminPage) pages = [...pages, adminPage];
+ }
+
+ // Ensure contact page is always included
+ const hasContact = pages.some(p => p.id ==='contact' || p.type ==='contact');
+ if (!hasContact) {
+ const contactPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='contact');
+ if (contactPage) pages = [...pages, contactPage];
  }
 
  // Resolve the app's name and description so we can inject them into prompts
