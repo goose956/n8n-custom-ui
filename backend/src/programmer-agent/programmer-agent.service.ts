@@ -4161,7 +4161,7 @@ Return ONLY the code. No explanation.`;
    model?: string;
    existingCode?: string;
    instruction?: string;
- }): Promise<{ success: boolean; code: string; tokensUsed: number; error?: string }> {
+ }): Promise<{ success: boolean; code: string; tokensUsed: number; htmlPreview?: string; error?: string }> {
    const model = request.model || 'gpt-4o';
    try {
      const appContext = this.getAppContext(request.appId);
@@ -4258,7 +4258,7 @@ The component should be a complete, self-contained React component that looks pr
      // Strip markdown fences if present
      code = code.replace(/^```(?:tsx?|javascript|jsx)?\n?/m, '').replace(/\n?```$/m, '').trim();
 
-     return { success: true, code, tokensUsed: result.tokensUsed };
+     return { success: true, code, tokensUsed: result.tokensUsed, htmlPreview: await this.convertToHtmlPreview(code) };
    } catch (err) {
      return {
        success: false,
@@ -4274,7 +4274,7 @@ The component should be a complete, self-contained React component that looks pr
    instruction: string;
    appId?: number;
    model?: string;
- }): Promise<{ success: boolean; code: string; tokensUsed: number; error?: string; question?: string }> {
+ }): Promise<{ success: boolean; code: string; tokensUsed: number; error?: string; question?: string; htmlPreview?: string }> {
    const files: GeneratedFile[] = [{
      path: 'UpsellPage.tsx',
      content: request.code,
@@ -4286,13 +4286,48 @@ The component should be a complete, self-contained React component that looks pr
      fileIndex: 0,
      model: request.model || 'gpt-4o',
    });
+   const updatedCode = result.file?.content || request.code;
+   let htmlPreview: string | undefined;
+   if (result.success && result.file?.content) {
+     try { htmlPreview = await this.convertToHtmlPreview(updatedCode); } catch {}
+   }
    return {
      success: result.success,
-     code: result.file?.content || request.code,
+     code: updatedCode,
      tokensUsed: result.tokensUsed,
      error: result.error,
      question: result.question,
+     htmlPreview,
    };
+ }
+
+ /**
+  * Convert a React/MUI component to standalone HTML with inline styles for iframe preview.
+  * Uses a cheap/fast model (gpt-4o-mini) for the conversion.
+  */
+ private async convertToHtmlPreview(reactCode: string): Promise<string> {
+   const model = 'gpt-4o-mini';
+   const systemPrompt = `You convert React/MUI components into standalone HTML pages that look IDENTICAL visually.
+
+RULES:
+- Output a complete <!DOCTYPE html> document with <html>, <head>, <body>
+- Use ONLY inline styles that precisely match the MUI styling from the React code
+- Use Google Fonts link for Inter/Roboto: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+- Replace MUI icons with appropriate Unicode/emoji equivalents:
+  • CheckCircle → ✅  • Timer → ⏱️  • ShoppingCart → 🛒  • Star → ⭐  • Security/Shield → 🔒
+  • ThumbUp → 👍  • TrendingUp → 📈  • Warning → ⚠️  • CheckBox → ☑️  • ArrowForward → →
+- Replicate ALL gradients, shadows, border-radius, spacing, colors exactly
+- Make buttons look clickable with hover effects (CSS :hover)
+- Responsive: use max-width containers, flexbox/grid as in original
+- The page must look production-ready and PREMIUM
+- Do NOT include any JavaScript or React code
+- Body margin should be 0
+- Output ONLY the raw HTML. No markdown fences, no explanation, no comments.`;
+
+   const result = await this.callAI(model, systemPrompt, `Convert this React component to a standalone HTML page:\n\n${reactCode}`);
+   let html = result.content.trim();
+   html = html.replace(/^```(?:html)?\n?/m, '').replace(/\n?```$/m, '').trim();
+   return html;
  }
 
  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {

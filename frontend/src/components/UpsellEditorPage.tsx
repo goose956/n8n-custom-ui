@@ -99,8 +99,10 @@ export function UpsellEditorPage() {
 
   // Generated code
   const [generatedCode, setGeneratedCode] = useState('');
+  const [htmlPreview, setHtmlPreview] = useState('');
   const [generating, setGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
 
   // AI Chat for editing
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -195,7 +197,9 @@ export function UpsellEditorPage() {
       const data = await res.json();
       if (data.success) {
         setGeneratedCode(data.code);
+        if (data.htmlPreview) setHtmlPreview(data.htmlPreview);
         setStep('editor');
+        setActiveTab('preview');
         setChatMessages([{
           id: '1',
           role: 'assistant',
@@ -239,6 +243,7 @@ export function UpsellEditorPage() {
       const data = await res.json();
       if (data.success && data.code) {
         setGeneratedCode(data.code);
+        if (data.htmlPreview) setHtmlPreview(data.htmlPreview);
         setChatMessages(prev => [...prev, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -575,7 +580,7 @@ export function UpsellEditorPage() {
             onClick={() => setShowPreview(true)}
             sx={{ borderRadius: 2, textTransform: 'none', borderColor: 'rgba(0,0,0,0.1)', color: '#666' }}
           >
-            Preview
+            Full Screen
           </Button>
           <Button
             size="small" variant="outlined"
@@ -601,30 +606,83 @@ export function UpsellEditorPage() {
         </Box>
       </Box>
 
-      {/* Main layout: Code + Chat */}
+      {/* Main layout: Preview/Code + Chat */}
       <Box sx={{ flex: 1, display: 'flex', gap: 2, minHeight: 0, overflow: 'hidden' }}>
-        {/* Code panel */}
+        {/* Left panel: Preview / Code tabs */}
         <Paper sx={{
           flex: 1, borderRadius: 3, overflow: 'hidden', display: 'flex', flexDirection: 'column',
           border: '1px solid rgba(0,0,0,0.06)',
         }}>
+          {/* Tab bar */}
           <Box sx={{
-            p: 1.5, borderBottom: '1px solid rgba(0,0,0,0.06)', bgcolor: '#1a1a2e',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            display: 'flex', alignItems: 'center', gap: 0, borderBottom: '1px solid rgba(0,0,0,0.06)',
+            bgcolor: '#fafbfc',
           }}>
-            <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, color: '#8b95a5', fontFamily: 'monospace' }}>
-              UpsellPage.tsx
-            </Typography>
-            <Chip label={`${generatedCode.split('\n').length} lines`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.1)', color: '#8b95a5', fontSize: '0.7rem' }} />
+            <Button
+              onClick={() => setActiveTab('preview')}
+              startIcon={<PreviewIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                px: 2.5, py: 1.2, borderRadius: 0, textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                color: activeTab === 'preview' ? '#667eea' : '#999',
+                borderBottom: activeTab === 'preview' ? '2px solid #667eea' : '2px solid transparent',
+                '&:hover': { bgcolor: '#667eea08' },
+              }}
+            >
+              Visual Preview
+            </Button>
+            <Button
+              onClick={() => setActiveTab('code')}
+              startIcon={<CopyIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                px: 2.5, py: 1.2, borderRadius: 0, textTransform: 'none', fontSize: '0.82rem', fontWeight: 600,
+                color: activeTab === 'code' ? '#667eea' : '#999',
+                borderBottom: activeTab === 'code' ? '2px solid #667eea' : '2px solid transparent',
+                '&:hover': { bgcolor: '#667eea08' },
+              }}
+            >
+              Code
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            {activeTab === 'code' && (
+              <Chip label={`${generatedCode.split('\n').length} lines`} size="small" sx={{ mr: 1.5, bgcolor: '#f0f0f0', color: '#999', fontSize: '0.7rem' }} />
+            )}
           </Box>
-          <Box sx={{
-            flex: 1, overflow: 'auto', p: 2, bgcolor: '#0d1117',
-            fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", monospace',
-            fontSize: '0.78rem', lineHeight: 1.6, color: '#c9d1d9',
-            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          }}>
-            {generatedCode}
-          </Box>
+
+          {/* Preview content */}
+          {activeTab === 'preview' && (
+            <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              {htmlPreview ? (
+                <iframe
+                  srcDoc={htmlPreview}
+                  title="Page Preview"
+                  sandbox="allow-same-origin"
+                  style={{
+                    width: '100%', height: '100%', border: 'none',
+                    background: '#fff',
+                  }}
+                />
+              ) : (
+                <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4, color: '#bbb' }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <CircularProgress size={32} sx={{ color: '#ddd', mb: 2 }} />
+                    <Typography sx={{ fontSize: '0.9rem' }}>Rendering preview...</Typography>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {/* Code content */}
+          {activeTab === 'code' && (
+            <Box sx={{
+              flex: 1, overflow: 'auto', p: 2, bgcolor: '#0d1117',
+              fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", monospace',
+              fontSize: '0.78rem', lineHeight: 1.6, color: '#c9d1d9',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>
+              {generatedCode}
+            </Box>
+          )}
         </Paper>
 
         {/* AI Chat panel */}
@@ -642,7 +700,7 @@ export function UpsellEditorPage() {
               <AIIcon sx={{ fontSize: 18 }} /> AI Design Chat
             </Typography>
             <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)' }}>
-              Tell me how to change the page
+              Describe changes and see them in the preview
             </Typography>
           </Box>
 
@@ -698,7 +756,7 @@ export function UpsellEditorPage() {
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
                 fullWidth size="small"
-                placeholder="e.g. Make the headline bigger..."
+                placeholder='e.g. "Make the button green" or "Add a testimonial"'
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
@@ -729,18 +787,22 @@ export function UpsellEditorPage() {
         PaperProps={{ sx: { bgcolor: '#fafbfc' } }}
       >
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          <Typography sx={{ fontWeight: 700 }}>Page Preview — {productName}</Typography>
+          <Typography sx={{ fontWeight: 700 }}>Full Screen Preview — {productName}</Typography>
           <IconButton onClick={() => setShowPreview(false)}><CloseIcon /></IconButton>
         </Box>
-        <Box sx={{ flex: 1, overflow: 'auto', p: 3, display: 'flex', justifyContent: 'center' }}>
-          <Paper sx={{ maxWidth: 800, width: '100%', p: 4, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
-            <Box sx={{
-              fontFamily: '"Fira Code", monospace', fontSize: '0.8rem', whiteSpace: 'pre-wrap',
-              lineHeight: 1.6, color: '#333', bgcolor: '#f8f9fa', p: 3, borderRadius: 2,
-            }}>
-              {generatedCode}
+        <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          {htmlPreview ? (
+            <iframe
+              srcDoc={htmlPreview}
+              title="Full Page Preview"
+              sandbox="allow-same-origin"
+              style={{ width: '100%', height: '100%', border: 'none' }}
+            />
+          ) : (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <Typography sx={{ color: '#bbb' }}>No preview available</Typography>
             </Box>
-          </Paper>
+          )}
         </Box>
       </Dialog>
 
