@@ -582,6 +582,27 @@ root.render(
  return newImports +'\n' + content;
  }
 
+ /** Remove duplicate icon import declarations (same local name) */
+ private deduplicateIconImports(content: string): string {
+ const lines = content.split('\n');
+ const seenImports = new Set<string>();
+ const result: string[] = [];
+ for (const line of lines) {
+ // Match: import SomeName from '@mui/icons-material/...';
+ const m = line.match(/^\s*import\s+(\w+)\s+from\s*['"]@mui\/icons-material\//);
+ if (m) {
+ const name = m[1];
+ if (seenImports.has(name)) {
+ // Skip duplicate
+ continue;
+ }
+ seenImports.add(name);
+ }
+ result.push(line);
+ }
+ return result.join('\n');
+ }
+
  private writeUserFiles(tmpDir: string, files: { path: string; content: string }[]) {
  for (const file of files) {
  const normalized = this.normalizePath(file.path);
@@ -590,6 +611,7 @@ root.render(
  let content = this.sanitize(file.content);
  content = this.rewriteIconBarrels(content);
  content = this.addMissingIconImports(content);
+ content = this.deduplicateIconImports(content);
  fs.writeFileSync(filePath, content,'utf-8');
  this.logger.warn(`[DEBUG] Wrote file: ${filePath} (${content.length} bytes, first 120: ${content.substring(0, 120).replace(/\n/g,'↵')})`);
  }
