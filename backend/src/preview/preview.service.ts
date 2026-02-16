@@ -582,24 +582,59 @@ root.render(
  return newImports +'\n' + content;
  }
 
- /** Remove duplicate icon import declarations (same local name) */
+ /**
+ * Remove duplicate icon imports AND resolve name collisions with @mui/material.
+ * e.g. if the file has `import { Badge } from '@mui/material'` AND
+ * `import Badge from '@mui/icons-material/Badge'`, rename the icon to BadgeIcon.
+ */
  private deduplicateIconImports(content: string): string {
  const lines = content.split('\n');
- const seenImports = new Set<string>();
- const result: string[] = [];
+
+ // 1. Collect all names imported from @mui/material (barrel or direct)
+ const materialNames = new Set<string>();
  for (const line of lines) {
- // Match: import SomeName from '@mui/icons-material/...';
- const m = line.match(/^\s*import\s+(\w+)\s+from\s*['"]@mui\/icons-material\//);
+ const barrel = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]@mui\/material['"]/);
+ if (barrel) {
+ for (const n of barrel[1].split(',')) {
+ const name = n.trim().split(/\s+as\s+/).pop()?.trim();
+ if (name) materialNames.add(name);
+ }
+ }
+ }
+
+ // 2. Walk lines, deduplicate icon imports and alias collisions
+ const seenIconImports = new Set<string>();
+ const result: string[] = [];
+ const renames: Record<string, string> = {}; // Badge -> BadgeIcon
+
+ for (const line of lines) {
+ const m = line.match(/^\s*import\s+(\w+)\s+from\s*['"]@mui\/icons-material\/(\w+)['"]/);
  if (m) {
- const name = m[1];
- if (seenImports.has(name)) {
- // Skip duplicate
+ const localName = m[1];
+ const iconModule = m[2];
+
+ // Skip pure duplicates (same icon imported twice)
+ if (seenIconImports.has(localName)) continue;
+
+ // Collision with @mui/material import — rename to XxxIcon
+ if (materialNames.has(localName)) {
+ const aliased = localName + 'Icon';
+ seenIconImports.add(aliased);
+ renames[localName] = aliased;
+ result.push(line.replace(
+ new RegExp(`import\\s+${localName}\\s+from`),
+ `import ${aliased} from`
+ ));
  continue;
  }
- seenImports.add(name);
+
+ seenIconImports.add(localName);
  }
  result.push(line);
  }
+
+ // 3. Rejoin — no JSX renames needed because the material component
+ // keeps the original name and only the icon import is aliased
  return result.join('\n');
  }
 
