@@ -20,6 +20,10 @@ import {
   ContentCopy as DuplicateIcon,
   AccountTree as FunnelIcon,
   AutoFixHigh as AIEditIcon,
+  Link as LinkIcon,
+  LinkOff as UnlinkIcon,
+  Close as CloseIcon,
+  Visibility as PreviewIcon,
 } from '@mui/icons-material';
 
 // ——— Types ————————————————————————————————————————————————
@@ -99,7 +103,14 @@ export function FunnelBuilderPage() {
   const [newFunnelName, setNewFunnelName] = useState('');
   const [addTierDialog, setAddTierDialog] = useState(false);
   const [newTierName, setNewTierName] = useState('');
-  // Step config dialog reserved for future use
+
+  // Page picker dialog
+  const [pagePickerOpen, setPagePickerOpen] = useState(false);
+  const [pagePickerStep, setPagePickerStep] = useState<{ tierId: string; stepId: string } | null>(null);
+  const [savedPages, setSavedPages] = useState<any[]>([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [pagePreviewOpen, setPagePreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
 
   // Drag state
   const [dragState, setDragState] = useState<{ tierId: string; stepIdx: number } | null>(null);
@@ -395,6 +406,67 @@ export function FunnelBuilderPage() {
     handleDrop(e, tierId, position);
   };
 
+  // ——— Page picker ————————————————————————————————————————
+
+  const openPagePicker = async (tierId: string, stepId: string) => {
+    setPagePickerStep({ tierId, stepId });
+    setPagePickerOpen(true);
+    setLoadingPages(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/pages?app_id=${selectedAppId}`);
+      const data = await res.json();
+      setSavedPages(data.data || []);
+    } catch {
+      setSnack({ open: true, msg: 'Failed to load pages', severity: 'error' });
+    } finally {
+      setLoadingPages(false);
+    }
+  };
+
+  const assignPageToStep = (pageId: number, pageTitle: string) => {
+    if (!activeFunnel || !pagePickerStep) return;
+    setActiveFunnel({
+      ...activeFunnel,
+      tiers: activeFunnel.tiers.map(t =>
+        t.id === pagePickerStep.tierId
+          ? {
+              ...t,
+              steps: t.steps.map(s =>
+                s.id === pagePickerStep.stepId
+                  ? { ...s, pageId, config: { ...s.config, pageTitle } }
+                  : s
+              ),
+            }
+          : t
+      ),
+    });
+    setDirty(true);
+    setPagePickerOpen(false);
+    setPagePickerStep(null);
+    setSnack({ open: true, msg: `Linked "${pageTitle}" to step`, severity: 'success' });
+  };
+
+  const unlinkPage = (tierId: string, stepId: string) => {
+    if (!activeFunnel) return;
+    setActiveFunnel({
+      ...activeFunnel,
+      tiers: activeFunnel.tiers.map(t =>
+        t.id === tierId
+          ? {
+              ...t,
+              steps: t.steps.map(s =>
+                s.id === stepId
+                  ? { ...s, pageId: undefined, config: { ...s.config, pageTitle: undefined } }
+                  : s
+              ),
+            }
+          : t
+      ),
+    });
+    setDirty(true);
+    setSnack({ open: true, msg: 'Page unlinked from step', severity: 'info' });
+  };
+
   // ——— Render ——————————————————————————————————————————————
 
   if (!selectedAppId) {
@@ -656,15 +728,16 @@ export function FunnelBuilderPage() {
                         draggable
                         onDragStart={() => handleDragStart(tier.id, idx)}
                         onDragEnd={handleDragEnd}
+                        onDoubleClick={() => openPagePicker(tier.id, step.id)}
                         elevation={0}
                         sx={{
                           position: 'relative',
                           width: 140,
                           p: 1.5,
-                          border: `1.5px solid ${getStepColor(step.pageType)}25`,
+                          border: `1.5px solid ${step.pageId ? getStepColor(step.pageType) : getStepColor(step.pageType) + '25'}`,
                           borderRadius: 2.5,
                           cursor: 'grab',
-                          bgcolor: '#fff',
+                          bgcolor: step.pageId ? `${getStepColor(step.pageType)}06` : '#fff',
                           transition: 'all 0.15s ease',
                           opacity: dragState?.tierId === tier.id && dragState?.stepIdx === idx ? 0.4 : 1,
                           '&:hover': {
@@ -695,6 +768,19 @@ export function FunnelBuilderPage() {
                               <AIEditIcon sx={{ fontSize: 13, color: '#bbb', '&:hover': { color: '#667eea' } }} />
                             </IconButton>
                           </Tooltip>
+                          {step.pageId ? (
+                            <Tooltip title="Unlink page">
+                              <IconButton size="small" onClick={(e) => { e.stopPropagation(); unlinkPage(tier.id, step.id); }} sx={{ p: 0.3 }}>
+                                <UnlinkIcon sx={{ fontSize: 13, color: '#bbb', '&:hover': { color: '#e67e22' } }} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Link a saved page">
+                              <IconButton size="small" onClick={(e) => { e.stopPropagation(); openPagePicker(tier.id, step.id); }} sx={{ p: 0.3 }}>
+                                <LinkIcon sx={{ fontSize: 13, color: '#bbb', '&:hover': { color: '#27ae60' } }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                           <Tooltip title="Duplicate">
                             <IconButton size="small" onClick={(e) => { e.stopPropagation(); duplicateStep(tier.id, step.id); }} sx={{ p: 0.3 }}>
                               <DuplicateIcon sx={{ fontSize: 13, color: '#bbb' }} />
@@ -731,17 +817,46 @@ export function FunnelBuilderPage() {
                           onClick={(e) => e.stopPropagation()}
                         />
 
-                        {/* Type chip */}
-                        <Chip
-                          label={step.pageType}
-                          size="small"
-                          sx={{
-                            display: 'block', mx: 'auto', mt: 0.5,
-                            height: 18, fontSize: '0.6rem', fontWeight: 600,
-                            bgcolor: `${getStepColor(step.pageType)}12`,
-                            color: getStepColor(step.pageType),
-                          }}
-                        />
+                        {/* Type chip + linked page indicator */}
+                        {step.pageId ? (
+                          <Tooltip title={`Linked: ${step.config?.pageTitle || `Page #${step.pageId}`}`}>
+                            <Chip
+                              icon={<LinkIcon sx={{ fontSize: '0.6rem !important' }} />}
+                              label={step.config?.pageTitle ? (step.config.pageTitle.length > 12 ? step.config.pageTitle.slice(0, 12) + '…' : step.config.pageTitle) : `Page #${step.pageId}`}
+                              size="small"
+                              sx={{
+                                display: 'block', mx: 'auto', mt: 0.5,
+                                height: 18, fontSize: '0.58rem', fontWeight: 600,
+                                bgcolor: '#27ae6018',
+                                color: '#27ae60',
+                                cursor: 'pointer',
+                              }}
+                              onClick={(e) => { e.stopPropagation(); openPagePicker(tier.id, step.id); }}
+                            />
+                          </Tooltip>
+                        ) : (
+                          <Chip
+                            label={step.pageType}
+                            size="small"
+                            sx={{
+                              display: 'block', mx: 'auto', mt: 0.5,
+                              height: 18, fontSize: '0.6rem', fontWeight: 600,
+                              bgcolor: `${getStepColor(step.pageType)}12`,
+                              color: getStepColor(step.pageType),
+                            }}
+                          />
+                        )}
+
+                        {/* Double-click hint */}
+                        {!step.pageId && (
+                          <Typography sx={{
+                            fontSize: '0.55rem', color: '#ccc', textAlign: 'center', mt: 0.5,
+                            opacity: 0, transition: 'opacity 0.15s',
+                            '.MuiPaper-root:hover &': { opacity: 1 },
+                          }}>
+                            Double-click to link page
+                          </Typography>
+                        )}
                       </Paper>
 
                       {/* Arrow between steps */}
@@ -862,6 +977,162 @@ export function FunnelBuilderPage() {
             Add
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* ——— Page picker dialog ————————————————— */}
+      <Dialog
+        open={pagePickerOpen}
+        onClose={() => { setPagePickerOpen(false); setPagePickerStep(null); }}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, maxHeight: '80vh' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LinkIcon sx={{ color: '#667eea' }} />
+            Link a Saved Page
+          </Box>
+          <IconButton onClick={() => { setPagePickerOpen(false); setPagePickerStep(null); }} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {loadingPages ? (
+            <Box sx={{ textAlign: 'center', py: 6 }}>
+              <CircularProgress size={28} />
+              <Typography sx={{ mt: 1, color: '#999', fontSize: '0.85rem' }}>Loading saved pages...</Typography>
+            </Box>
+          ) : savedPages.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 6, px: 3 }}>
+              <PageIcon sx={{ fontSize: 48, color: '#ddd', mb: 1 }} />
+              <Typography sx={{ fontWeight: 700, color: '#999', mb: 0.5 }}>No saved pages yet</Typography>
+              <Typography sx={{ fontSize: '0.85rem', color: '#bbb' }}>
+                Create pages in the Upsell Editor first, then link them to funnel steps here.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 2, p: 2.5 }}>
+              {savedPages.map(page => {
+                const cj = page.content_json || {};
+                const isLinked = pagePickerStep && activeFunnel?.tiers
+                  .find(t => t.id === pagePickerStep.tierId)?.steps
+                  .find(s => s.id === pagePickerStep.stepId)?.pageId === page.id;
+
+                return (
+                  <Paper
+                    key={page.id}
+                    onClick={() => assignPageToStep(page.id, page.title)}
+                    sx={{
+                      border: isLinked ? '2px solid #27ae60' : '1.5px solid rgba(0,0,0,0.08)',
+                      borderRadius: 2.5, overflow: 'hidden', cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: 'none',
+                      '&:hover': { borderColor: '#667eea', boxShadow: '0 4px 16px rgba(102,126,234,0.15)', transform: 'translateY(-2px)' },
+                    }}
+                  >
+                    {/* Page preview thumbnail */}
+                    <Box sx={{
+                      height: 140, bgcolor: '#f8f9fa', overflow: 'hidden', position: 'relative',
+                      borderBottom: '1px solid rgba(0,0,0,0.06)',
+                    }}>
+                      {cj.htmlPreview ? (
+                        <iframe
+                          srcDoc={cj.htmlPreview}
+                          title={page.title}
+                          sandbox=""
+                          style={{
+                            width: '400%', height: '400%', border: 'none',
+                            transform: 'scale(0.25)', transformOrigin: 'top left',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      ) : (
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                          <PageIcon sx={{ fontSize: 40, color: '#ddd' }} />
+                        </Box>
+                      )}
+                      {/* Preview button overlay */}
+                      {cj.htmlPreview && (
+                        <Tooltip title="Full preview">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewHtml(cj.htmlPreview);
+                              setPagePreviewOpen(true);
+                            }}
+                            sx={{
+                              position: 'absolute', top: 4, right: 4,
+                              bgcolor: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(4px)',
+                              '&:hover': { bgcolor: '#fff' },
+                            }}
+                          >
+                            <PreviewIcon sx={{ fontSize: 16, color: '#667eea' }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {isLinked && (
+                        <Chip
+                          label="Currently linked"
+                          size="small"
+                          sx={{
+                            position: 'absolute', bottom: 4, left: 4,
+                            bgcolor: '#27ae60', color: '#fff', fontSize: '0.65rem', fontWeight: 700, height: 20,
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    {/* Page info */}
+                    <Box sx={{ p: 1.5 }}>
+                      <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: '#1a1a2e', mb: 0.3, lineHeight: 1.3 }} noWrap>
+                        {page.title}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Chip
+                          label={page.page_type || cj.pageType || 'page'}
+                          size="small"
+                          sx={{ height: 18, fontSize: '0.6rem', fontWeight: 600, bgcolor: '#f0f0f0', color: '#999' }}
+                        />
+                        {cj.productName && (
+                          <Typography sx={{ fontSize: '0.65rem', color: '#bbb' }} noWrap>
+                            {cj.productName}
+                          </Typography>
+                        )}
+                      </Box>
+                      {cj.price && (
+                        <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, color: '#27ae60', mt: 0.3 }}>
+                          {cj.price}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Paper>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ——— Full page preview dialog ———————————— */}
+      <Dialog
+        open={pagePreviewOpen}
+        onClose={() => setPagePreviewOpen(false)}
+        fullScreen
+        PaperProps={{ sx: { bgcolor: '#fafbfc' } }}
+      >
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+          <Typography sx={{ fontWeight: 700 }}>Page Preview</Typography>
+          <IconButton onClick={() => setPagePreviewOpen(false)}><CloseIcon /></IconButton>
+        </Box>
+        <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          <iframe
+            srcDoc={previewHtml}
+            title="Page Preview"
+            sandbox="allow-same-origin"
+            style={{ width: '100%', height: '100%', border: 'none' }}
+          />
+        </Box>
       </Dialog>
 
       {/* ——— Snackbar ————————————————————————————— */}

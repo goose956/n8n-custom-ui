@@ -291,6 +291,7 @@ export function UpsellEditorPage() {
           title: `${productName} - ${PAGE_TYPES.find(p => p.type === pageType)?.label || 'Upsell'}`,
           content_json: {
             componentCode: generatedCode,
+            htmlPreview: htmlPreview || undefined,
             pageType,
             productName,
             price,
