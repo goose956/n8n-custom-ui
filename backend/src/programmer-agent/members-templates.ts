@@ -10,7 +10,11 @@ interface TemplateParams {
  appName: string;
  appId: number;
  primaryColor: string;
+ copy?: Record<string, any>;
 }
+
+/** Escape single quotes for safe interpolation inside JS string literals */
+function esc(s: string): string { return s.replace(/'/g, "\\'"); }
 
 function darken(hex: string, pct: number): string {
  const num = parseInt(hex.replace('#',''), 16);
@@ -83,6 +87,21 @@ const statLabelSx = {
 export function dashboardTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
+ const c = p.copy || {};
+ const dHeroSub = c.heroSubtitle || `Here's what's happening with your ${p.appName} account today.`;
+ const dStats = c.stats || [
+  { label: 'Total Views', value: '2,847', change: '+12%' },
+  { label: 'Active Users', value: '184', change: '+8%' },
+  { label: 'Engagement', value: '94%', change: '+3%' },
+  { label: 'Rating', value: '4.9', change: 'Top 5%' },
+ ];
+ const dAct = c.activity || [
+  { title: 'New member joined', desc: 'Sarah K. signed up for Pro plan' },
+  { title: 'Achievement unlocked', desc: 'Completed onboarding milestone' },
+  { title: 'Content published', desc: 'New resource added to library' },
+  { title: 'Feedback received', desc: '5-star review from Alex M.' },
+ ];
+ const dSteps = c.gettingStarted || ['Create your account', 'Complete your profile', 'Explore features', 'Invite team members'];
  return `import { useState } from 'react';
 import {
  Box, Typography, Paper, Grid, Card, CardContent, Avatar, Button,
@@ -104,17 +123,17 @@ ${SB}
 
 export function MembersDashboardPage() {
  const stats = [
-  { label: 'Total Views', value: '2,847', change: '+12%', icon: <Visibility />, color: COLORS.primary },
-  { label: 'Active Users', value: '184', change: '+8%', icon: <People />, color: COLORS.blue },
-  { label: 'Engagement', value: '94%', change: '+3%', icon: <TrendingUp />, color: COLORS.success },
-  { label: 'Rating', value: '4.9', change: 'Top 5%', icon: <Star />, color: COLORS.warning },
+  { label: '${esc(dStats[0].label)}', value: '${esc(dStats[0].value)}', change: '${esc(dStats[0].change)}', icon: <Visibility />, color: COLORS.primary },
+  { label: '${esc(dStats[1].label)}', value: '${esc(dStats[1].value)}', change: '${esc(dStats[1].change)}', icon: <People />, color: COLORS.blue },
+  { label: '${esc(dStats[2].label)}', value: '${esc(dStats[2].value)}', change: '${esc(dStats[2].change)}', icon: <TrendingUp />, color: COLORS.success },
+  { label: '${esc(dStats[3].label)}', value: '${esc(dStats[3].value)}', change: '${esc(dStats[3].change)}', icon: <Star />, color: COLORS.warning },
  ];
 
  const recentActivity = [
-  { title: 'New member joined', desc: 'Sarah K. signed up for Pro plan', time: '2 min ago', color: COLORS.success, icon: <People /> },
-  { title: 'Achievement unlocked', desc: 'Completed onboarding milestone', time: '1 hour ago', color: COLORS.warning, icon: <EmojiEvents /> },
-  { title: 'Content published', desc: 'New resource added to library', time: '3 hours ago', color: COLORS.primary, icon: <Bolt /> },
-  { title: 'Feedback received', desc: '5-star review from Alex M.', time: '5 hours ago', color: COLORS.blue, icon: <Star /> },
+  { title: '${esc(dAct[0].title)}', desc: '${esc(dAct[0].desc)}', time: '2 min ago', color: COLORS.success, icon: <People /> },
+  { title: '${esc(dAct[1].title)}', desc: '${esc(dAct[1].desc)}', time: '1 hour ago', color: COLORS.warning, icon: <EmojiEvents /> },
+  { title: '${esc(dAct[2].title)}', desc: '${esc(dAct[2].desc)}', time: '3 hours ago', color: COLORS.primary, icon: <Bolt /> },
+  { title: '${esc(dAct[3].title)}', desc: '${esc(dAct[3].desc)}', time: '5 hours ago', color: COLORS.blue, icon: <Star /> },
  ];
 
  const quickLinks = [
@@ -131,7 +150,7 @@ export function MembersDashboardPage() {
     <Box sx={floatingCircle(80, -20, 300, 0.06)} />
     <Box sx={{ position: 'relative', zIndex: 1 }}>
      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', mb: 0.5 }}>Welcome back</Typography>
-     <Typography variant="body1" sx={{ opacity: 0.85, maxWidth: 500 }}>Here's what's happening with your ${p.appName} account today.</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, maxWidth: 500 }}>${dHeroSub}</Typography>
     </Box>
    </Paper>
 
@@ -200,7 +219,7 @@ export function MembersDashboardPage() {
        '& .MuiLinearProgress-bar': { borderRadius: 4, background: 'linear-gradient(90deg, ${p.primaryColor}, ${sec})' } }} />
       <Typography variant="caption" color="text.secondary">3 of 4 steps completed</Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
-       {[{ done: true, label: 'Create your account' }, { done: true, label: 'Complete your profile' }, { done: true, label: 'Explore features' }, { done: false, label: 'Invite team members' }].map((s, i) => (
+       {[{ done: true, label: '${esc(dSteps[0])}' }, { done: true, label: '${esc(dSteps[1])}' }, { done: true, label: '${esc(dSteps[2])}' }, { done: false, label: '${esc(dSteps[3])}' }].map((s, i) => (
         <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
          <CheckCircle sx={{ fontSize: 18, color: s.done ? COLORS.success : 'text.disabled' }} />
          <Typography variant="body2" sx={{ color: s.done ? 'text.secondary' : 'text.primary', textDecoration: s.done ? 'line-through' : 'none' }}>{s.label}</Typography>
@@ -222,6 +241,8 @@ export function MembersDashboardPage() {
 export function profileTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
+ const c = p.copy || {};
+ const pBio = c.bio || `Active ${p.appName} user since 2025.`;
  return `import { useState } from 'react';
 import {
  Box, Typography, Paper, Grid, Avatar, Button, TextField, Divider,
@@ -246,7 +267,7 @@ export function MembersProfilePage() {
  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
  const [profile, setProfile] = useState({
   firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com', phone: '+1 555-0123',
-  bio: 'Active ${p.appName} user since 2025.', joinDate: '2025-06-15', plan: 'Pro',
+  bio: '${esc(pBio)}', joinDate: '2025-06-15', plan: 'Pro',
  });
  const [draft, setDraft] = useState({ ...profile });
 
@@ -369,6 +390,8 @@ export function MembersProfilePage() {
 export function settingsTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
+ const c = p.copy || {};
+ const sHeroSub = c.heroSubtitle || `Manage your ${p.appName} account preferences`;
  return `import { useState } from 'react';
 import {
  Box, Typography, Paper, Grid, Switch,
@@ -427,7 +450,7 @@ export function MembersSettingsPage() {
      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
       <Settings /> Settings
      </Typography>
-     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Manage your ${p.appName} account preferences</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>${sHeroSub}</Typography>
     </Box>
    </Paper>
 
@@ -498,6 +521,8 @@ export function MembersSettingsPage() {
 export function adminTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
+ const c = p.copy || {};
+ const aHeroSub = c.heroSubtitle || 'Analytics and contact form submissions';
  return `import { useEffect, useState, useCallback } from 'react';
 import {
  Box, Typography, Paper, Grid, Card, CardContent, Chip, Button,
@@ -599,7 +624,7 @@ export function MembersAdminPage() {
       <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
        <Dashboard /> ${p.appName} Admin
       </Typography>
-      <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Analytics and contact form submissions</Typography>
+      <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>${aHeroSub}</Typography>
      </Box>
      <Button variant="contained" startIcon={<Refresh />} onClick={fetchAll}
       sx={{ bgcolor: 'rgba(255,255,255,0.2)', fontWeight: 600, backdropFilter: 'blur(4px)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
@@ -745,6 +770,13 @@ export function MembersAdminPage() {
 export function contactFormTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
+ const c = p.copy || {};
+ const cHeroSub = c.heroSubtitle || "Have a question or feedback? We'd love to hear from you.";
+ const cCards = c.infoCards || [
+  { title: 'Live Chat', desc: 'Available 9am-5pm' },
+  { title: 'Response Time', desc: 'Within 24 hours' },
+  { title: 'Support', desc: 'Dedicated team' },
+ ];
  return `import { useState } from 'react';
 import {
  Box, Typography, Paper, TextField, Button, Snackbar, Alert,
@@ -789,9 +821,9 @@ export function MembersContactPage() {
  };
 
  const infoCards = [
-  { icon: <Chat />, title: 'Live Chat', desc: 'Available 9am-5pm', color: COLORS.primary },
-  { icon: <AccessTime />, title: 'Response Time', desc: 'Within 24 hours', color: COLORS.blue },
-  { icon: <SupportAgent />, title: 'Support', desc: 'Dedicated team', color: COLORS.success },
+  { icon: <Chat />, title: '${esc(cCards[0].title)}', desc: '${esc(cCards[0].desc)}', color: COLORS.primary },
+  { icon: <AccessTime />, title: '${esc(cCards[1].title)}', desc: '${esc(cCards[1].desc)}', color: COLORS.blue },
+  { icon: <SupportAgent />, title: '${esc(cCards[2].title)}', desc: '${esc(cCards[2].desc)}', color: COLORS.success },
  ];
 
  return (
@@ -803,7 +835,7 @@ export function MembersContactPage() {
      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
       <Email /> Contact Us
      </Typography>
-     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Have a question or feedback? We'd love to hear from you.</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>${cHeroSub}</Typography>
     </Box>
    </Paper>
 

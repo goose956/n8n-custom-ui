@@ -6,7 +6,7 @@ import axios from'axios';
 import { CryptoService } from'../shared/crypto.service';
 import { DatabaseService } from'../shared/database.service';
 import { AnalyticsService } from'../analytics/analytics.service';
-import { getPageTemplate } from'./members-templates';
+import { getPageTemplate, TEMPLATE_PAGE_TYPES } from'./members-templates';
 
 // --- Types ---------------------------------------------------------------------
 
@@ -128,14 +128,14 @@ const MAX_TOKENS: Record<string, number> = {
 };
 
 // Estimated tokens per page for cost calculation
-// Template pages (dashboard, profile, settings, admin, contact) cost 0 AI tokens
+// Template pages use a shared AI copy call (~600 tokens total, split across pages)
 const EST_TOKENS_PER_PAGE: Record<string, number> = {
- dashboard: 0, // static template
+ dashboard: 120, // template + shared AI copy
  custom: 3000,
- admin: 0, // static template
- profile: 0, // static template
- settings: 0, // static template
- contact: 0, // static template
+ admin: 120, // template + shared AI copy
+ profile: 120, // template + shared AI copy
+ settings: 120, // template + shared AI copy
+ contact: 120, // template + shared AI copy
 };
 
 // --- Default members area pages ---------------------------------------------
@@ -688,6 +688,25 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  } catch { /* use defaults */ }
  }
 
+ // Generate AI copy for all template pages in one cheap call
+ let templateCopy: Record<string, Record<string, any>> = {};
+ const hasTemplatePages = pages.some(pg => (TEMPLATE_PAGE_TYPES as readonly string[]).includes(pg.type));
+ if (hasTemplatePages && (appDescription || appName)) {
+ try {
+ const copyResult = await this.callAI(
+ subAgentModel,
+ 'You are a SaaS copywriter. Return ONLY valid JSON. No markdown fences, no explanation.',
+ `Generate marketing copy for a SaaS members area.\nApp: "${templateAppName}"\nDescription: "${appDescription || request.prompt}"\n\nReturn JSON matching this EXACT structure:\n{\n  "dashboard": {\n    "heroSubtitle": "One sentence about what the user can track or do here",\n    "stats": [\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "Top X%" }\n    ],\n    "activity": [\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" }\n    ],\n    "gettingStarted": ["Step 1 label", "Step 2 label", "Step 3 label", "Step 4 label"]\n  },\n  "profile": { "bio": "Default bio text relevant to this app and its users" },\n  "settings": { "heroSubtitle": "Sentence about managing preferences for this app" },\n  "admin": { "heroSubtitle": "Sentence about admin capabilities for this app" },\n  "contact": {\n    "heroSubtitle": "Encouraging sentence about reaching out",\n    "infoCards": [\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" }\n    ]\n  }\n}\n\nAll copy must be specific to "${templateAppName}". Use realistic sample data for this industry.`,
+ );
+ totalSubAgentTokens += copyResult.tokensUsed;
+ const cleaned = copyResult.content.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+ templateCopy = JSON.parse(cleaned);
+ console.log(`[MembersArea] Generated AI copy for template pages (${copyResult.tokensUsed} tokens)`);
+ } catch (err) {
+ console.warn('[MembersArea] Failed to generate copy, using template defaults:', err);
+ }
+ }
+
  for (const page of pages) {
  const isComplex = complexPageTypes.includes(page.type);
  const agent = isComplex ?'orchestrator' :'sub-agent';
@@ -708,9 +727,10 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  appName: templateAppName,
  appId: templateAppId,
  primaryColor: templatePrimaryColor,
+ copy: templateCopy[page.type] || {},
  });
  if (templateCode) {
- console.log(`[MembersArea] Using static template for ${page.type} page (0 AI tokens)`);
+ console.log(`[MembersArea] Using template with AI copy for ${page.type} page`);
  allFiles.push({
  path:`${membersPath}/${page.id}.tsx`,
  content: templateCode,
