@@ -590,15 +590,22 @@ root.render(
  private deduplicateIconImports(content: string): string {
  const lines = content.split('\n');
 
- // 1. Collect all names imported from @mui/material (barrel or direct)
+ // 1. Collect all names imported from @mui/material (barrel — may span multiple lines)
  const materialNames = new Set<string>();
- for (const line of lines) {
- const barrel = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]@mui\/material['"]/);
- if (barrel) {
- for (const n of barrel[1].split(',')) {
+ const barrelRe = /import\s*\{([^}]+)\}\s*from\s*['"]@mui\/material['"]/gs;
+ let bm: RegExpExecArray | null;
+ while ((bm = barrelRe.exec(content)) !== null) {
+ for (const n of bm[1].split(',')) {
  const name = n.trim().split(/\s+as\s+/).pop()?.trim();
  if (name) materialNames.add(name);
  }
+ }
+ // Also collect from react imports (useState, useEffect, etc. won't collide, but List might)
+ const reactBarrelRe = /import\s*\{([^}]+)\}\s*from\s*['"]react['"]/gs;
+ while ((bm = reactBarrelRe.exec(content)) !== null) {
+ for (const n of bm[1].split(',')) {
+ const name = n.trim().split(/\s+as\s+/).pop()?.trim();
+ if (name) materialNames.add(name);
  }
  }
 
