@@ -124,7 +124,7 @@ export class BlogService {
  }
  }
 
- private async callAI(provider: { provider: string; key: string; url: string; model: string }, systemPrompt: string, userPrompt: string): Promise<string> {
+ private async callAI(provider: { provider: string; key: string; url: string; model: string }, systemPrompt: string, userPrompt: string, jsonMode = true): Promise<string> {
  const startTime = Date.now();
  let tokensIn = 0, tokensOut = 0;
 
@@ -158,9 +158,7 @@ export class BlogService {
  if (provider.provider ==='openrouter') {
  headers['HTTP-Referer'] ='http://localhost:3000';
  }
- const response = await axios.post(
- provider.url,
- {
+ const body: any = {
  model: provider.model,
  messages: [
  { role:'system', content: systemPrompt },
@@ -168,8 +166,13 @@ export class BlogService {
  ],
  temperature: 0.7,
  max_tokens: 8000,
- response_format: { type:'json_object' },
- },
+ };
+ if (jsonMode) {
+ body.response_format = { type:'json_object' };
+ }
+ const response = await axios.post(
+ provider.url,
+ body,
  { headers, timeout: 180000 },
  );
  tokensIn = response.data.usage?.prompt_tokens || 0;
@@ -180,76 +183,63 @@ export class BlogService {
  }
 
  /**
-  * Get the OpenAI API key specifically (needed for DALL-E image generation).
-  * Falls back to OpenRouter key if the stored provider name matches.
-  */
- private getOpenAIKey(): string | null {
-  try {
-   const data = this.readDb();
-   const apiKeys = data.apiKeys || [];
-   const entry = apiKeys.find((k: any) => k.name.toLowerCase() === 'openai');
-   if (entry) {
-    try {
-     const key = this.cryptoService.decrypt(entry.value);
-     if (key) return key;
-    } catch { /* skip */ }
-   }
-   return null;
-  } catch {
-   return null;
-  }
- }
-
- /**
-  * Generate a colourful abstract line-art hero image for a blog post using DALL-E.
-  * Saves the image to /public/blog-images/ and returns the URL path.
+  * Generate a colourful abstract SVG hero image for a blog post.
+  * Uses the existing AI text provider — no DALL-E key needed.
+  * Saves the SVG to /public/blog-images/ and returns the URL path.
   */
  private async generateFeaturedImage(title: string, keyword: string): Promise<string | null> {
-  const openaiKey = this.getOpenAIKey();
-  if (!openaiKey) {
-   console.log('[Blog] No OpenAI key found — skipping featured image generation');
+  const aiProvider = this.getAIProvider();
+  if (!aiProvider) {
+   console.log('[Blog] No AI provider — skipping featured image generation');
    return null;
   }
 
   try {
-   const prompt = `Colourful abstract line art illustration about "${keyword}". Use vibrant gradients, flowing lines, geometric shapes, and modern minimalist style. No text, no words, no letters. Clean white background. Suitable as a blog post hero image.`;
+   const svgPrompt = `Create a beautiful, colourful abstract SVG illustration that represents the concept of "${keyword}".
 
-   const response = await axios.post(
-    'https://api.openai.com/v1/images/generations',
-    {
-     model: 'dall-e-3',
-     prompt,
-     n: 1,
-     size: '1792x1024',
-     quality: 'standard',
-     response_format: 'b64_json',
-    },
-    {
-     headers: {
-      Authorization: `Bearer ${openaiKey}`,
-      'Content-Type': 'application/json',
-     },
-     timeout: 120000,
-    },
-   );
+RULES:
+- Output ONLY the raw SVG code, nothing else — no markdown, no explanation, no code fences
+- Use viewBox="0 0 1200 630" (blog hero aspect ratio)
+- Use vibrant, modern colours with gradients (linearGradient/radialGradient in <defs>)
+- Create abstract line art: flowing curves, geometric shapes, dots, waves, circles
+- Style: modern, minimalist, artistic — think editorial illustration
+- NO text, NO words, NO letters, NO numbers anywhere in the SVG
+- Use at least 3-4 different vibrant colours (purples, blues, teals, oranges, pinks)
+- Include some transparency (opacity) for depth
+- Keep it abstract but loosely inspired by the topic
+- Make it visually interesting with overlapping shapes and varied stroke widths
+- Total SVG should be under 8KB`;
 
-   const b64 = response.data?.data?.[0]?.b64_json;
-   if (b64) {
-    // Save image to file instead of bloating db.json
-    const imgDir = path.join(__dirname, '../../public/blog-images');
-    if (!fs.existsSync(imgDir)) {
-     fs.mkdirSync(imgDir, { recursive: true });
-    }
-    const filename = `${this.slugify(keyword)}-${Date.now()}.png`;
-    fs.writeFileSync(path.join(imgDir, filename), Buffer.from(b64, 'base64'));
+   const raw = await this.callAI(aiProvider, 'You are an SVG artist. Output only raw SVG code. No markdown, no code fences, no explanation.', svgPrompt, false);
 
-    // Track cost: DALL-E 3 standard 1792x1024 = $0.080 per image
-    await this.trackCost('openai', 'dall-e-3', 0, 0, 0, 'blog-image').catch(() => {});
-    return `/blog-images/${filename}`;
+   // Extract SVG from response (handle potential markdown wrapping)
+   let svg = raw.trim();
+   if (svg.startsWith('```')) {
+    svg = svg.replace(/^```(?:svg|xml|html)?\s*/i, '').replace(/\s*```$/, '');
    }
-   return null;
+
+   // Validate it looks like SVG
+   if (!svg.startsWith('<svg') && !svg.startsWith('<?xml')) {
+    const svgMatch = svg.match(/<svg[\s\S]*<\/svg>/i);
+    if (svgMatch) {
+     svg = svgMatch[0];
+    } else {
+     console.error('[Blog] AI did not return valid SVG');
+     return null;
+    }
+   }
+
+   // Save SVG to file
+   const imgDir = path.join(__dirname, '../../public/blog-images');
+   if (!fs.existsSync(imgDir)) {
+    fs.mkdirSync(imgDir, { recursive: true });
+   }
+   const filename = `${this.slugify(keyword)}-${Date.now()}.svg`;
+   fs.writeFileSync(path.join(imgDir, filename), svg, 'utf-8');
+
+   return `/blog-images/${filename}`;
   } catch (err: any) {
-   console.error('[Blog] Featured image generation failed:', err.response?.data?.error?.message || err.message);
+   console.error('[Blog] Featured image generation failed:', err.message);
    return null;
   }
  }
