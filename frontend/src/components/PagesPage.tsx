@@ -1699,7 +1699,7 @@ export const PagesPage: React.FC = () => {
        })()}
        {previewActivePage?.content_json ? (
         <PreviewErrorBoundary>
-         <RenderPage data={{ ...(previewActivePage.content_json as any), page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
+         <RenderPage data={{ ...(previewActivePage.content_json as any), nav: undefined, page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
         </PreviewErrorBoundary>
        ) : (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
