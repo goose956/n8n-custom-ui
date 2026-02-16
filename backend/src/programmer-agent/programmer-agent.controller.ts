@@ -360,4 +360,41 @@ export class ProgrammerAgentController {
  res.end();
  }
  }
+
+ /**
+  * Generate an upsell / checkout / order-bump page with AI
+  */
+ @Post('generate-upsell')
+ async generateUpsell(
+   @Body() body: {
+     appId: number;
+     pageType: 'upsell' | 'checkout' | 'order-bump' | 'downsell' | 'thankyou-upsell';
+     productName: string;
+     productDescription: string;
+     price: string;
+     originalPrice?: string;
+     features?: string[];
+     urgency?: string;
+     testimonial?: string;
+     style?: 'minimal' | 'bold' | 'elegant' | 'aggressive';
+     model?: string;
+   },
+ ) {
+   return this.agentService.generateUpsellPage(body);
+ }
+
+ /**
+  * Refine an existing upsell page with AI instructions
+  */
+ @Post('refine-upsell')
+ async refineUpsell(
+   @Body() body: {
+     code: string;
+     instruction: string;
+     appId?: number;
+     model?: string;
+   },
+ ) {
+   return this.agentService.refineUpsellPage(body);
+ }
 }

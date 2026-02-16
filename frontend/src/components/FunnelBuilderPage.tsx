@@ -19,6 +19,7 @@ import {
   ArrowForward as ArrowIcon,
   ContentCopy as DuplicateIcon,
   AccountTree as FunnelIcon,
+  AutoFixHigh as AIEditIcon,
 } from '@mui/icons-material';
 
 // ——— Types ————————————————————————————————————————————————
@@ -689,6 +690,11 @@ export function FunnelBuilderPage() {
                             opacity: 0, transition: 'opacity 0.15s ease',
                           }}
                         >
+                          <Tooltip title="Edit in AI Editor">
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); window.location.href = '/upsell-editor'; }} sx={{ p: 0.3 }}>
+                              <AIEditIcon sx={{ fontSize: 13, color: '#bbb', '&:hover': { color: '#667eea' } }} />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Duplicate">
                             <IconButton size="small" onClick={(e) => { e.stopPropagation(); duplicateStep(tier.id, step.id); }} sx={{ p: 0.3 }}>
                               <DuplicateIcon sx={{ fontSize: 13, color: '#bbb' }} />

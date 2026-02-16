@@ -17,6 +17,7 @@ import { AppPreviewPage } from'./components/AppPreviewPage';
 import { BlogPage } from'./components/BlogPage';
 import { DashboardPage } from'./components/DashboardPage';
 import { FunnelBuilderPage } from'./components/FunnelBuilderPage';
+import { UpsellEditorPage } from'./components/UpsellEditorPage';
 import { GlobalSearch } from'./components/shared/GlobalSearch';
 import {
  Dashboard as DashboardIcon,
@@ -36,6 +37,7 @@ import {
  Visibility as PreviewIcon,
  Construction as AppBuilderIcon,
  AccountTree as FunnelIcon,
+ CardGiftcard as UpsellIcon,
  ExpandMore as ExpandMoreIcon,
  AutoFixHigh as AutomationsIcon,
  RssFeed as BlogIcon,
@@ -295,6 +297,7 @@ const appBuilderItems: NavItem[] = [
  { label:'Blog', path:'/blog', icon: <BlogIcon sx={{ fontSize: 18 }} /> },
  { label:'Membership Creator', path:'/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
  { label:'Funnels', path:'/funnels', icon: <FunnelIcon sx={{ fontSize: 18 }} /> },
+ { label:'Upsell Editor', path:'/upsell-editor', icon: <UpsellIcon sx={{ fontSize: 18 }} /> },
  { label:'Preview', path:'/preview', icon: <PreviewIcon sx={{ fontSize: 18 }} /> },
 ];
 
@@ -1066,6 +1069,7 @@ function App() {
  <Route path="/preview" element={<AppPreviewPage />} />
  <Route path="/blog" element={<BlogPage />} />
  <Route path="/funnels" element={<FunnelBuilderPage />} />
+ <Route path="/upsell-editor" element={<UpsellEditorPage />} />
  <Route path="/analytics" element={<AnalyticsPage />} />
  </Routes>
  </Box>

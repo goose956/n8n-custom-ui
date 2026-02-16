@@ -4145,6 +4145,156 @@ Return ONLY the code. No explanation.`;
  }
  }
 
+ // --- Upsell Page AI Generation ----------------------------------------
+
+ async generateUpsellPage(request: {
+   appId: number;
+   pageType: 'upsell' | 'checkout' | 'order-bump' | 'downsell' | 'thankyou-upsell';
+   productName: string;
+   productDescription: string;
+   price: string;
+   originalPrice?: string;
+   features?: string[];
+   urgency?: string;
+   testimonial?: string;
+   style?: 'minimal' | 'bold' | 'elegant' | 'aggressive';
+   model?: string;
+   existingCode?: string;
+   instruction?: string;
+ }): Promise<{ success: boolean; code: string; tokensUsed: number; error?: string }> {
+   const model = request.model || 'gpt-4o';
+   try {
+     const appContext = this.getAppContext(request.appId);
+     const designSystem = this.getDesignSystemContext();
+
+     const pageTypeDescriptions: Record<string, string> = {
+       'upsell': 'A one-click upsell offer page shown AFTER initial checkout. The customer has already purchased. Show a compelling add-on offer with a prominent "Yes, Add This!" button and a smaller "No Thanks" link. Include urgency, social proof, and a clear value proposition.',
+       'checkout': 'A checkout/order page with product details, pricing breakdown, trust badges, money-back guarantee, and a payment form area. Show what they\'re getting with feature bullets and testimonials.',
+       'order-bump': 'An order bump component shown ON the checkout page — a small boxed section with a checkbox to add an extra item. Uses a dashed border, slight background tint, and compelling "Add to order" copy.',
+       'downsell': 'A downsell page shown when a customer declines an upsell. Offer a lower-priced or stripped-down version of the upsell. Empathetic tone — "We understand, how about this instead?" with a discounted offer.',
+       'thankyou-upsell': 'A thank-you page that ALSO presents a final upsell. Start with "Thank you for your purchase!" confirmation, then below present "Wait! One more thing..." offer with a special one-time discount.',
+     };
+
+     const pageDesc = pageTypeDescriptions[request.pageType] || pageTypeDescriptions['upsell'];
+
+     const styleGuides: Record<string, string> = {
+       'minimal': 'Clean, lots of whitespace, muted colors, subtle shadows. Let the product speak for itself.',
+       'bold': 'Large headings, bright CTA buttons, strong contrast, urgency badges, countdown-style elements.',
+       'elegant': 'Premium feel with gradient accents, refined typography, gold/dark color accents, luxury branding.',
+       'aggressive': 'High-converting sales page style: red urgency, strikethrough prices, scarcity indicators, multiple CTAs, testimonial blocks, guarantee badges.',
+     };
+
+     const styleGuide = styleGuides[request.style || 'bold'] || styleGuides['bold'];
+
+     // If editing existing code, use refine flow
+     if (request.existingCode && request.instruction) {
+       const files: GeneratedFile[] = [{
+         path: 'UpsellPage.tsx',
+         content: request.existingCode,
+         language: 'typescript',
+       }];
+       return this.refineFile({
+         instruction: request.instruction,
+         files,
+         fileIndex: 0,
+         model,
+       }).then(result => ({
+         success: result.success,
+         code: result.file?.content || request.existingCode || '',
+         tokensUsed: result.tokensUsed,
+         error: result.error || (result.question ? `AI asks: ${result.question}` : undefined),
+       }));
+     }
+
+     // Generate new upsell page
+     const systemPrompt = `You are an expert conversion-optimized landing page designer specializing in upsell and checkout pages for SaaS products.
+
+${designSystem}
+
+${appContext}
+
+PAGE TYPE: ${request.pageType.toUpperCase()}
+${pageDesc}
+
+STYLE: ${styleGuide}
+
+CONVERSION OPTIMIZATION RULES:
+- Above-the-fold CTA — the main action button must be visible without scrolling
+- Use visual hierarchy: headline → subheadline → benefits → social proof → CTA
+- Price anchoring: show original price crossed out next to the offer price
+- Feature bullets with checkmark icons (CheckCircle in green)
+- Trust signals: guarantee badge, secure payment icon, testimonial quote
+- Urgency elements when appropriate: "Limited time", "Only X left", timer-style elements
+- The "Yes" CTA should be 3x more prominent than any "No thanks" option
+- Use color psychology: green for go/buy, red for urgency/savings
+
+STRIPE INTEGRATION:
+- Include a handleCheckout function that calls: fetch(\`\${API_BASE}/api/stripe/checkout\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: APP_ID, price_id: PRICE_ID, success_url: window.location.origin + '/thank-you', cancel_url: window.location.href }) })
+- Include a handleDecline function for the "No Thanks" that navigates to the next step
+- Use React Router's useNavigate for navigation
+- Define const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
+
+OUTPUT: Return ONLY the complete React/TypeScript component code. No markdown fences, no explanation. Export as: export function UpsellPage()`;
+
+     const features = request.features?.length
+       ? request.features.map(f => `  ✓ ${f}`).join('\n')
+       : '  ✓ Premium feature included';
+
+     const userPrompt = `Generate a ${request.pageType} page component for:
+
+PRODUCT: ${request.productName}
+DESCRIPTION: ${request.productDescription}
+PRICE: ${request.price}${request.originalPrice ? ` (was ${request.originalPrice})` : ''}
+FEATURES:
+${features}
+${request.urgency ? `URGENCY MESSAGE: ${request.urgency}` : ''}
+${request.testimonial ? `TESTIMONIAL: ${request.testimonial}` : ''}
+
+The component should be a complete, self-contained React component that looks premium and converts well. Include the Stripe checkout integration and proper state management.`;
+
+     const result = await this.callAI(model, systemPrompt, userPrompt);
+     let code = result.content.trim();
+
+     // Strip markdown fences if present
+     code = code.replace(/^```(?:tsx?|javascript|jsx)?\n?/m, '').replace(/\n?```$/m, '').trim();
+
+     return { success: true, code, tokensUsed: result.tokensUsed };
+   } catch (err) {
+     return {
+       success: false,
+       code: '',
+       tokensUsed: 0,
+       error: err instanceof Error ? err.message : String(err),
+     };
+   }
+ }
+
+ async refineUpsellPage(request: {
+   code: string;
+   instruction: string;
+   appId?: number;
+   model?: string;
+ }): Promise<{ success: boolean; code: string; tokensUsed: number; error?: string; question?: string }> {
+   const files: GeneratedFile[] = [{
+     path: 'UpsellPage.tsx',
+     content: request.code,
+     language: 'typescript',
+   }];
+   const result = await this.refineFile({
+     instruction: request.instruction,
+     files,
+     fileIndex: 0,
+     model: request.model || 'gpt-4o',
+   });
+   return {
+     success: result.success,
+     code: result.file?.content || request.code,
+     tokensUsed: result.tokensUsed,
+     error: result.error,
+     question: result.question,
+   };
+ }
+
  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {
  const rates: Record<string, [number, number]> = {
 'gpt-4o-mini': [0.15, 0.60],'gpt-4o': [2.50, 10.00],'gpt-3.5-turbo': [0.50, 1.50],
