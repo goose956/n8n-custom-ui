@@ -65,6 +65,8 @@ import {
  Info as AboutIcon,
  QuestionAnswer as FaqIcon,
  ContactMail as ContactIcon,
+ Login as LoginIcon,
+ PersonAdd as RegisterIcon,
 } from'@mui/icons-material';
 import LinearProgress from'@mui/material/LinearProgress';
 import Chip from'@mui/material/Chip';
@@ -307,6 +309,8 @@ export const PagesPage: React.FC = () => {
    case 'about': return <AboutIcon sx={{ fontSize: 16 }} />;
    case 'faq': return <FaqIcon sx={{ fontSize: 16 }} />;
    case 'contact': return <ContactIcon sx={{ fontSize: 16 }} />;
+   case 'login': return <LoginIcon sx={{ fontSize: 16 }} />;
+   case 'register': return <RegisterIcon sx={{ fontSize: 16 }} />;
    default: return <HomeIcon sx={{ fontSize: 16 }} />;
   }
  };

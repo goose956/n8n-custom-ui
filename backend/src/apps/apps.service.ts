@@ -199,6 +199,8 @@ export class AppManagementService {
  { type:'blog-page', title:'Blog' },
  { type:'thanks', title:'Thank You' },
  { type:'checkout', title:'Upgrade' },
+ { type:'login', title:'Log In' },
+ { type:'register', title:'Register' },
  ];
 
  const maxId = Math.max(0, ...(db.pages?.map(p => p.id) || [0]));
@@ -544,6 +546,74 @@ export class AppManagementService {
  { text:'Support ticket #482 resolved', time:'1 hr ago' },
  { text:'Database backup completed', time:'3 hrs ago' },
  ],
+ };
+
+ case'login':
+ return {
+ page_type:'login',
+ hero: {
+ headline:'Welcome Back',
+ subheading:'Log in to your account to continue where you left off.',
+ },
+ form: {
+ fields: [
+ { name:'email', label:'Email Address', type:'email', placeholder:'you@example.com', required: true },
+ { name:'password', label:'Password', type:'password', placeholder:'Enter your password', required: true },
+ ],
+ submit_text:'Log In',
+ forgot_password: { text:'Forgot your password?', url:'/forgot-password' },
+ },
+ social_login: {
+ headline:'Or continue with',
+ providers: [
+ { name:'Google', icon:'google' },
+ { name:'GitHub', icon:'github' },
+ ],
+ },
+ register_cta: {
+ text:'Don\'t have an account?',
+ link_text:'Create one now',
+ url:'/register',
+ },
+ trust_badges: ['256-bit SSL Encrypted','SOC 2 Certified'],
+ };
+
+ case'register':
+ return {
+ page_type:'register',
+ hero: {
+ headline:'Create Your Account',
+ subheading:'Join thousands of builders and start creating something amazing today.',
+ },
+ form: {
+ fields: [
+ { name:'first_name', label:'First Name', type:'text', placeholder:'John', required: true },
+ { name:'last_name', label:'Last Name', type:'text', placeholder:'Smith', required: true },
+ { name:'email', label:'Email Address', type:'email', placeholder:'you@example.com', required: true },
+ { name:'password', label:'Password', type:'password', placeholder:'Create a password', required: true },
+ { name:'confirm_password', label:'Confirm Password', type:'password', placeholder:'Confirm your password', required: true },
+ ],
+ submit_text:'Create Account',
+ terms: { text:'By signing up, you agree to our', link_text:'Terms of Service', url:'/terms' },
+ },
+ social_login: {
+ headline:'Or sign up with',
+ providers: [
+ { name:'Google', icon:'google' },
+ { name:'GitHub', icon:'github' },
+ ],
+ },
+ login_cta: {
+ text:'Already have an account?',
+ link_text:'Log in',
+ url:'/login',
+ },
+ benefits: [
+ { icon:'bolt', title:'Free to Start', description:'No credit card required. Get started in under 60 seconds.' },
+ { icon:'lock', title:'Secure & Private', description:'Your data is encrypted and never shared with third parties.' },
+ { icon:'support', title:'24/7 Support', description:'Our team is here to help whenever you need it.' },
+ ],
+ trust_badges: ['256-bit SSL Encrypted','SOC 2 Certified','GDPR Compliant'],
  };
 
  default:

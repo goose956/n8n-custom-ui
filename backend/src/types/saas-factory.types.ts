@@ -43,7 +43,7 @@ export interface UpdateAppDto {
 export interface Page {
  id: number;
  app_id: number;
- page_type:'index' |'thanks' |'members' |'checkout' |'admin' |'features' |'pricing' |'about' |'blog-page' |'custom';
+ page_type:'index' |'thanks' |'members' |'checkout' |'admin' |'features' |'pricing' |'about' |'blog-page' |'login' |'register' |'custom';
  title: string;
  content_json?: Record<string, any>;
  custom_css?: string;

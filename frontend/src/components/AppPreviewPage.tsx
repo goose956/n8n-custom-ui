@@ -1538,6 +1538,135 @@ function RenderBlogPage({ data, primaryColor }: { data: any; primaryColor: strin
  );
 }
 
+function RenderLoginPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+ const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+ return (
+ <Box sx={{ minHeight: '100vh', display: 'flex' }}>
+  {/* Left side — branding */}
+  <Box sx={{ flex: 1, background: gradient, display: { xs: 'none', md: 'flex' }, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 6, color: '#fff' }}>
+   <Typography variant="h3" sx={{ fontWeight: 800, mb: 2 }}>{data.hero?.headline || 'Welcome Back'}</Typography>
+   <Typography sx={{ fontSize: '1.1rem', opacity: 0.9, maxWidth: 400, textAlign: 'center', lineHeight: 1.7 }}>{data.hero?.subheading || 'Log in to your account.'}</Typography>
+   {data.trust_badges && (
+    <Box sx={{ display: 'flex', gap: 2, mt: 4 }}>
+     {data.trust_badges.map((b: string, i: number) => (
+      <Chip key={i} label={b} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 600, fontSize: '0.75rem' }} />
+     ))}
+    </Box>
+   )}
+  </Box>
+  {/* Right side — form */}
+  <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', p: 4, bgcolor: '#f9fafb' }}>
+   <Paper elevation={0} sx={{ p: 5, borderRadius: 4, border: '1px solid #eee', width: '100%', maxWidth: 440 }}>
+    <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: '#1a1a2e' }}>Log In</Typography>
+    <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Enter your credentials to continue</Typography>
+    {data.form?.fields?.map((f: any, i: number) => (
+     <Box key={i} sx={{ mb: 2 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#555' }}>{f.label}</Typography>
+      <Box sx={{ border: '1px solid #ddd', borderRadius: 2, px: 1.5, py: 1, bgcolor: '#fff', fontSize: '0.9rem', color: '#bbb' }}>{f.placeholder}</Box>
+     </Box>
+    ))}
+    {data.form?.forgot_password && (
+     <Typography variant="body2" sx={{ textAlign: 'right', color: primaryColor, cursor: 'pointer', mb: 2, fontSize: '0.8rem', fontWeight: 600 }}>{data.form.forgot_password.text}</Typography>
+    )}
+    <Button fullWidth variant="contained" sx={{ background: gradient, fontWeight: 700, py: 1.2, borderRadius: 2, fontSize: '0.95rem', mb: 2 }}>
+     {data.form?.submit_text || 'Log In'}
+    </Button>
+    {data.social_login && (
+     <Box sx={{ mt: 2 }}>
+      <Divider sx={{ mb: 2 }}><Typography variant="body2" sx={{ color: '#bbb', fontSize: '0.8rem' }}>{data.social_login.headline}</Typography></Divider>
+      <Box sx={{ display: 'flex', gap: 1.5 }}>
+       {data.social_login.providers?.map((p: any, i: number) => (
+        <Button key={i} fullWidth variant="outlined" sx={{ borderColor: '#ddd', color: '#555', fontWeight: 600, borderRadius: 2, py: 1, textTransform: 'none' }}>{p.name}</Button>
+       ))}
+      </Box>
+     </Box>
+    )}
+    {data.register_cta && (
+     <Typography variant="body2" sx={{ textAlign: 'center', mt: 3, color: '#888' }}>
+      {data.register_cta.text}{' '}
+      <Typography component="span" sx={{ color: primaryColor, fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}>{data.register_cta.link_text}</Typography>
+     </Typography>
+    )}
+   </Paper>
+  </Box>
+ </Box>
+ );
+}
+
+function RenderRegisterPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+ const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+ return (
+ <Box sx={{ minHeight: '100vh', display: 'flex' }}>
+  {/* Left side — benefits */}
+  <Box sx={{ flex: 1, background: gradient, display: { xs: 'none', md: 'flex' }, flexDirection: 'column', justifyContent: 'center', p: 6, color: '#fff' }}>
+   <Typography variant="h3" sx={{ fontWeight: 800, mb: 2 }}>{data.hero?.headline || 'Create Your Account'}</Typography>
+   <Typography sx={{ fontSize: '1.1rem', opacity: 0.9, maxWidth: 450, lineHeight: 1.7, mb: 4 }}>{data.hero?.subheading || 'Join us today.'}</Typography>
+   {data.benefits?.map((b: any, i: number) => (
+    <Box key={i} sx={{ display: 'flex', gap: 2, mb: 2.5, alignItems: 'flex-start' }}>
+     <Box sx={{ width: 36, height: 36, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      {getIcon(b.icon, '#fff')}
+     </Box>
+     <Box>
+      <Typography sx={{ fontWeight: 700, fontSize: '0.95rem' }}>{b.title}</Typography>
+      <Typography sx={{ fontSize: '0.85rem', opacity: 0.85 }}>{b.description}</Typography>
+     </Box>
+    </Box>
+   ))}
+   {data.trust_badges && (
+    <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+     {data.trust_badges.map((b: string, i: number) => (
+      <Chip key={i} label={b} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 600, fontSize: '0.75rem' }} />
+     ))}
+    </Box>
+   )}
+  </Box>
+  {/* Right side — form */}
+  <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', p: 4, bgcolor: '#f9fafb' }}>
+   <Paper elevation={0} sx={{ p: 5, borderRadius: 4, border: '1px solid #eee', width: '100%', maxWidth: 440 }}>
+    <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: '#1a1a2e' }}>Create Account</Typography>
+    <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Fill in your details to get started</Typography>
+    <Box sx={{ display: 'grid', gridTemplateColumns: data.form?.fields?.some((f: any) => f.name === 'first_name') ? '1fr 1fr' : '1fr', gap: 2 }}>
+     {data.form?.fields?.map((f: any, i: number) => {
+      const isHalf = f.name === 'first_name' || f.name === 'last_name';
+      return (
+       <Box key={i} sx={{ gridColumn: isHalf ? 'auto' : '1 / -1', mb: 0.5 }}>
+        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#555' }}>{f.label}</Typography>
+        <Box sx={{ border: '1px solid #ddd', borderRadius: 2, px: 1.5, py: 1, bgcolor: '#fff', fontSize: '0.9rem', color: '#bbb' }}>{f.placeholder}</Box>
+       </Box>
+      );
+     })}
+    </Box>
+    {data.form?.terms && (
+     <Typography variant="body2" sx={{ color: '#888', mt: 2, fontSize: '0.8rem' }}>
+      {data.form.terms.text}{' '}
+      <Typography component="span" sx={{ color: primaryColor, fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>{data.form.terms.link_text}</Typography>
+     </Typography>
+    )}
+    <Button fullWidth variant="contained" sx={{ background: gradient, fontWeight: 700, py: 1.2, borderRadius: 2, fontSize: '0.95rem', mt: 2.5, mb: 2 }}>
+     {data.form?.submit_text || 'Create Account'}
+    </Button>
+    {data.social_login && (
+     <Box sx={{ mt: 1 }}>
+      <Divider sx={{ mb: 2 }}><Typography variant="body2" sx={{ color: '#bbb', fontSize: '0.8rem' }}>{data.social_login.headline}</Typography></Divider>
+      <Box sx={{ display: 'flex', gap: 1.5 }}>
+       {data.social_login.providers?.map((p: any, i: number) => (
+        <Button key={i} fullWidth variant="outlined" sx={{ borderColor: '#ddd', color: '#555', fontWeight: 600, borderRadius: 2, py: 1, textTransform: 'none' }}>{p.name}</Button>
+       ))}
+      </Box>
+     </Box>
+    )}
+    {data.login_cta && (
+     <Typography variant="body2" sx={{ textAlign: 'center', mt: 3, color: '#888' }}>
+      {data.login_cta.text}{' '}
+      <Typography component="span" sx={{ color: primaryColor, fontWeight: 700, cursor: 'pointer', fontSize: '0.875rem' }}>{data.login_cta.link_text}</Typography>
+     </Typography>
+    )}
+   </Paper>
+  </Box>
+ </Box>
+ );
+}
+
 // Route the page type to the correct renderer
 function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
  // Resolve AI styled-text objects (e.g. {text:"...", color:"orange"}) into <span> elements
@@ -1555,6 +1684,8 @@ function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primary
  case'blog-page': return <RenderBlogPage data={data} primaryColor={primaryColor} />;
  case'faq': return <RenderFaqPage data={data} primaryColor={primaryColor} />;
  case'contact': return <RenderContactPage data={data} primaryColor={primaryColor} />;
+ case'login': return <RenderLoginPage data={data} primaryColor={primaryColor} />;
+ case'register': return <RenderRegisterPage data={data} primaryColor={primaryColor} />;
  case'tool': return <RenderToolPage data={data} primaryColor={primaryColor} />;
  default:
  // Try to auto-detect
@@ -1570,6 +1701,8 @@ function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primary
  if (data.featured_post || data.posts) return <RenderBlogPage data={data} primaryColor={primaryColor} />;
  if (data.categories && data.support_cta) return <RenderFaqPage data={data} primaryColor={primaryColor} />;
  if (data.form && data.contact_info) return <RenderContactPage data={data} primaryColor={primaryColor} />;
+ if (data.form?.fields && data.register_cta) return <RenderLoginPage data={data} primaryColor={primaryColor} />;
+ if (data.form?.fields && data.login_cta) return <RenderRegisterPage data={data} primaryColor={primaryColor} />;
  // Handle legacy renderer keys
  if (data.hero || data.sections || data.pricing) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
  return <RenderGenericPage data={data} />;
@@ -1867,4 +2000,4 @@ export function AppPreviewPage() {
 }
 
 export default AppPreviewPage;
-export { RenderPage, RenderIndexPage, RenderThanksPage, RenderMembersPage, RenderCheckoutPage, RenderAdminPage, RenderToolPage, RenderGenericPage };
+export { RenderPage, RenderIndexPage, RenderThanksPage, RenderMembersPage, RenderCheckoutPage, RenderAdminPage, RenderToolPage, RenderGenericPage, RenderLoginPage, RenderRegisterPage };
