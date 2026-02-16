@@ -823,12 +823,14 @@ Overall members area description: ${request.prompt}
 Pages in this members area:
 ${pagesDescription}
 
-${sharedCode ?`\nAlready generated shared code (import from these):\n${sharedCode}` :''}
+${sharedCode ?`\nAlready generated shared types (you may import types from these, but do NOT import or reference MembersLayout):\n${sharedCode}` :''}
 ${searchContext}
 ${adminApiGuide}
 IMPORTANT RULES:
 - Export the component as a named export: export function Members${this.toPascalCase(page.id)}Page()
 - The component will be rendered inside a layout -- do NOT include sidebar navigation
+- do NOT import or use MembersLayout -- the layout is provided externally. Your component is ONLY the page content.
+- do NOT wrap the return in MembersLayout, the layout wrapper is handled by the preview system
 - Use the app's color scheme consistently
 - Include loading states (use Skeleton components to show content placeholders), error handling, empty states (centered icon + message + action button)
 - Make it look PREMIUM and visually rich -- this should look like a $99/month SaaS dashboard, NOT a basic tutorial

@@ -623,6 +623,13 @@ root.render(
  c = c.replace(/^```(?:tsx|jsx|typescript|ts|javascript|js)?\s*\n?/gm,'');
  c = c.replace(/^```\s*$/gm,'');
  c = c.replace(/^(?:===|---|\+\+\+)[^\n]*\n?/gm,'');
+
+ // Strip MembersLayout imports — the preview system provides its own sidebar layout
+ c = c.replace(/^import\s+.*MembersLayout.*from\s+['"][^'"]+['"].*;\s*\n?/gm, '');
+ // Unwrap <MembersLayout ...>...</MembersLayout> JSX tags (keep children)
+ c = c.replace(/<MembersLayout[^>]*>/g, '');
+ c = c.replace(/<\/MembersLayout>/g, '');
+
  return c.trim() +'\n';
  }
 
@@ -799,6 +806,16 @@ root.render(
  const normalized = this.normalizePath(file.path);
  const filePath = path.join(tmpDir,'src','components', normalized);
  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+ // Replace MembersLayout file with a harmless passthrough wrapper
+ // so any surviving imports from page files don't crash
+ if (/MembersLayout/i.test(normalized)) {
+ const stub = `import React from 'react';\nconst MembersLayout = ({ children }: any) => <>{children}</>;\nexport default MembersLayout;\nexport { MembersLayout };\n`;
+ fs.writeFileSync(filePath, stub, 'utf-8');
+ this.logger.warn(`[PREVIEW] Replaced MembersLayout with passthrough stub: ${filePath}`);
+ continue;
+ }
+
  let content = this.sanitize(file.content);
  content = this.rewriteIconBarrels(content);
  content = this.addMissingIconImports(content);
