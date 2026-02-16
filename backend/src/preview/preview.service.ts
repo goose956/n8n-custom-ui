@@ -422,6 +422,13 @@ function _safeProxy(obj: any): any {
  }
  if (prop === 'length') return target.length ?? 0;
  if (prop === 'toString' || prop === 'valueOf') return () => '';
+ // String methods on unknown props -> return empty string result
+ if (['toUpperCase','toLowerCase','trim','trimStart','trimEnd','charAt',
+'charCodeAt','substring','slice','split','replace','replaceAll','match',
+'search','startsWith','endsWith','includes','repeat','padStart','padEnd',
+'normalize','localeCompare','at'].includes(prop as string)) {
+ return ('' as any)[prop].bind('');
+ }
  return _safeProxy({});
  }
  });
@@ -447,7 +454,9 @@ const _mockData: any = {
  settings: { theme: 'light', notifications: true, language: 'en', timezone: 'UTC' },
  success: true, ok: true, total: 0, count: 0, page: 1, pages: 1, hasMore: false,
  scriptsGenerated: 42, viralHooksFound: 15, videosAnalyzed: 87, recentTrends: [],
- billing: { plan: 'Pro', status: 'active', nextBillingDate: '2026-03-01', history: [] },
+ billing: { subscriptionId: 'sub_demo_001', plan: 'Pro', status: 'active',
+ renewalDate: '2026-03-01', nextBillingDate: '2026-03-01', lastPayment: '2026-02-01',
+ paymentMethod: 'credit_card', history: [], amount: 29, interval: 'monthly' },
 };
 
 (window as any).fetch = function(input: any, init?: any) {
@@ -983,6 +992,13 @@ function _safeProxy(obj: any): any {
  }
  if (prop ==='length') return target.length ?? 0;
  if (prop ==='toString' || prop ==='valueOf') return () =>'';
+ // String methods on unknown props -> return empty string result
+ if (['toUpperCase','toLowerCase','trim','trimStart','trimEnd','charAt',
+'charCodeAt','substring','slice','split','replace','replaceAll','match',
+'search','startsWith','endsWith','includes','repeat','padStart','padEnd',
+'normalize','localeCompare','at'].includes(prop as string)) {
+ return ('' as any)[prop].bind('');
+ }
  // Unknown property -> return another safe proxy (so chained access never throws)
  return _safeProxy({});
  }
@@ -1021,7 +1037,9 @@ const _mockData = {
  firstName:'Jane', lastName:'Doe', name:'Jane Doe', email:'jane@example.com',
  socialMediaLinks: [],
  // billing
- billing: { plan:'Pro', status:'active', nextBillingDate:'2026-03-01', history: [] },
+ billing: { subscriptionId:'sub_demo_001', plan:'Pro', status:'active',
+ renewalDate:'2026-03-01', nextBillingDate:'2026-03-01', lastPayment:'2026-02-01',
+ paymentMethod:'credit_card', history: [], amount: 29, interval:'monthly' },
  subscription: { plan:'Pro', status:'active', interval:'monthly', amount: 29 },
  paymentHistory: [], billingHistory: [],
 };
