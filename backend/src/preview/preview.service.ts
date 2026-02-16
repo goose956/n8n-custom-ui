@@ -170,6 +170,307 @@ export class PreviewService implements OnModuleDestroy {
  }
 
  /* ------------------------------------------------------------------ */
+ /* Start Full-Site Preview (all pages with nav sidebar)                */
+ /* ------------------------------------------------------------------ */
+
+ async startFullSite(req: {
+ files: { path: string; content: string }[];
+ primaryColor?: string;
+ appName?: string;
+ }): Promise<{ sessionId: string; port: number }> {
+ const sessionId = crypto.randomBytes(8).toString('hex');
+ const port = this.nextPort++;
+ if (this.nextPort > 5299) this.nextPort = 5200;
+
+ const tmpDir = path.join(os.tmpdir(), `preview-fullsite-${sessionId}`);
+ const primaryColor = req.primaryColor || '#667eea';
+ const appName = req.appName || 'Members Area';
+
+ fs.mkdirSync(path.join(tmpDir, 'src', 'components'), { recursive: true });
+
+ // Symlink node_modules
+ const nmSource = path.join(this.frontendRoot, 'node_modules');
+ const nmTarget = path.join(tmpDir, 'node_modules');
+ try {
+ fs.symlinkSync(nmSource, nmTarget, 'junction');
+ } catch {
+ try { fs.symlinkSync(nmSource, nmTarget, 'dir'); } catch (e2) {
+ this.logger.error('Could not symlink node_modules', e2);
+ throw new Error('Failed to symlink node_modules');
+ }
+ }
+
+ // Write all user files
+ this.writeUserFiles(tmpDir, req.files);
+ this.writeIndexHtml(tmpDir);
+
+ // Build route config from the TSX files
+ const tsxFiles = req.files.filter(f => f.path.match(/\.(tsx|jsx)$/));
+ const routes: { importPath: string; componentName: string; routePath: string; label: string }[] = [];
+
+ for (const file of tsxFiles) {
+ const normalized = this.normalizePath(file.path);
+ const importPath = './components/' + normalized.replace(/\.(tsx|jsx|ts|js)$/, '');
+ const componentName = this.detectComponentNameFromContent(file.content) || normalized.replace(/\.(tsx|jsx)$/, '').replace(/[^a-zA-Z0-9]/g, '');
+
+ // Derive route path from filename
+ let routeName = normalized
+ .replace(/\.(tsx|jsx)$/, '')
+ .replace(/Page$/i, '')
+ .replace(/([A-Z])/g, '-$1')
+ .toLowerCase()
+ .replace(/^-/, '')
+ .replace(/\//g, '-');
+ if (!routeName) routeName = 'home';
+ const routePath = '/' + routeName;
+
+ // Derive label from filename
+ let label = normalized
+ .replace(/\.(tsx|jsx)$/, '')
+ .replace(/Page$/i, '')
+ .replace(/([A-Z])/g, ' $1')
+ .trim();
+ if (!label) label = 'Home';
+
+ routes.push({ importPath, componentName, routePath, label });
+ }
+
+ // Generate main.tsx with router + sidebar
+ this.writeFullSiteMainTsx(tmpDir, routes, primaryColor, appName);
+
+ this.logger.log(`[FullSite] Starting full-site preview: ${routes.length} pages on port ${port}`);
+
+ const server = await createServer({
+ root: tmpDir,
+ configFile: false,
+ plugins: [
+ react(),
+ this.stubMissingLocals(),
+ this.stubMissingPackages(tmpDir),
+ this.stubMissingIcons(tmpDir),
+ ],
+ server: {
+ port,
+ strictPort: true,
+ host: '0.0.0.0',
+ cors: true,
+ hmr: true,
+ },
+ resolve: {
+ extensions: ['.tsx', '.ts', '.jsx', '.js'],
+ },
+ define: {
+ 'import.meta.env.VITE_API_URL': JSON.stringify(''),
+ },
+ logLevel: 'info',
+ });
+
+ await server.listen();
+ this.logger.log(`[FullSite] Vite server ready at http://localhost:${port}`);
+
+ const session: PreviewSession = {
+ id: sessionId, port, tmpDir, server,
+ entryFile: 'fullsite', componentName: 'FullSiteApp',
+ };
+ this.sessions.set(sessionId, session);
+ return { sessionId, port };
+ }
+
+ private detectComponentNameFromContent(code: string): string | null {
+ const fnMatch = code.match(/export\s+(?:default\s+)?function\s+([A-Z]\w*)/);
+ const arrowMatch = code.match(/export\s+(?:default\s+)?const\s+([A-Z]\w*)\s*[:=]/);
+ const plainFn = code.match(/function\s+([A-Z]\w*)/);
+ const plainArrow = code.match(/const\s+([A-Z]\w*)\s*[:=]/);
+ return fnMatch?.[1] || arrowMatch?.[1] || plainFn?.[1] || plainArrow?.[1] || null;
+ }
+
+ private writeFullSiteMainTsx(
+ tmpDir: string,
+ routes: { importPath: string; componentName: string; routePath: string; label: string }[],
+ color: string,
+ appName: string,
+ ) {
+ // Build dynamic imports for each route
+ const imports = routes.map((r, i) =>
+ `const _Mod${i} = await import('${r.importPath}');
+const ${r.componentName} = _Mod${i}.default || _Mod${i}['${r.componentName}'] || Object.values(_Mod${i}).find((v: any) => typeof v === 'function' && /^[A-Z]/.test(v.name)) || (() => React.createElement('div', null, 'Could not load ${r.label}'));`
+ ).join('\n');
+
+ // Icon mapping for common page names
+ const iconMap: Record<string, string> = {
+ dashboard: 'Dashboard', profile: 'Person', settings: 'Settings', admin: 'AdminPanelSettings',
+ analytics: 'BarChart', billing: 'AttachMoney', community: 'Forum', login: 'Login',
+ script: 'Code', library: 'LibraryBooks', home: 'Home', contact: 'Email',
+ messages: 'Chat', courses: 'School', content: 'Article', members: 'People',
+ notifications: 'Notifications', support: 'SupportAgent', calendar: 'CalendarToday',
+ };
+
+ const routeDefs = routes.map((r, i) => {
+ const iconKey = Object.keys(iconMap).find(k => r.label.toLowerCase().includes(k)) || 'Description';
+ const iconName = iconMap[iconKey] || 'Description';
+ return `{ path: '${r.routePath}', label: '${r.label}', Component: ${r.componentName}, icon: '${iconName}' }`;
+ }).join(',\n ');
+
+ const mainTsx = `
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { createTheme, ThemeProvider, CssBaseline, Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, AppBar, IconButton } from '@mui/material';
+import { MemoryRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import MenuIcon from '@mui/icons-material/Menu';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import PersonIcon from '@mui/icons-material/Person';
+import SettingsIcon from '@mui/icons-material/Settings';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import ForumIcon from '@mui/icons-material/Forum';
+import LoginIcon from '@mui/icons-material/Login';
+import CodeIcon from '@mui/icons-material/Code';
+import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
+import HomeIcon from '@mui/icons-material/Home';
+import EmailIcon from '@mui/icons-material/Email';
+import ChatIcon from '@mui/icons-material/Chat';
+import SchoolIcon from '@mui/icons-material/School';
+import ArticleIcon from '@mui/icons-material/Article';
+import PeopleIcon from '@mui/icons-material/People';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import DescriptionIcon from '@mui/icons-material/Description';
+
+${imports}
+
+const _iconMap: Record<string, any> = {
+ Dashboard: DashboardIcon, Person: PersonIcon, Settings: SettingsIcon,
+ AdminPanelSettings: AdminPanelSettingsIcon, BarChart: BarChartIcon,
+ AttachMoney: AttachMoneyIcon, Forum: ForumIcon, Login: LoginIcon,
+ Code: CodeIcon, LibraryBooks: LibraryBooksIcon, Home: HomeIcon,
+ Email: EmailIcon, Chat: ChatIcon, School: SchoolIcon, Article: ArticleIcon,
+ People: PeopleIcon, Notifications: NotificationsIcon, SupportAgent: SupportAgentIcon,
+ CalendarToday: CalendarTodayIcon, Description: DescriptionIcon,
+};
+
+const _routes = [
+ ${routeDefs}
+];
+
+// -- Error Boundary --
+class _EB extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+ state = { error: null as Error | null };
+ static getDerivedStateFromError(error: Error) { return { error }; }
+ render() {
+ if (this.state.error) {
+ return React.createElement('div', { style: { padding: 32, color: '#d32f2f', fontFamily: 'monospace' } },
+ React.createElement('h3', null, 'Page Error'),
+ React.createElement('pre', { style: { background: '#fef2f2', padding: 12, borderRadius: 8, fontSize: 12, whiteSpace: 'pre-wrap' } }, this.state.error.message),
+ React.createElement('button', { onClick: () => this.setState({ error: null }), style: { marginTop: 12, padding: '6px 16px', border: 'none', borderRadius: 6, background: '${color}', color: '#fff', cursor: 'pointer' } }, 'Retry')
+ );
+ }
+ return this.props.children;
+ }
+}
+
+// -- Stub fetch --
+const _realFetch = window.fetch.bind(window);
+const _cdnHosts = ['fonts.googleapis', 'unpkg.com', 'cdnjs.cloudflare', 'cdn.jsdelivr'];
+(window as any).fetch = function(input: any, init?: any) {
+ const url = typeof input === 'string' ? input : input?.url || '';
+ if (_cdnHosts.some(h => url.includes(h))) return _realFetch(input, init);
+ if (url.includes('localhost:3000') || url.startsWith('/api/')) {
+ const absUrl = url.startsWith('/api/') ? 'http://localhost:3000' + url : url;
+ return _realFetch(absUrl, init).catch(() => ({
+ ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]'), clone() { return this; }
+ } as any));
+ }
+ return Promise.resolve({
+ ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]'), clone() { return this; }
+ } as any);
+} as typeof fetch;
+
+const DRAWER_WIDTH = 220;
+
+function Sidebar() {
+ const navigate = useNavigate();
+ const location = useLocation();
+ return React.createElement(Drawer, {
+ variant: 'permanent',
+ sx: {
+ width: DRAWER_WIDTH, flexShrink: 0,
+ '& .MuiDrawer-paper': {
+ width: DRAWER_WIDTH, bgcolor: '#1a1a2e', color: '#fff',
+ borderRight: 'none', boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
+ },
+ },
+ },
+ React.createElement(Toolbar, { sx: { borderBottom: '1px solid rgba(255,255,255,0.08)', mb: 1 } },
+ React.createElement(Typography, { variant: 'h6', sx: { fontWeight: 700, fontSize: '1rem', color: '#fff', letterSpacing: '-0.02em' } }, '${appName}')
+ ),
+ React.createElement(List, { sx: { px: 1 } },
+ ..._routes.map((r: any) => {
+ const isActive = location.pathname === r.path;
+ const IconComp = _iconMap[r.icon] || DescriptionIcon;
+ return React.createElement(ListItemButton, {
+ key: r.path, onClick: () => navigate(r.path),
+ sx: {
+ borderRadius: 2, mb: 0.3, py: 0.8,
+ bgcolor: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+ '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' },
+ },
+ },
+ React.createElement(ListItemIcon, { sx: { color: isActive ? '${color}' : 'rgba(255,255,255,0.6)', minWidth: 36 } },
+ React.createElement(IconComp, { sx: { fontSize: 20 } })
+ ),
+ React.createElement(ListItemText, {
+ primary: r.label,
+ primaryTypographyProps: {
+ sx: { fontSize: '0.82rem', fontWeight: isActive ? 700 : 400, color: isActive ? '#fff' : 'rgba(255,255,255,0.7)' }
+ }
+ })
+ );
+ })
+ )
+ );
+}
+
+function FullSiteApp() {
+ return React.createElement(Box, { sx: { display: 'flex', minHeight: '100vh', bgcolor: '#f5f6fa' } },
+ React.createElement(Sidebar),
+ React.createElement(Box, { component: 'main', sx: { flexGrow: 1, p: 3, ml: DRAWER_WIDTH + 'px', minHeight: '100vh' } },
+ React.createElement(Routes, null,
+ ..._routes.map((r: any) =>
+ React.createElement(Route, { key: r.path, path: r.path, element:
+ React.createElement(_EB, null, React.createElement(r.Component))
+ })
+ ),
+ React.createElement(Route, { path: '*', element:
+ React.createElement(_EB, null, React.createElement(_routes[0]?.Component || 'div'))
+ })
+ )
+ )
+ );
+}
+
+const theme = createTheme({
+ palette: { primary: { main: '${color}' } },
+ typography: { fontFamily: "'Inter', -apple-system, sans-serif" },
+ shape: { borderRadius: 8 },
+});
+
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+root.render(
+ React.createElement(ThemeProvider, { theme },
+ React.createElement(CssBaseline),
+ React.createElement(MemoryRouter, { initialEntries: ['${routes[0]?.routePath || '/'}'] },
+ React.createElement(FullSiteApp)
+ )
+ )
+);
+`;
+
+ fs.writeFileSync(path.join(tmpDir, 'src', 'main.tsx'), mainTsx, 'utf-8');
+ }
+
+ /* ------------------------------------------------------------------ */
  /* Stop */
  /* ------------------------------------------------------------------ */
 

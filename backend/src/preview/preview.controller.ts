@@ -41,4 +41,17 @@ export class PreviewController {
  await this.previewService.stop(body.sessionId);
  return { ok: true };
  }
+
+ /** Start a full-site preview with all pages routed + sidebar nav. */
+ @Post('start-fullsite')
+ async startFullSite(
+ @Body()
+ body: {
+ files: { path: string; content: string }[];
+ primaryColor?: string;
+ appName?: string;
+ },
+ ) {
+ return this.previewService.startFullSite(body);
+ }
 }
