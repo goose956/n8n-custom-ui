@@ -17,9 +17,10 @@ import { ProgrammerAgentModule } from'./programmer-agent/programmer-agent.module
 import { SocialMonitorModule } from'./social-monitor/social-monitor.module';
 import { StripeModule } from'./stripe/stripe.module';
 import { PreviewModule } from'./preview/preview.module';
+import { FunnelsModule } from'./funnels/funnels.module';
 
 @Module({
- imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule],
+ imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule],
  controllers: [],
  providers: [],
 })

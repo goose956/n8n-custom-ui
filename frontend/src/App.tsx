@@ -16,6 +16,7 @@ import { SocialMonitorPage } from'./components/SocialMonitorPage';
 import { AppPreviewPage } from'./components/AppPreviewPage';
 import { BlogPage } from'./components/BlogPage';
 import { DashboardPage } from'./components/DashboardPage';
+import { FunnelBuilderPage } from'./components/FunnelBuilderPage';
 import { GlobalSearch } from'./components/shared/GlobalSearch';
 import {
  Dashboard as DashboardIcon,
@@ -34,6 +35,7 @@ import {
  Forum as SocialIcon,
  Visibility as PreviewIcon,
  Construction as AppBuilderIcon,
+ AccountTree as FunnelIcon,
  ExpandMore as ExpandMoreIcon,
  AutoFixHigh as AutomationsIcon,
  RssFeed as BlogIcon,
@@ -292,6 +294,7 @@ const appBuilderItems: NavItem[] = [
  { label:'Templates', path:'/templates', icon: <TemplateIcon sx={{ fontSize: 18 }} /> },
  { label:'Blog', path:'/blog', icon: <BlogIcon sx={{ fontSize: 18 }} /> },
  { label:'Membership Creator', path:'/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
+ { label:'Funnels', path:'/funnels', icon: <FunnelIcon sx={{ fontSize: 18 }} /> },
  { label:'Preview', path:'/preview', icon: <PreviewIcon sx={{ fontSize: 18 }} /> },
 ];
 
@@ -1062,6 +1065,7 @@ function App() {
  <Route path="/social" element={<SocialMonitorPage />} />
  <Route path="/preview" element={<AppPreviewPage />} />
  <Route path="/blog" element={<BlogPage />} />
+ <Route path="/funnels" element={<FunnelBuilderPage />} />
  <Route path="/analytics" element={<AnalyticsPage />} />
  </Routes>
  </Box>

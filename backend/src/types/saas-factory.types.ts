@@ -222,6 +222,33 @@ export interface CreateAppUsageDto {
 }
 
 // ==================== Database Root ====================
+
+// ==================== Funnels ====================
+export interface FunnelStep {
+ id: string;
+ pageType: string;  // checkout, upsell, register, thankyou, custom, etc.
+ label: string;     // Display label
+ pageId?: number;   // Optional reference to an existing Page
+ config?: Record<string, any>;  // Step-specific config (e.g. upsell product, price)
+}
+
+export interface FunnelTier {
+ id: string;
+ name: string;      // e.g. "Free", "Pro", "Gold"
+ color: string;     // Lane colour for visual builder
+ steps: FunnelStep[];
+}
+
+export interface Funnel {
+ id: number;
+ app_id: number;
+ name: string;
+ description?: string;
+ tiers: FunnelTier[];
+ created_at: string;
+ updated_at: string;
+}
+
 export interface SaaSDatabaseSchema {
  factory_version: string;
  last_updated: string;
@@ -236,6 +263,7 @@ export interface SaaSDatabaseSchema {
  workflows: Workflow[];
  workflow_configs: WorkflowConfig[];
  app_usage: AppUsage[];
+ funnels: Funnel[];
 }
 
 // ==================== Response Wrappers ====================
