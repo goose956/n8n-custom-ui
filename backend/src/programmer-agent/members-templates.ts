@@ -567,11 +567,11 @@ export function MembersAdminPage() {
    const [sRes, aRes, cRes] = await Promise.all([
     fetch(API + '/api/apps/${p.appId}/stats').then(r => r.json()).catch(() => null),
     fetch(API + '/api/analytics/app/${p.appId}').then(r => r.json()).catch(() => null),
-    fetch(API + '/api/contact?app_id=${p.appId}').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch(API + '/api/contact?app_id=${p.appId}').then(r => r.json()).catch(() => []),
    ]);
    if (sRes) setStats(sRes);
    if (aRes) setAnalytics(aRes);
-   setContacts(Array.isArray(cRes?.data) ? cRes.data : []);
+   setContacts(Array.isArray(cRes) ? cRes : Array.isArray(cRes?.data) ? cRes.data : []);
   } catch (e) {
    setSnackbar({ open: true, message: 'Failed to load some data', severity: 'error' });
   } finally { setLoading(false); }
