@@ -351,7 +351,7 @@ export function ProgrammerAgentPage() {
  setEditMode(true);
  setPhase('results');
  setChatPanelOpen(true);
- setChatMode('coder');
+ setChatMode('design');
  setDesignMessages([]);
  setBackendMessages([]);
  setCoderMessages([]);
@@ -595,6 +595,15 @@ export function ProgrammerAgentPage() {
  try {
  if (chatMode ==='design') {
  // Design mode: refine the active file via the refine endpoint
+ if (!files.length) {
+ setChatMessages(prev => [...prev, {
+ id: (Date.now() + 1).toString(),
+ role:'assistant',
+ content:'No files loaded. Please load or generate pages first before using the design chat.',
+ }]);
+ setChatLoading(false);
+ return;
+ }
  const res = await fetch(`${API.programmerAgent}/refine`, {
  method:'POST',
  headers: {'Content-Type':'application/json' },
@@ -605,6 +614,16 @@ export function ProgrammerAgentPage() {
  model: orchestratorModel || undefined,
  }),
  });
+ if (!res.ok) {
+ const errText = await res.text().catch(() => `Server error (${res.status})`);
+ setChatMessages(prev => [...prev, {
+ id: (Date.now() + 1).toString(),
+ role:'assistant',
+ content:`Error: ${errText}`,
+ }]);
+ setChatLoading(false);
+ return;
+ }
  const data = await res.json();
  if (data.success && data.file) {
  const updated = [...files];
@@ -910,10 +929,11 @@ export function ProgrammerAgentPage() {
  }
  }
  } catch (err) {
- setCoderMessages(prev => [...prev, {
+ console.error('Chat send error:', err);
+ setChatMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
- content:`Œ Error: ${err instanceof Error ? err.message :'Network error'}`,
+ content:`Error: ${err instanceof Error ? err.message : 'Network error'}`,
  }]);
  } finally {
  setChatLoading(false);
