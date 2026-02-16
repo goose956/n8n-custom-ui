@@ -2,6 +2,7 @@ import'reflect-metadata';
 import { NestFactory } from'@nestjs/core';
 import { ValidationPipe } from'@nestjs/common';
 import * as express from'express';
+import * as path from'path';
 import { AppModule } from'./app.module';
 
 async function bootstrap() {
@@ -35,6 +36,9 @@ async function bootstrap() {
 
  // Graceful shutdown
  app.enableShutdownHooks();
+
+ // Serve static files (blog images, sitemap, etc.) from /public
+ app.use(express.static(path.join(__dirname, '..', 'public')));
 
  const port = process.env.PORT || 3000;
  await app.listen(port);

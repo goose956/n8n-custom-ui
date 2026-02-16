@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from'react';
-import { API as API_ENDPOINTS } from'../config/api';
+import { API as API_ENDPOINTS, API_BASE_URL } from'../config/api';
 import DOMPurify from'dompurify';
 import {
  Box,
@@ -80,6 +80,7 @@ interface BlogPost {
  tags: string[];
  metaDescription: string;
  error?: string;
+ featuredImage?: string;
 }
 
 interface BlogSettings {
@@ -1263,6 +1264,20 @@ export function BlogPage() {
  {previewPost.wordCount} words &bull; {new Date(previewPost.createdAt).toLocaleDateString()}
  </Typography>
  </Box>
+ {previewPost.featuredImage && (
+ <Box
+ component="img"
+ src={previewPost.featuredImage.startsWith('http') ? previewPost.featuredImage : `${API_BASE_URL}${previewPost.featuredImage}`}
+ alt={previewPost.title}
+ sx={{
+ width:'100%',
+ maxHeight: 400,
+ objectFit:'cover',
+ borderRadius: 2,
+ mb: 2,
+ }}
+ />
+ )}
  {previewPost.excerpt && (
  <Typography
  sx={{
@@ -1674,6 +1689,23 @@ function PostRow({ post, selected, isGenerating, projectName, projectColor, onTo
  <Box sx={{ mt: 1.5 }}>
  <Typography sx={{ fontSize:'0.72rem', fontWeight: 700, color:'#aaa', textTransform:'uppercase', mb: 0.3 }}>Excerpt</Typography>
  <Typography sx={{ fontSize:'0.82rem', color:'#666', fontStyle:'italic' }}>{post.excerpt}</Typography>
+ </Box>
+ )}
+ {post.featuredImage && (
+ <Box sx={{ mt: 1.5 }}>
+ <Typography sx={{ fontSize:'0.72rem', fontWeight: 700, color:'#aaa', textTransform:'uppercase', mb: 0.3 }}>Featured Image</Typography>
+ <Box
+ component="img"
+ src={post.featuredImage.startsWith('http') ? post.featuredImage : `${API_BASE_URL}${post.featuredImage}`}
+ alt={post.title || post.keyword}
+ sx={{
+ width:'100%',
+ maxHeight: 180,
+ objectFit:'cover',
+ borderRadius: 2,
+ border:'1px solid rgba(0,0,0,0.06)',
+ }}
+ />
  </Box>
  )}
  {post.content && (

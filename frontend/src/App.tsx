@@ -291,7 +291,7 @@ const appBuilderItems: NavItem[] = [
  { label:'Pages', path:'/pages', icon: <PagesIcon sx={{ fontSize: 18 }} /> },
  { label:'Templates', path:'/templates', icon: <TemplateIcon sx={{ fontSize: 18 }} /> },
  { label:'Blog', path:'/blog', icon: <BlogIcon sx={{ fontSize: 18 }} /> },
- { label:'Programmer', path:'/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
+ { label:'Membership Creator', path:'/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
  { label:'Preview', path:'/preview', icon: <PreviewIcon sx={{ fontSize: 18 }} /> },
 ];
 

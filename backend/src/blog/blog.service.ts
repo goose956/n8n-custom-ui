@@ -29,6 +29,7 @@ export interface BlogPost {
  tags: string[];
  metaDescription: string;
  error?: string;
+ featuredImage?: string; // DALL-E generated hero image URL path (e.g. /blog-images/slug.png)
  // LLM optimization fields
  structuredData?: object; // JSON-LD schema.org data
  faqSchema?: { q: string; a: string }[]; // FAQ structured data
@@ -176,6 +177,81 @@ export class BlogService {
  await this.trackCost(provider.provider, provider.model, tokensIn, tokensOut, Date.now() - startTime,'blog');
  return response.data.choices[0].message.content;
  }
+ }
+
+ /**
+  * Get the OpenAI API key specifically (needed for DALL-E image generation).
+  * Falls back to OpenRouter key if the stored provider name matches.
+  */
+ private getOpenAIKey(): string | null {
+  try {
+   const data = this.readDb();
+   const apiKeys = data.apiKeys || [];
+   const entry = apiKeys.find((k: any) => k.name.toLowerCase() === 'openai');
+   if (entry) {
+    try {
+     const key = this.cryptoService.decrypt(entry.value);
+     if (key) return key;
+    } catch { /* skip */ }
+   }
+   return null;
+  } catch {
+   return null;
+  }
+ }
+
+ /**
+  * Generate a colourful abstract line-art hero image for a blog post using DALL-E.
+  * Saves the image to /public/blog-images/ and returns the URL path.
+  */
+ private async generateFeaturedImage(title: string, keyword: string): Promise<string | null> {
+  const openaiKey = this.getOpenAIKey();
+  if (!openaiKey) {
+   console.log('[Blog] No OpenAI key found — skipping featured image generation');
+   return null;
+  }
+
+  try {
+   const prompt = `Colourful abstract line art illustration about "${keyword}". Use vibrant gradients, flowing lines, geometric shapes, and modern minimalist style. No text, no words, no letters. Clean white background. Suitable as a blog post hero image.`;
+
+   const response = await axios.post(
+    'https://api.openai.com/v1/images/generations',
+    {
+     model: 'dall-e-3',
+     prompt,
+     n: 1,
+     size: '1792x1024',
+     quality: 'standard',
+     response_format: 'b64_json',
+    },
+    {
+     headers: {
+      Authorization: `Bearer ${openaiKey}`,
+      'Content-Type': 'application/json',
+     },
+     timeout: 120000,
+    },
+   );
+
+   const b64 = response.data?.data?.[0]?.b64_json;
+   if (b64) {
+    // Save image to file instead of bloating db.json
+    const imgDir = path.join(__dirname, '../../public/blog-images');
+    if (!fs.existsSync(imgDir)) {
+     fs.mkdirSync(imgDir, { recursive: true });
+    }
+    const filename = `${this.slugify(keyword)}-${Date.now()}.png`;
+    fs.writeFileSync(path.join(imgDir, filename), Buffer.from(b64, 'base64'));
+
+    // Track cost: DALL-E 3 standard 1792x1024 = $0.080 per image
+    await this.trackCost('openai', 'dall-e-3', 0, 0, 0, 'blog-image').catch(() => {});
+    return `/blog-images/${filename}`;
+   }
+   return null;
+  } catch (err: any) {
+   console.error('[Blog] Featured image generation failed:', err.response?.data?.error?.message || err.message);
+   return null;
+  }
  }
 
  private slugify(text: string): string {
@@ -500,6 +576,14 @@ Remember: every heading should be answerable, every paragraph should lead with i
 
  const settings = this.getSettings();
 
+ // Generate featured image with DALL-E (runs in parallel-safe manner, non-blocking on failure)
+ let featuredImage: string | null = null;
+ try {
+  featuredImage = await this.generateFeaturedImage(result.title || post.keyword, post.keyword);
+ } catch (imgErr) {
+  console.error('[Blog] Image generation error (non-fatal):', imgErr);
+ }
+
  // Build JSON-LD structured data
  const structuredData = {
 '@context':'https://schema.org',
@@ -546,6 +630,7 @@ Remember: every heading should be answerable, every paragraph should lead with i
  structuredData: faqStructuredData
  ? [structuredData, faqStructuredData]
  : structuredData,
+ ...(featuredImage ? { featuredImage } : {}),
  };
 
  posts[postIndex] = updatedPost;
