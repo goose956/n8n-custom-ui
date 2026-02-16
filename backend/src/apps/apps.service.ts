@@ -252,6 +252,7 @@ export class AppManagementService {
  { label:'Pricing', url:'/pricing' },
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
+ { label:'Log In', url:'/login' },
  ], cta:'Get Started' },
  hero: {
  badge:' Now in Public Beta',
