@@ -113,6 +113,11 @@ export class BlogController {
  return { success: true, message:`Sitemap regenerated with ${result.urls} published posts` };
  }
 
+ @Post('generate-images')
+ async generateMissingImages() {
+ return this.blogService.generateMissingImages();
+ }
+
  @Get('sitemap.xml')
  async getSitemapXml(@Res() res: Response) {
  const result = await this.blogService.getSitemap();

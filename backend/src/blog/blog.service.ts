@@ -245,6 +245,38 @@ RULES:
   }
  }
 
+ /**
+  * Generate featured images for all posts that have content but no featured image.
+  */
+ async generateMissingImages(): Promise<{ success: boolean; updated: number; total: number; errors: number }> {
+  const posts = this.getPosts();
+  const missing = posts.filter(p => p.content && !p.featuredImage);
+  let updated = 0;
+  let errors = 0;
+
+  for (const post of missing) {
+   try {
+    const img = await this.generateFeaturedImage(post.title || post.keyword, post.keyword);
+    if (img) {
+     const idx = posts.findIndex(p => p.id === post.id);
+     if (idx !== -1) {
+      posts[idx] = { ...posts[idx], featuredImage: img, updatedAt: new Date().toISOString() };
+      this.savePosts(posts);
+      updated++;
+      console.log(`[Blog] Generated image for: ${post.title || post.keyword}`);
+     }
+    } else {
+     errors++;
+    }
+   } catch (err: any) {
+    console.error(`[Blog] Image gen error for ${post.keyword}:`, err.message);
+    errors++;
+   }
+  }
+
+  return { success: true, updated, total: missing.length, errors };
+ }
+
  private slugify(text: string): string {
  return text
  .toLowerCase()

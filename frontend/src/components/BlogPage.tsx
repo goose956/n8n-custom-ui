@@ -58,6 +58,7 @@ import {
  AutoFixHigh as OptimizeIcon,
  CheckCircleOutline as CheckIcon,
  Info as InfoIcon,
+ Image as ImageIcon,
 } from'@mui/icons-material';
 
 // "€"€"€ Types "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€
@@ -206,6 +207,9 @@ export function BlogPage() {
 
  // Delete confirm
  const [deleteConfirm, setDeleteConfirm] = useState<BlogPost | null>(null);
+
+ // Image generation
+ const [generatingImages, setGeneratingImages] = useState(false);
 
  // Snackbar
  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' |'info' |'warning' }>({
@@ -553,6 +557,24 @@ export function BlogPage() {
  }
  }, []);
 
+ const handleGenerateImages = useCallback(async () => {
+ setGeneratingImages(true);
+ try {
+ const res = await fetch(`${BLOG_API}/generate-images`, { method:'POST' });
+ const data = await res.json();
+ if (data.success) {
+ setSnackbar({ open: true, message:`Generated ${data.updated} images (${data.errors} failed)`, severity: data.updated > 0 ? 'success' : 'info' });
+ fetchPosts();
+ } else {
+ setSnackbar({ open: true, message:'Image generation failed', severity:'error' });
+ }
+ } catch {
+ setSnackbar({ open: true, message:'Image generation request failed', severity:'error' });
+ } finally {
+ setGeneratingImages(false);
+ }
+ }, [fetchPosts]);
+
  // "€"€"€ Filtering "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€
 
  const filteredPosts = posts.filter((p) => {
@@ -639,6 +661,17 @@ export function BlogPage() {
  sx={{ borderRadius: 2.5, borderColor:'rgba(0,0,0,0.1)', color:'#666', height: 42 }}
  >
  Sitemap
+ </Button>
+ </Tooltip>
+ <Tooltip title="Generate featured images for posts missing them">
+ <Button
+ variant="outlined"
+ startIcon={generatingImages ? <CircularProgress size={16} /> : <ImageIcon />}
+ onClick={handleGenerateImages}
+ disabled={generatingImages}
+ sx={{ borderRadius: 2.5, borderColor:'rgba(0,0,0,0.1)', color:'#666', height: 42 }}
+ >
+ {generatingImages ? 'Generating...' : 'Images'}
  </Button>
  </Tooltip>
  <Tooltip title="Settings">
@@ -1246,27 +1279,29 @@ export function BlogPage() {
  </Dialog>
 
  {/* "€"€"€ Preview Dialog "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
- <Dialog open={Boolean(previewPost)} onClose={() => setPreviewPost(null)} maxWidth="md" fullWidth>
- <DialogTitle sx={{ fontWeight: 800 }}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <PreviewIcon sx={{ color:'#667eea' }} />
- Preview
- </Box>
- </DialogTitle>
- <DialogContent>
+ <Dialog open={Boolean(previewPost)} onClose={() => setPreviewPost(null)} fullScreen>
  {previewPost && (
- <Box>
- <Typography variant="h4" sx={{ fontWeight: 800, color:'#1a1a2e', mb: 1 }}>
- {previewPost.title}
- </Typography>
- <Box sx={{ display:'flex', gap: 1, mb: 2, flexWrap:'wrap' }}>
- {previewPost.tags.map((tag) => (
- <Chip key={tag} label={tag} size="small" sx={{ fontSize:'0.72rem', fontWeight: 600 }} />
- ))}
- <Typography sx={{ fontSize:'0.78rem', color:'#999', ml: 1 }}>
- {previewPost.wordCount} words &bull; {new Date(previewPost.createdAt).toLocaleDateString()}
- </Typography>
+ <Box sx={{ display:'flex', flexDirection:'column', height:'100vh', bgcolor:'#fff' }}>
+ {/* Top bar */}
+ <Box sx={{ display:'flex', alignItems:'center', justifyContent:'space-between', px: 3, py: 1.5, borderBottom:'1px solid rgba(0,0,0,0.08)', bgcolor:'#fafbfc', flexShrink: 0 }}>
+ <Box sx={{ display:'flex', alignItems:'center', gap: 1.5 }}>
+ <PreviewIcon sx={{ color:'#667eea' }} />
+ <Typography sx={{ fontWeight: 800, fontSize:'1rem', color:'#1a1a2e' }}>Blog Preview</Typography>
+ <Chip label={previewPost.status} size="small" sx={{ fontSize:'0.68rem', fontWeight: 700, textTransform:'capitalize' }} />
  </Box>
+ <Box sx={{ display:'flex', gap: 1 }}>
+ <Button onClick={() => { setPreviewPost(null); openEditor(previewPost); }} startIcon={<EditIcon />} variant="outlined" size="small" sx={{ borderRadius: 2, textTransform:'none' }}>
+ Edit
+ </Button>
+ <Button onClick={() => setPreviewPost(null)} variant="contained" size="small" sx={{ borderRadius: 2, textTransform:'none', background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+ Close
+ </Button>
+ </Box>
+ </Box>
+
+ {/* Article content — scrollable */}
+ <Box sx={{ flex: 1, overflow:'auto' }}>
+ {/* Hero image */}
  {previewPost.featuredImage && (
  <Box
  component="img"
@@ -1274,53 +1309,106 @@ export function BlogPage() {
  alt={previewPost.title}
  sx={{
  width:'100%',
- maxHeight: 400,
+ maxHeight: 420,
  objectFit:'cover',
- borderRadius: 2,
- mb: 2,
  }}
  />
  )}
+
+ {/* Article body */}
+ <Box sx={{ maxWidth: 780, mx:'auto', px: 3, py: 5 }}>
+ <Typography variant="h3" sx={{ fontWeight: 900, color:'#1a1a2e', mb: 2, lineHeight: 1.25, fontSize: { xs:'1.8rem', md:'2.4rem' } }}>
+ {previewPost.title}
+ </Typography>
+
+ {/* Meta line */}
+ <Box sx={{ display:'flex', alignItems:'center', gap: 2, mb: 3, flexWrap:'wrap' }}>
+ <Typography sx={{ fontSize:'0.85rem', color:'#999' }}>
+ {previewPost.wordCount.toLocaleString()} words
+ </Typography>
+ {previewPost.publishedAt && (
+ <Typography sx={{ fontSize:'0.85rem', color:'#999' }}>
+ Published {new Date(previewPost.publishedAt).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}
+ </Typography>
+ )}
+ {!previewPost.publishedAt && (
+ <Typography sx={{ fontSize:'0.85rem', color:'#999' }}>
+ Created {new Date(previewPost.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}
+ </Typography>
+ )}
+ {(previewPost.views || 0) > 0 && (
+ <Typography sx={{ fontSize:'0.85rem', color:'#e67e22', fontWeight: 600 }}>
+ {(previewPost.views || 0).toLocaleString()} views
+ </Typography>
+ )}
+ </Box>
+
+ {/* Tags */}
+ {previewPost.tags.length > 0 && (
+ <Box sx={{ display:'flex', gap: 0.8, mb: 3, flexWrap:'wrap' }}>
+ {previewPost.tags.map((tag) => (
+ <Chip key={tag} label={tag} size="small" sx={{ fontSize:'0.75rem', fontWeight: 600, bgcolor:'rgba(102,126,234,0.08)', color:'#667eea' }} />
+ ))}
+ </Box>
+ )}
+
+ {/* Excerpt */}
  {previewPost.excerpt && (
  <Typography
  sx={{
- fontSize:'1rem',
+ fontSize:'1.15rem',
  color:'#555',
  fontStyle:'italic',
- mb: 3,
- p: 2,
- borderLeft:'3px solid #667eea',
- bgcolor:'rgba(102,126,234,0.04)',
+ mb: 4,
+ py: 2,
+ px: 2.5,
+ borderLeft:'4px solid #667eea',
+ bgcolor:'rgba(102,126,234,0.03)',
  borderRadius:'0 8px 8px 0',
+ lineHeight: 1.7,
  }}
  >
  {previewPost.excerpt}
  </Typography>
  )}
- <Divider sx={{ mb: 2 }} />
+
+ <Divider sx={{ mb: 4 }} />
+
+ {/* Main content */}
  <Box
  sx={{
-'& h2': { fontSize:'1.4rem', fontWeight: 700, color:'#1a1a2e', mb: 1, mt: 3 },
-'& h3': { fontSize:'1.15rem', fontWeight: 700, color:'#333', mb: 0.5, mt: 2 },
-'& p': { fontSize:'0.95rem', lineHeight: 1.8, color:'#444', mb: 1.5 },
-'& ul, & ol': { pl: 3, mb: 1.5 },
-'& li': { fontSize:'0.92rem', lineHeight: 1.7, color:'#444', mb: 0.5 },
-'& strong': { fontWeight: 700 },
+'& h1': { fontSize:'2rem', fontWeight: 800, color:'#1a1a2e', mb: 1.5, mt: 4 },
+'& h2': { fontSize:'1.6rem', fontWeight: 700, color:'#1a1a2e', mb: 1, mt: 3.5 },
+'& h3': { fontSize:'1.25rem', fontWeight: 700, color:'#333', mb: 0.8, mt: 2.5 },
+'& h4': { fontSize:'1.1rem', fontWeight: 700, color:'#444', mb: 0.5, mt: 2 },
+'& p': { fontSize:'1.05rem', lineHeight: 1.85, color:'#333', mb: 2 },
+'& ul, & ol': { pl: 3, mb: 2 },
+'& li': { fontSize:'1.02rem', lineHeight: 1.75, color:'#333', mb: 0.8 },
+'& strong': { fontWeight: 700, color:'#1a1a2e' },
 '& em': { fontStyle:'italic' },
+'& a': { color:'#667eea', textDecoration:'none','&:hover': { textDecoration:'underline' } },
+'& blockquote': { borderLeft:'4px solid #667eea', pl: 2.5, py: 0.5, my: 2, bgcolor:'rgba(102,126,234,0.03)', borderRadius:'0 8px 8px 0', fontStyle:'italic', color:'#555' },
+'& pre': { bgcolor:'#1a1a2e', color:'#e0e0e0', p: 2.5, borderRadius: 2, overflow:'auto', mb: 2, fontSize:'0.9rem' },
+'& code': { fontSize:'0.9rem', bgcolor:'rgba(0,0,0,0.04)', px: 0.8, py: 0.2, borderRadius: 1 },
+'& img': { maxWidth:'100%', borderRadius: 2, my: 2 },
+'& table': { width:'100%', borderCollapse:'collapse', mb: 2 },
+'& th, & td': { border:'1px solid #e0e0e0', px: 2, py: 1, fontSize:'0.95rem', textAlign:'left' },
+'& th': { bgcolor:'#f5f5f5', fontWeight: 700 },
  }}
  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewPost.content) }}
  />
+
+ {/* Slug info */}
+ <Box sx={{ mt: 5, pt: 3, borderTop:'1px solid rgba(0,0,0,0.06)' }}>
+ <Typography sx={{ fontSize:'0.8rem', color:'#bbb' }}>Slug: /{previewPost.slug}</Typography>
+ {previewPost.metaDescription && (
+ <Typography sx={{ fontSize:'0.8rem', color:'#bbb', mt: 0.5 }}>Meta: {previewPost.metaDescription}</Typography>
+ )}
+ </Box>
+ </Box>
+ </Box>
  </Box>
  )}
- </DialogContent>
- <DialogActions sx={{ p: 2 }}>
- {previewPost && (
- <Button onClick={() => { setPreviewPost(null); openEditor(previewPost); }} startIcon={<EditIcon />} sx={{ borderRadius: 2, mr:'auto' }}>
- Edit
- </Button>
- )}
- <Button onClick={() => setPreviewPost(null)} sx={{ borderRadius: 2 }}>Close</Button>
- </DialogActions>
  </Dialog>
 
  {/* "€"€"€ Settings Dialog "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
@@ -1524,8 +1612,15 @@ function PostRow({ post, selected, isGenerating, projectName, projectColor, onTo
  borderRadius: 2.5,
  overflow:'hidden',
  transition:'all 0.15s ease',
+ cursor: post.content ? 'pointer' : 'default',
  ...(selected && { borderColor:'#667eea', bgcolor:'rgba(102,126,234,0.02)' }),
-'&:hover': { borderColor:'rgba(0,0,0,0.12)' },
+'&:hover': { borderColor: post.content ? '#667eea' : 'rgba(0,0,0,0.12)', bgcolor: post.content ? 'rgba(102,126,234,0.01)' : undefined },
+ }}
+ onClick={(e) => {
+ // Don't trigger preview if clicking on interactive elements
+ const target = e.target as HTMLElement;
+ if (target.closest('button') || target.closest('input') || target.closest('[role="checkbox"]') || target.closest('.MuiCheckbox-root')) return;
+ if (post.content) onPreview();
  }}
  >
  {/* Main row */}
@@ -1539,6 +1634,23 @@ function PostRow({ post, selected, isGenerating, projectName, projectColor, onTo
  }}
  >
  <Checkbox size="small" checked={selected} onChange={onToggleSelect} />
+
+ {/* Featured image thumbnail */}
+ {post.featuredImage && (
+ <Box
+ component="img"
+ src={post.featuredImage.startsWith('http') ? post.featuredImage : `${API_BASE_URL}${post.featuredImage}`}
+ alt={post.title || post.keyword}
+ sx={{
+ width: 40,
+ height: 40,
+ borderRadius: 1.5,
+ objectFit:'cover',
+ border:'1px solid rgba(0,0,0,0.06)',
+ flexShrink: 0,
+ }}
+ />
+ )}
 
  {/* Status chip */}
  <Chip

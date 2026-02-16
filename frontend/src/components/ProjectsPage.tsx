@@ -316,6 +316,9 @@ export function ProjectsPage() {
  elevation={0}
  sx={{
  p: 3,
+ height: '100%',
+ display: 'flex',
+ flexDirection: 'column',
  border:'1px solid rgba(0,0,0,0.06)',
  transition:'all 0.25s ease',
  cursor:'pointer',
@@ -367,7 +370,7 @@ export function ProjectsPage() {
  fontFamily:'monospace',
  }}
  />
- <Typography variant="body2" sx={{ color:'#999', mb: 2, lineHeight: 1.5, minHeight: 40 }}>
+ <Typography variant="body2" sx={{ color:'#999', mb: 2, lineHeight: 1.5, flex: 1, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
  {app.description ||'No description provided'}
  </Typography>
  <Box sx={{ display:'flex', alignItems:'center', gap: 0.75 }}>
