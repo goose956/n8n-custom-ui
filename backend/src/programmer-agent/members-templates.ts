@@ -297,7 +297,7 @@ export function MembersSettingsPage() {
 }`;
 }
 
-// --- Admin Page --------------------------------------------------------------
+// --- Admin Page (Analytics + Contact Submissions) ----------------------------
 
 export function adminTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
@@ -305,58 +305,48 @@ export function adminTemplate(p: TemplateParams): string {
 import {
  Box, Typography, Paper, Grid, Card, CardContent, Chip, Button,
  Table, TableHead, TableRow, TableCell, TableBody, Tabs, Tab,
- CircularProgress, Divider, Avatar, Tooltip, IconButton, Skeleton,
- LinearProgress, Alert, Snackbar,
+ Avatar, Skeleton, LinearProgress, Alert, Snackbar, IconButton,
+ Tooltip, Menu, MenuItem,
 } from'@mui/material';
 import Dashboard from'@mui/icons-material/Dashboard';
 import People from'@mui/icons-material/People';
 import TrendingUp from'@mui/icons-material/TrendingUp';
 import AttachMoney from'@mui/icons-material/AttachMoney';
-import BugReport from'@mui/icons-material/BugReport';
-import Api from'@mui/icons-material/Api';
-import Refresh from'@mui/icons-material/Refresh';
-import CheckCircle from'@mui/icons-material/CheckCircle';
-import Error from'@mui/icons-material/Error';
-import Warning from'@mui/icons-material/Warning';
-import ArrowUpward from'@mui/icons-material/ArrowUpward';
 import Visibility from'@mui/icons-material/Visibility';
-import Speed from'@mui/icons-material/Speed';
-import Storage from'@mui/icons-material/Storage';
+import Refresh from'@mui/icons-material/Refresh';
+import Email from'@mui/icons-material/Email';
+import MarkEmailRead from'@mui/icons-material/MarkEmailRead';
+import Delete from'@mui/icons-material/Delete';
+import MoreVert from'@mui/icons-material/MoreVert';
+import Inbox from'@mui/icons-material/Inbox';
+import FiberNew from'@mui/icons-material/FiberNew';
 
 const API_BASE = window.location.origin.includes('localhost') ?'http://localhost:3000' :'';
 
 interface AppStats { app_id: number; name: string; active_subscriptions: number; total_subscriptions: number; total_revenue: number; created_at: string; }
 interface Analytics { app_id: number; total_page_views: number; unique_visitors: number; page_stats: Record<string, number>; views_by_date: Record<string, number>; recent_views: any[]; }
-interface Visitor { visitor_id: string; first_visit: string; last_visit: string; page_views: number; pages: string[]; }
-interface ErrorLog { id: number; source: string; severity: string; message: string; timestamp: string; resolved: boolean; }
-interface ApiUsageSummary { totalCalls: number; successRate: number; totalTokens: number; totalCost: number; avgDuration: number; }
+interface ContactSubmission { id: number; app_id?: number; name: string; email: string; subject: string; message: string; status: 'new' | 'read' | 'replied' | 'archived'; created_at: string; }
 
 export function MembersAdminPage() {
  const [tab, setTab] = useState(0);
  const [loading, setLoading] = useState(true);
  const [stats, setStats] = useState<AppStats | null>(null);
  const [analytics, setAnalytics] = useState<Analytics | null>(null);
- const [visitors, setVisitors] = useState<Visitor[]>([]);
- const [errors, setErrors] = useState<ErrorLog[]>([]);
- const [apiUsage, setApiUsage] = useState<ApiUsageSummary | null>(null);
+ const [contacts, setContacts] = useState<ContactSubmission[]>([]);
  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
+ const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement | null; id: number | null }>({ el: null, id: null });
 
  const fetchAll = useCallback(async () => {
  setLoading(true);
  try {
- const [statsRes, analyticsRes, visitorsRes, errorsRes, apiRes] = await Promise.all([
+ const [statsRes, analyticsRes, contactRes] = await Promise.all([
  fetch(\`\${API_BASE}/api/apps/${p.appId}/stats\`).then(r => r.json()).catch(() => null),
  fetch(\`\${API_BASE}/api/analytics/app/${p.appId}\`).then(r => r.json()).catch(() => null),
- fetch(\`\${API_BASE}/api/analytics/app/${p.appId}/visitors\`).then(r => r.json()).catch(() => []),
- fetch(\`\${API_BASE}/api/analytics/errors?resolved=false\`).then(r => r.json()).catch(() => ({ errors: [], summary: {} })),
- fetch(\`\${API_BASE}/api/analytics/api-usage\`).then(r => r.json()).catch(() => ({ summary: {} })),
+ fetch(\`\${API_BASE}/api/contact?app_id=${p.appId}\`).then(r => r.json()).catch(() => ({ data: [] })),
  ]);
  if (statsRes) setStats(statsRes);
  if (analyticsRes) setAnalytics(analyticsRes);
- setVisitors(Array.isArray(visitorsRes) ? visitorsRes : []);
- const errData = errorsRes?.errors || errorsRes || [];
- setErrors(Array.isArray(errData) ? errData : []);
- if (apiRes?.summary) setApiUsage(apiRes.summary);
+ setContacts(Array.isArray(contactRes?.data) ? contactRes.data : []);
  } catch (e) {
  setSnackbar({ open: true, message:'Failed to load some data', severity:'error' });
  } finally {
@@ -366,13 +356,27 @@ export function MembersAdminPage() {
 
  useEffect(() => { fetchAll(); }, [fetchAll]);
 
- const resolveError = async (id: number) => {
+ const updateContactStatus = async (id: number, status: string) => {
  try {
- await fetch(\`\${API_BASE}/api/analytics/errors/\${id}/resolve\`, { method:'POST' });
- setErrors(prev => prev.filter(e => e.id !== id));
- setSnackbar({ open: true, message:'Error resolved', severity:'success' });
- } catch { setSnackbar({ open: true, message:'Failed to resolve error', severity:'error' }); }
+ await fetch(\`\${API_BASE}/api/contact/\${id}/status\`, {
+ method:'POST', headers: {'Content-Type':'application/json' }, body: JSON.stringify({ status }),
+ });
+ setContacts(prev => prev.map(c => c.id === id ? { ...c, status: status as any } : c));
+ setSnackbar({ open: true, message:\`Marked as \${status}\`, severity:'success' });
+ } catch { setSnackbar({ open: true, message:'Failed to update status', severity:'error' }); }
+ setMenuAnchor({ el: null, id: null });
  };
+
+ const deleteContact = async (id: number) => {
+ try {
+ await fetch(\`\${API_BASE}/api/contact/\${id}\`, { method:'DELETE' });
+ setContacts(prev => prev.filter(c => c.id !== id));
+ setSnackbar({ open: true, message:'Submission deleted', severity:'success' });
+ } catch { setSnackbar({ open: true, message:'Failed to delete', severity:'error' }); }
+ setMenuAnchor({ el: null, id: null });
+ };
+
+ const statusColor = (s: string) => s ==='new' ?'error' : s ==='read' ?'info' : s ==='replied' ?'success' :'default';
 
  const StatCard = ({ icon, label, value, color, sub }: { icon: React.ReactNode; label: string; value: string | number; color: string; sub?: string }) => (
  <Card sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', position:'relative', overflow:'hidden' }}>
@@ -402,6 +406,8 @@ export function MembersAdminPage() {
  );
  }
 
+ const newContacts = contacts.filter(c => c.status ==='new').length;
+
  return (
  <Box>
  {/* Header */}
@@ -414,7 +420,7 @@ export function MembersAdminPage() {
  <Typography variant="h4" fontWeight={700} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
  <Dashboard /> ${p.appName} Admin
  </Typography>
- <Typography variant="body2" sx={{ opacity: 0.85 }}>Real-time monitoring & management</Typography>
+ <Typography variant="body2" sx={{ opacity: 0.85 }}>Analytics & contact form submissions</Typography>
  </Box>
  <Button variant="contained" startIcon={<Refresh />} onClick={fetchAll}
  sx={{ bgcolor:'rgba(255,255,255,0.2)','&:hover': { bgcolor:'rgba(255,255,255,0.3)' } }}>
@@ -434,7 +440,7 @@ export function MembersAdminPage() {
  <StatCard icon={<AttachMoney />} label="Revenue" value={'$' + (stats?.total_revenue ?? 0).toLocaleString()} color="#4caf50" />
  </Grid>
  <Grid item xs={12} sm={6} md={3}>
- <StatCard icon={<BugReport />} label="Open Errors" value={errors.length} color={errors.length > 0 ?'#f44336' :'#4caf50'} />
+ <StatCard icon={<Email />} label="Contact Messages" value={contacts.length} color={newContacts > 0 ?'#ff9800' :'#9c27b0'} sub={newContacts > 0 ? \`\${newContacts} new\` :'All read'} />
  </Grid>
  </Grid>
 
@@ -442,9 +448,7 @@ export function MembersAdminPage() {
  <Paper sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
  <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom:'1px solid rgba(0,0,0,0.06)', px: 2 }}>
  <Tab icon={<TrendingUp />} label="Analytics" iconPosition="start" />
- <Tab icon={<People />} label={\`Visitors (\${visitors.length})\`} iconPosition="start" />
- <Tab icon={<BugReport />} label={\`Errors (\${errors.length})\`} iconPosition="start" />
- <Tab icon={<Api />} label="API Usage" iconPosition="start" />
+ <Tab icon={<Email />} label={\`Contact (\${contacts.length})\`} iconPosition="start" />
  </Tabs>
 
  <Box sx={{ p: 3 }}>
@@ -487,69 +491,34 @@ export function MembersAdminPage() {
  </Box>
  )}
 
- {/* Visitors Tab */}
+ {/* Contact Submissions Tab */}
  {tab === 1 && (
  <Box>
- {visitors.length > 0 ? (
+ {contacts.length > 0 ? (
  <Table size="small">
  <TableHead><TableRow sx={{ bgcolor:'grey.50' }}>
- <TableCell><Typography fontWeight={600}>Visitor</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>First Visit</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Last Visit</Typography></TableCell>
- <TableCell align="right"><Typography fontWeight={600}>Pages Viewed</Typography></TableCell>
+ <TableCell><Typography fontWeight={600}>Name</Typography></TableCell>
+ <TableCell><Typography fontWeight={600}>Email</Typography></TableCell>
+ <TableCell><Typography fontWeight={600}>Subject</Typography></TableCell>
+ <TableCell><Typography fontWeight={600}>Status</Typography></TableCell>
+ <TableCell><Typography fontWeight={600}>Date</Typography></TableCell>
+ <TableCell align="center"><Typography fontWeight={600}>Actions</Typography></TableCell>
  </TableRow></TableHead>
  <TableBody>
- {visitors.slice(0, 20).map((v, i) => (
- <TableRow key={i} sx={{'&:nth-of-type(even)': { bgcolor:'grey.50' } }}>
+ {contacts.map(c => (
+ <TableRow key={c.id} sx={{'&:nth-of-type(even)': { bgcolor:'grey.50' }, bgcolor: c.status ==='new' ?'rgba(255,152,0,0.04)' : undefined }}>
  <TableCell>
  <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Avatar sx={{ width: 28, height: 28, fontSize: 12, bgcolor:'${p.primaryColor}' }}>{(v.visitor_id ||'?')[0].toUpperCase()}</Avatar>
- <Typography variant="body2">{v.visitor_id?.slice(0, 12) ||'Unknown'}...</Typography>
+ {c.status ==='new' && <FiberNew sx={{ color:'#ff9800', fontSize: 18 }} />}
+ <Typography variant="body2" fontWeight={c.status ==='new' ? 600 : 400}>{c.name}</Typography>
  </Box>
  </TableCell>
- <TableCell><Typography variant="body2">{new Date(v.first_visit).toLocaleDateString()}</Typography></TableCell>
- <TableCell><Typography variant="body2">{new Date(v.last_visit).toLocaleDateString()}</Typography></TableCell>
- <TableCell align="right"><Chip label={v.page_views} size="small" /></TableCell>
- </TableRow>
- ))}
- </TableBody>
- </Table>
- ) : (
- <Box sx={{ textAlign:'center', py: 4 }}>
- <People sx={{ fontSize: 48, color:'text.disabled' }} />
- <Typography color="text.secondary">No visitor data yet</Typography>
- </Box>
- )}
- </Box>
- )}
-
- {/* Errors Tab */}
- {tab === 2 && (
- <Box>
- {errors.length > 0 ? (
- <Table size="small">
- <TableHead><TableRow sx={{ bgcolor:'grey.50' }}>
- <TableCell><Typography fontWeight={600}>Severity</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Source</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Message</Typography></TableCell>
- <TableCell><Typography fontWeight={600}>Time</Typography></TableCell>
- <TableCell align="center"><Typography fontWeight={600}>Action</Typography></TableCell>
- </TableRow></TableHead>
- <TableBody>
- {errors.map(err => (
- <TableRow key={err.id} sx={{'&:nth-of-type(even)': { bgcolor:'grey.50' } }}>
- <TableCell>
- <Chip size="small" label={err.severity}
- color={err.severity ==='critical' ?'error' : err.severity ==='error' ?'warning' :'default'}
- icon={err.severity ==='critical' ? <Error /> : <Warning />} />
- </TableCell>
- <TableCell><Typography variant="body2">{err.source}</Typography></TableCell>
- <TableCell><Typography variant="body2" sx={{ maxWidth: 300, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{err.message}</Typography></TableCell>
- <TableCell><Typography variant="body2">{new Date(err.timestamp).toLocaleString()}</Typography></TableCell>
+ <TableCell><Typography variant="body2">{c.email}</Typography></TableCell>
+ <TableCell><Typography variant="body2" sx={{ maxWidth: 200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.subject}</Typography></TableCell>
+ <TableCell><Chip size="small" label={c.status} color={statusColor(c.status) as any} /></TableCell>
+ <TableCell><Typography variant="body2">{new Date(c.created_at).toLocaleDateString()}</Typography></TableCell>
  <TableCell align="center">
- <Tooltip title="Mark as resolved">
- <IconButton size="small" color="success" onClick={() => resolveError(err.id)}><CheckCircle /></IconButton>
- </Tooltip>
+ <IconButton size="small" onClick={e => setMenuAnchor({ el: e.currentTarget, id: c.id })}><MoreVert /></IconButton>
  </TableCell>
  </TableRow>
  ))}
@@ -557,44 +526,19 @@ export function MembersAdminPage() {
  </Table>
  ) : (
  <Box sx={{ textAlign:'center', py: 4 }}>
- <CheckCircle sx={{ fontSize: 48, color:'#4caf50' }} />
- <Typography color="text.secondary">No unresolved errors -- all clear!</Typography>
- </Box>
- )}
+ <Inbox sx={{ fontSize: 48, color:'text.disabled' }} />
+ <Typography color="text.secondary">No contact submissions yet</Typography>
+ <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Messages from your contact form will appear here</Typography>
  </Box>
  )}
 
- {/* API Usage Tab */}
- {tab === 3 && (
- <Box>
- {apiUsage ? (
- <Grid container spacing={2}>
- {[
- { label:'Total API Calls', value: apiUsage.totalCalls?.toLocaleString() ??'0', icon: <Api />, color:'${p.primaryColor}' },
- { label:'Success Rate', value: (apiUsage.successRate ?? 0).toFixed(1) +'%', icon: <CheckCircle />, color:'#4caf50' },
- { label:'Total Tokens', value: (apiUsage.totalTokens ?? 0).toLocaleString(), icon: <Storage />, color:'#ff9800' },
- { label:'Total Cost', value:'$' + (apiUsage.totalCost ?? 0).toFixed(2), icon: <AttachMoney />, color:'#2196f3' },
- { label:'Avg Duration', value: (apiUsage.avgDuration ?? 0).toFixed(0) +'ms', icon: <Speed />, color:'#9c27b0' },
- ].map((item, i) => (
- <Grid item xs={12} sm={6} md={4} key={i}>
- <Card sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
- <CardContent sx={{ display:'flex', alignItems:'center', gap: 2 }}>
- <Avatar sx={{ bgcolor: item.color +'20', color: item.color }}>{item.icon}</Avatar>
- <Box>
- <Typography variant="body2" color="text.secondary">{item.label}</Typography>
- <Typography variant="h5" fontWeight={700}>{item.value}</Typography>
- </Box>
- </CardContent>
- </Card>
- </Grid>
- ))}
- </Grid>
- ) : (
- <Box sx={{ textAlign:'center', py: 4 }}>
- <Api sx={{ fontSize: 48, color:'text.disabled' }} />
- <Typography color="text.secondary">No API usage data yet</Typography>
- </Box>
- )}
+ {/* Status action menu */}
+ <Menu anchorEl={menuAnchor.el} open={Boolean(menuAnchor.el)} onClose={() => setMenuAnchor({ el: null, id: null })}>
+ <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'read')}><MarkEmailRead sx={{ mr: 1, fontSize: 18 }} /> Mark as Read</MenuItem>
+ <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'replied')}><Email sx={{ mr: 1, fontSize: 18 }} /> Mark as Replied</MenuItem>
+ <MenuItem onClick={() => menuAnchor.id && updateContactStatus(menuAnchor.id,'archived')}><Inbox sx={{ mr: 1, fontSize: 18 }} /> Archive</MenuItem>
+ <MenuItem onClick={() => menuAnchor.id && deleteContact(menuAnchor.id)} sx={{ color:'error.main' }}><Delete sx={{ mr: 1, fontSize: 18 }} /> Delete</MenuItem>
+ </Menu>
  </Box>
  )}
  </Box>
@@ -608,10 +552,118 @@ export function MembersAdminPage() {
 }`;
 }
 
+// --- Contact Form Page -------------------------------------------------------
+
+export function contactFormTemplate(p: TemplateParams): string {
+ const sec = darken(p.primaryColor, 0.15);
+ return`import { useState } from'react';
+import {
+ Box, Typography, Paper, TextField, Button, Snackbar, Alert,
+ CircularProgress, Grid,
+} from'@mui/material';
+import Email from'@mui/icons-material/Email';
+import Send from'@mui/icons-material/Send';
+import CheckCircle from'@mui/icons-material/CheckCircle';
+
+const API_BASE = window.location.origin.includes('localhost') ?'http://localhost:3000' :'';
+
+export function MembersContactPage() {
+ const [form, setForm] = useState({ name:'', email:'', subject:'', message:'' });
+ const [sending, setSending] = useState(false);
+ const [sent, setSent] = useState(false);
+ const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
+
+ const handleSubmit = async (e: React.FormEvent) => {
+ e.preventDefault();
+ if (!form.name || !form.email || !form.message) {
+ setSnackbar({ open: true, message:'Please fill in all required fields', severity:'error' });
+ return;
+ }
+ setSending(true);
+ try {
+ const res = await fetch(\`\${API_BASE}/api/contact\`, {
+ method:'POST',
+ headers: {'Content-Type':'application/json' },
+ body: JSON.stringify({ ...form, app_id: ${p.appId} }),
+ });
+ if (!res.ok) throw new Error('Failed');
+ setSent(true);
+ setForm({ name:'', email:'', subject:'', message:'' });
+ setSnackbar({ open: true, message:'Message sent successfully!', severity:'success' });
+ } catch {
+ setSnackbar({ open: true, message:'Failed to send message. Please try again.', severity:'error' });
+ } finally {
+ setSending(false);
+ }
+ };
+
+ return (
+ <Box sx={{ maxWidth: 700, mx:'auto' }}>
+ <Paper sx={{
+ p: 3, mb: 3, borderRadius: 3,
+ background:'linear-gradient(135deg, ${p.primaryColor} 0%, ${sec} 100%)',
+ color:'#fff',
+ }}>
+ <Typography variant="h4" fontWeight={700} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
+ <Email /> Contact Us
+ </Typography>
+ <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>Have a question or feedback? We'd love to hear from you.</Typography>
+ </Paper>
+
+ {sent ? (
+ <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
+ <CheckCircle sx={{ fontSize: 64, color:'#4caf50', mb: 2 }} />
+ <Typography variant="h5" fontWeight={600} sx={{ mb: 1 }}>Message Sent!</Typography>
+ <Typography color="text.secondary" sx={{ mb: 3 }}>Thank you for reaching out. We'll get back to you as soon as possible.</Typography>
+ <Button variant="contained" onClick={() => setSent(false)}
+ sx={{ bgcolor:'${p.primaryColor}','&:hover': { bgcolor:'${sec}' } }}>
+ Send Another Message
+ </Button>
+ </Paper>
+ ) : (
+ <Paper sx={{ p: 3, borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
+ <form onSubmit={handleSubmit}>
+ <Grid container spacing={2}>
+ <Grid item xs={12} sm={6}>
+ <TextField fullWidth required label="Your Name" value={form.name}
+ onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+ </Grid>
+ <Grid item xs={12} sm={6}>
+ <TextField fullWidth required label="Email Address" type="email" value={form.email}
+ onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+ </Grid>
+ <Grid item xs={12}>
+ <TextField fullWidth label="Subject" value={form.subject}
+ onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
+ </Grid>
+ <Grid item xs={12}>
+ <TextField fullWidth required label="Message" multiline rows={5} value={form.message}
+ onChange={e => setForm(f => ({ ...f, message: e.target.value }))} />
+ </Grid>
+ <Grid item xs={12}>
+ <Button type="submit" variant="contained" size="large" disabled={sending}
+ startIcon={sending ? <CircularProgress size={20} /> : <Send />}
+ sx={{ bgcolor:'${p.primaryColor}','&:hover': { bgcolor:'${sec}' }, px: 4 }}>
+ {sending ?'Sending...' :'Send Message'}
+ </Button>
+ </Grid>
+ </Grid>
+ </form>
+ </Paper>
+ )}
+
+ <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+ <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
+ </Snackbar>
+ </Box>
+ );
+}`;
+}
+
 // --- Template registry -------------------------------------------------------
 
 /** Page types that use static templates instead of AI generation */
-export const TEMPLATE_PAGE_TYPES = ['profile','settings','admin'] as const;
+export const TEMPLATE_PAGE_TYPES = ['profile','settings','admin','contact'] as const;
 
 /** Get the static template for a page type, or null if it requires AI generation */
 export function getPageTemplate(pageType: string, params: TemplateParams): string | null {
@@ -619,6 +671,7 @@ export function getPageTemplate(pageType: string, params: TemplateParams): strin
  case'profile': return profileTemplate(params);
  case'settings': return settingsTemplate(params);
  case'admin': return adminTemplate(params);
+ case'contact': return contactFormTemplate(params);
  default: return null;
  }
 }

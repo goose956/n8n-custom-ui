@@ -30,7 +30,7 @@ export interface MembersAreaPage {
  id: string;
  name: string;
  description: string;
- type:'dashboard' |'profile' |'settings' |'admin' |'custom';
+ type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'custom';
  required: boolean;
 }
 
@@ -143,7 +143,8 @@ const DEFAULT_MEMBERS_PAGES: MembersAreaPage[] = [
  { id:'dashboard', name:'Dashboard', description:'Main dashboard overview with stats, recent activity, and quick actions', type:'dashboard', required: true },
  { id:'profile', name:'Profile', description:'User profile management with avatar, bio, and account details', type:'profile', required: true },
  { id:'settings', name:'Settings', description:'Account settings, notifications, privacy, and preferences', type:'settings', required: true },
- { id:'admin', name:'Admin Panel', description:'Admin dashboard with real-time analytics, user management, support tickets, error logs, and API usage -- wired to the live backend API', type:'admin', required: true },
+ { id:'contact', name:'Contact', description:'Contact form that sends messages directly to admin inbox via /api/contact', type:'contact', required: true },
+ { id:'admin', name:'Admin Panel', description:'Admin dashboard with analytics and contact form submissions -- wired to the live backend API', type:'admin', required: true },
 ];
 
 // --- Service -------------------------------------------------------------------

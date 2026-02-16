@@ -2,6 +2,7 @@ import { Global, Module } from'@nestjs/common';
 import { APP_INTERCEPTOR } from'@nestjs/core';
 import { AnalyticsService } from'./analytics.service';
 import { AnalyticsController } from'./analytics.controller';
+import { ContactController } from'./contact.controller';
 import { ErrorLoggingInterceptor } from'./error-logging.interceptor';
 
 @Global()
@@ -13,7 +14,7 @@ import { ErrorLoggingInterceptor } from'./error-logging.interceptor';
  useClass: ErrorLoggingInterceptor,
  },
  ],
- controllers: [AnalyticsController],
+ controllers: [AnalyticsController, ContactController],
  exports: [AnalyticsService],
 })
 export class AnalyticsModule {}

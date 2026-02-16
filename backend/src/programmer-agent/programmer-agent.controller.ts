@@ -35,7 +35,7 @@ export class ProgrammerAgentController {
  orchestratorModel?: string;
  subAgentModel?: string;
  conversationHistory?: { role: string; content: string }[];
- pages?: { id: string; name: string; description: string; type:'dashboard' |'profile' |'settings' |'admin' |'custom'; required: boolean }[];
+ pages?: { id: string; name: string; description: string; type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'custom'; required: boolean }[];
  },
  ) {
  return this.agentService.generate(body);
