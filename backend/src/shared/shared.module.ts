@@ -1,6 +1,6 @@
-import { Global, Module } from '@nestjs/common';
-import { CryptoService } from './crypto.service';
-import { DatabaseService } from './database.service';
+import { Global, Module } from'@nestjs/common';
+import { CryptoService } from'./crypto.service';
+import { DatabaseService } from'./database.service';
 
 /**
  * SharedModule provides CryptoService and DatabaseService globally.
@@ -8,7 +8,7 @@ import { DatabaseService } from './database.service';
  */
 @Global()
 @Module({
-  providers: [CryptoService, DatabaseService],
-  exports: [CryptoService, DatabaseService],
+ providers: [CryptoService, DatabaseService],
+ exports: [CryptoService, DatabaseService],
 })
 export class SharedModule {}
