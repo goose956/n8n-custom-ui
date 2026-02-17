@@ -680,13 +680,21 @@ export function FunnelBuilderPage() {
                   }}
                   onDragOver={(e) => {
                     e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
                     if (tier.steps.length === 0) {
                       setDropTarget({ tierId: tier.id, position: 0 });
+                    } else {
+                      // Allow drop at end of lane when dragging over empty space
+                      setDropTarget({ tierId: tier.id, position: tier.steps.length });
                     }
                   }}
+                  onDragLeave={handleDragLeave}
                   onDrop={(e) => {
                     if (tier.steps.length === 0) {
                       handlePaletteDrop(e, tier.id, 0);
+                    } else {
+                      // Drop at end of lane
+                      handlePaletteDrop(e, tier.id, tier.steps.length);
                     }
                   }}
                 >
@@ -711,7 +719,7 @@ export function FunnelBuilderPage() {
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handlePaletteDrop(e, tier.id, idx)}
                         sx={{
-                          width: dropTarget?.tierId === tier.id && dropTarget?.position === idx ? 60 : 8,
+                          width: dropTarget?.tierId === tier.id && dropTarget?.position === idx ? 60 : 16,
                           minHeight: 80,
                           display: 'flex',
                           alignItems: 'center',
@@ -887,7 +895,7 @@ export function FunnelBuilderPage() {
                           onDragLeave={handleDragLeave}
                           onDrop={(e) => handlePaletteDrop(e, tier.id, idx + 1)}
                           sx={{
-                            width: dropTarget?.tierId === tier.id && dropTarget?.position === idx + 1 ? 60 : 16,
+                            width: dropTarget?.tierId === tier.id && dropTarget?.position === idx + 1 ? 80 : 40,
                             minHeight: 80,
                             ml: 0.5,
                             transition: 'width 0.2s ease',
