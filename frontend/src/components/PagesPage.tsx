@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component } from'react';
+import React, { useState, useEffect, useCallback, Component } from'react';
 import { API } from'../config/api';
 import {
  Container,
@@ -346,6 +346,8 @@ export const PagesPage: React.FC = () => {
    'help': 'faq', 'faqs': 'faq', 'support': 'faq', 'questions': 'faq',
    'blog': 'blog-page', 'articles': 'blog-page', 'news': 'blog-page',
    'contact': 'contact', 'contact us': 'contact', 'get in touch': 'contact', 'reach out': 'contact',
+   'get started free': 'register', 'start free trial': 'checkout', 'start your free trial': 'checkout',
+   'try for free': 'register', 'join free': 'register', 'create account': 'register', 'register': 'register',
   };
   const mapped = aliases[t];
   if (mapped) return pages.find(p => p.page_type === mapped);
@@ -436,6 +438,12 @@ export const PagesPage: React.FC = () => {
    setPreviewAddress(`https://${slug}.example.com${pageType === 'index' ? '/' : '/' + pageType}`);
   }
  };
+
+ // Handle pricing CTA navigation in preview
+ const handlePreviewPricingNavigate = useCallback((pageType: string) => {
+  const target = pages.find(p => p.page_type === pageType);
+  if (target) previewNavigateTo(target);
+ }, [pages]);
 
  // Backend Agent state
  const [agentMode, setAgentMode] = useState<'design' |'backend'>('design');
@@ -835,7 +843,7 @@ export const PagesPage: React.FC = () => {
  const primaryColor = selectedApp?.primary_color ||'#667eea';
  // Attach page_type so RenderPage can route to the correct renderer
  const pageData = { ...data, page_type: contentPage?.page_type };
- return <RenderPage data={pageData} primaryColor={primaryColor} appId={selectedApp?.id} />;
+ return <RenderPage data={pageData} primaryColor={primaryColor} appId={selectedApp?.id} onNavigate={handlePreviewPricingNavigate} />;
  } catch (error) {
  return (
  <Typography variant="body2" sx={{ color:'#d32f2f' }}>
@@ -1703,7 +1711,7 @@ export const PagesPage: React.FC = () => {
        })()}
        {previewActivePage?.content_json ? (
         <PreviewErrorBoundary>
-         <RenderPage data={{ ...(previewActivePage.content_json as any), nav: undefined, page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} />
+         <RenderPage data={{ ...(previewActivePage.content_json as any), nav: undefined, page_type: previewActivePage.page_type }} primaryColor={primaryColor} appId={selectedApp?.id} onNavigate={handlePreviewPricingNavigate} />
         </PreviewErrorBoundary>
        ) : (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>

@@ -522,13 +522,14 @@ export function adminTemplate(p: TemplateParams): string {
  const sec = darken(p.primaryColor, 0.15);
  const SB = sharedBlock(p.primaryColor, sec);
  const c = p.copy || {};
- const aHeroSub = c.heroSubtitle || 'Analytics and contact form submissions';
+ const aHeroSub = c.heroSubtitle || 'Manage users, analytics, and messages';
  return `import { useEffect, useState, useCallback } from 'react';
 import {
  Box, Typography, Paper, Grid, Card, CardContent, Chip, Button,
  Table, TableHead, TableRow, TableCell, TableBody, Tabs, Tab,
  Avatar, Skeleton, LinearProgress, Alert, Snackbar, IconButton,
- Menu, MenuItem,
+ Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+ Tooltip,
 } from '@mui/material';
 import Dashboard from '@mui/icons-material/Dashboard';
 import People from '@mui/icons-material/People';
@@ -543,6 +544,11 @@ import MoreVert from '@mui/icons-material/MoreVert';
 import Inbox from '@mui/icons-material/Inbox';
 import FiberNew from '@mui/icons-material/FiberNew';
 import Analytics from '@mui/icons-material/Analytics';
+import PersonOff from '@mui/icons-material/PersonOff';
+import PersonAdd from '@mui/icons-material/PersonAdd';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import Block from '@mui/icons-material/Block';
+import GroupAdd from '@mui/icons-material/GroupAdd';
 
 const API = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
 
@@ -551,6 +557,7 @@ ${SB}
 interface AppStats { app_id: number; name: string; active_subscriptions: number; total_subscriptions: number; total_revenue: number; created_at: string; }
 interface AnalyticsData { app_id: number; total_page_views: number; unique_visitors: number; page_stats: Record<string, number>; views_by_date: Record<string, number>; recent_views: any[]; }
 interface ContactSubmission { id: number; app_id?: number; name: string; email: string; subject: string; message: string; status: 'new' | 'read' | 'replied' | 'archived'; created_at: string; }
+interface AppMember { id: number; app_id: number; name: string; email: string; plan_name: string; plan_price: number; status: string; created_at: string; subscription_id?: number; }
 
 export function MembersAdminPage() {
  const [tab, setTab] = useState(0);
@@ -558,20 +565,25 @@ export function MembersAdminPage() {
  const [stats, setStats] = useState<AppStats | null>(null);
  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
  const [contacts, setContacts] = useState<ContactSubmission[]>([]);
+ const [members, setMembers] = useState<AppMember[]>([]);
  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement | null; id: number | null }>({ el: null, id: null });
+ const [memberMenu, setMemberMenu] = useState<{ el: HTMLElement | null; member: AppMember | null }>({ el: null, member: null });
+ const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; member: AppMember | null }>({ open: false, member: null });
 
  const fetchAll = useCallback(async () => {
   setLoading(true);
   try {
-   const [sRes, aRes, cRes] = await Promise.all([
+   const [sRes, aRes, cRes, mRes] = await Promise.all([
     fetch(API + '/api/apps/${p.appId}/stats').then(r => r.json()).catch(() => null),
     fetch(API + '/api/analytics/app/${p.appId}').then(r => r.json()).catch(() => null),
     fetch(API + '/api/contact?app_id=${p.appId}').then(r => r.json()).catch(() => []),
+    fetch(API + '/api/apps/${p.appId}/members').then(r => r.json()).catch(() => ({ data: [] })),
    ]);
    if (sRes) setStats(sRes);
    if (aRes) setAnalytics(aRes);
    setContacts(Array.isArray(cRes) ? cRes : Array.isArray(cRes?.data) ? cRes.data : []);
+   setMembers(Array.isArray(mRes?.data) ? mRes.data : Array.isArray(mRes) ? mRes : []);
   } catch (e) {
    setSnackbar({ open: true, message: 'Failed to load some data', severity: 'error' });
   } finally { setLoading(false); }
@@ -579,6 +591,7 @@ export function MembersAdminPage() {
 
  useEffect(() => { fetchAll(); }, [fetchAll]);
 
+ /* ── Contact actions ── */
  const updateStatus = async (id: number, status: string) => {
   try {
    await fetch(API + '/api/contact/' + id + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
@@ -597,7 +610,40 @@ export function MembersAdminPage() {
   setMenuAnchor({ el: null, id: null });
  };
 
+ /* ── Member actions ── */
+ const toggleMemberStatus = async (member: AppMember) => {
+  const newStatus = member.status === 'disabled' ? 'active' : 'disabled';
+  try {
+   await fetch(API + '/api/apps/${p.appId}/members/' + member.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus }),
+   });
+   setMembers(prev => prev.map(m => m.id === member.id ? { ...m, status: newStatus } : m));
+   setSnackbar({ open: true, message: newStatus === 'disabled' ? 'User disabled' : 'User re-enabled', severity: 'success' });
+  } catch { setSnackbar({ open: true, message: 'Failed to update user', severity: 'error' }); }
+  setMemberMenu({ el: null, member: null });
+ };
+
+ const confirmDeleteMember = async () => {
+  if (!deleteDialog.member) return;
+  try {
+   await fetch(API + '/api/apps/${p.appId}/members/' + deleteDialog.member.id, { method: 'DELETE' });
+   setMembers(prev => prev.filter(m => m.id !== deleteDialog.member!.id));
+   setSnackbar({ open: true, message: 'User removed', severity: 'success' });
+  } catch { setSnackbar({ open: true, message: 'Failed to delete user', severity: 'error' }); }
+  setDeleteDialog({ open: false, member: null });
+  setMemberMenu({ el: null, member: null });
+ };
+
  const chipColor = (s: string) => s === 'new' ? 'error' : s === 'read' ? 'info' : s === 'replied' ? 'success' : 'default';
+
+ const memberStatusChip = (status: string) => {
+  if (status === 'active' || status === 'free') return { label: status === 'free' ? 'Free' : 'Active', color: COLORS.success, bg: COLORS.success + '15' };
+  if (status === 'disabled') return { label: 'Disabled', color: COLORS.error, bg: COLORS.error + '15' };
+  if (status === 'cancelled') return { label: 'Cancelled', color: COLORS.warning, bg: COLORS.warning + '15' };
+  if (status === 'past_due') return { label: 'Past Due', color: COLORS.warning, bg: COLORS.warning + '15' };
+  return { label: status, color: COLORS.purple, bg: COLORS.purple + '15' };
+ };
 
  if (loading) {
   return (
@@ -612,6 +658,7 @@ export function MembersAdminPage() {
  }
 
  const newC = contacts.filter(c => c.status === 'new').length;
+ const activeMembers = members.filter(m => m.status !== 'disabled' && m.status !== 'cancelled').length;
 
  return (
   <Box>
@@ -635,7 +682,7 @@ export function MembersAdminPage() {
 
    <Grid container spacing={2.5} sx={{ mb: 4 }}>
     {[
-     { label: 'Active Users', value: stats?.active_subscriptions ?? 0, icon: <People />, color: COLORS.primary, sub: (stats?.total_subscriptions ?? 0) + ' total' },
+     { label: 'Members', value: members.length, icon: <People />, color: COLORS.primary, sub: activeMembers + ' active' },
      { label: 'Page Views', value: analytics?.total_page_views ?? 0, icon: <Visibility />, color: COLORS.blue, sub: (analytics?.unique_visitors ?? 0) + ' unique' },
      { label: 'Revenue', value: '$' + (stats?.total_revenue ?? 0).toLocaleString(), icon: <AttachMoney />, color: COLORS.success },
      { label: 'Messages', value: contacts.length, icon: <Email />, color: newC > 0 ? COLORS.warning : COLORS.purple, sub: newC > 0 ? newC + ' new' : 'All read' },
@@ -657,12 +704,92 @@ export function MembersAdminPage() {
 
    <Paper sx={{ ...sectionSx, p: 0 }}>
     <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, borderBottom: '1px solid ' + COLORS.border }}>
+     <Tab icon={<People />} label={'Users (' + members.length + ')'} iconPosition="start" sx={{ fontWeight: 600, textTransform: 'none' }} />
      <Tab icon={<Analytics />} label="Analytics" iconPosition="start" sx={{ fontWeight: 600, textTransform: 'none' }} />
      <Tab icon={<Email />} label={'Messages (' + contacts.length + ')'} iconPosition="start" sx={{ fontWeight: 600, textTransform: 'none' }} />
     </Tabs>
 
     <Box sx={{ p: 3 }}>
+     {/* ── Users tab ── */}
      {tab === 0 && (
+      <Box>
+       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem' }}>Registered Members</Typography>
+        <Chip icon={<GroupAdd />} label={activeMembers + ' active / ' + members.length + ' total'} size="small"
+         sx={{ fontWeight: 600, bgcolor: COLORS.primary + '10', color: COLORS.primary }} />
+       </Box>
+       {members.length > 0 ? (
+        <Table size="small">
+         <TableHead>
+          <TableRow>
+           {['Name', 'Email', 'Plan', 'Status', 'Signed Up', ''].map((h, i) => (
+            <TableCell key={i} align={i === 5 ? 'center' : 'left'}
+             sx={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>{h}</TableCell>
+           ))}
+          </TableRow>
+         </TableHead>
+         <TableBody>
+          {members.map((m, idx) => {
+           const sc = memberStatusChip(m.status);
+           return (
+            <TableRow key={m.id} sx={{ transition: 'all 0.15s', '&:hover': { bgcolor: COLORS.tint }, bgcolor: m.status === 'disabled' ? COLORS.error + '04' : undefined }}>
+             <TableCell>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+               <Avatar sx={{ width: 32, height: 32, bgcolor: COLORS.primary + '15', color: COLORS.primary, fontSize: 14, fontWeight: 700 }}>
+                {m.name?.charAt(0)?.toUpperCase() || '?'}
+               </Avatar>
+               <Typography variant="body2" fontWeight={600} sx={{ textDecoration: m.status === 'disabled' ? 'line-through' : 'none', opacity: m.status === 'disabled' ? 0.6 : 1 }}>
+                {m.name}
+               </Typography>
+              </Box>
+             </TableCell>
+             <TableCell><Typography variant="body2" color="text.secondary">{m.email}</Typography></TableCell>
+             <TableCell>
+              <Chip size="small" label={m.plan_name + (m.plan_price > 0 ? ' ($' + m.plan_price + ')' : '')}
+               sx={{ fontWeight: 600, fontSize: '0.7rem', bgcolor: m.plan_price > 0 ? COLORS.blue + '12' : COLORS.border, color: m.plan_price > 0 ? COLORS.blue : 'text.secondary' }} />
+             </TableCell>
+             <TableCell>
+              <Chip size="small" label={sc.label} sx={{ fontWeight: 600, fontSize: '0.7rem', bgcolor: sc.bg, color: sc.color }} />
+             </TableCell>
+             <TableCell><Typography variant="body2" color="text.secondary">{new Date(m.created_at).toLocaleDateString()}</Typography></TableCell>
+             <TableCell align="center">
+              <IconButton size="small" onClick={e => setMemberMenu({ el: e.currentTarget, member: m })} sx={{ '&:hover': { bgcolor: COLORS.tint } }}>
+               <MoreVert />
+              </IconButton>
+             </TableCell>
+            </TableRow>
+           );
+          })}
+         </TableBody>
+        </Table>
+       ) : (
+        <Box sx={{ textAlign: 'center', py: 6, border: '2px dashed ' + COLORS.border, borderRadius: 3 }}>
+         <PersonAdd sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+         <Typography fontWeight={600} color="text.secondary">No registered members yet</Typography>
+         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Users who sign up via the register page will appear here</Typography>
+        </Box>
+       )}
+
+       {/* Member action menu */}
+       <Menu anchorEl={memberMenu.el} open={Boolean(memberMenu.el)} onClose={() => setMemberMenu({ el: null, member: null })}>
+        {memberMenu.member?.status === 'disabled' ? (
+         <MenuItem onClick={() => memberMenu.member && toggleMemberStatus(memberMenu.member)}>
+          <CheckCircle sx={{ mr: 1.5, fontSize: 18, color: COLORS.success }} /> Re-enable User
+         </MenuItem>
+        ) : (
+         <MenuItem onClick={() => memberMenu.member && toggleMemberStatus(memberMenu.member)}>
+          <Block sx={{ mr: 1.5, fontSize: 18, color: COLORS.warning }} /> Disable User
+         </MenuItem>
+        )}
+        <MenuItem onClick={() => { setDeleteDialog({ open: true, member: memberMenu.member }); }} sx={{ color: COLORS.error }}>
+         <Delete sx={{ mr: 1.5, fontSize: 18 }} /> Delete User
+        </MenuItem>
+       </Menu>
+      </Box>
+     )}
+
+     {/* ── Analytics tab ── */}
+     {tab === 1 && (
       <Box>
        <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 2 }}>Page Performance</Typography>
        {analytics?.page_stats && Object.keys(analytics.page_stats).length > 0 ? (
@@ -704,7 +831,8 @@ export function MembersAdminPage() {
       </Box>
      )}
 
-     {tab === 1 && (
+     {/* ── Messages tab ── */}
+     {tab === 2 && (
       <Box>
        {contacts.length > 0 ? (
         <Table size="small">
@@ -754,6 +882,21 @@ export function MembersAdminPage() {
      )}
     </Box>
    </Paper>
+
+   {/* Delete member confirmation dialog */}
+   <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, member: null })}>
+    <DialogTitle sx={{ fontWeight: 700 }}>Delete User</DialogTitle>
+    <DialogContent>
+     <DialogContentText>
+      Are you sure you want to permanently delete <strong>{deleteDialog.member?.name}</strong> ({deleteDialog.member?.email})?
+      This will revoke their access and remove their subscription. This action cannot be undone.
+     </DialogContentText>
+    </DialogContent>
+    <DialogActions>
+     <Button onClick={() => setDeleteDialog({ open: false, member: null })}>Cancel</Button>
+     <Button onClick={confirmDeleteMember} color="error" variant="contained" sx={{ fontWeight: 600 }}>Delete</Button>
+    </DialogActions>
+   </Dialog>
 
    <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
     <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>

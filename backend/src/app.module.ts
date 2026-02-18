@@ -18,9 +18,10 @@ import { SocialMonitorModule } from'./social-monitor/social-monitor.module';
 import { StripeModule } from'./stripe/stripe.module';
 import { PreviewModule } from'./preview/preview.module';
 import { FunnelsModule } from'./funnels/funnels.module';
+import { MembersModule } from'./members/members.module';
 
 @Module({
- imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule],
+ imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule, MembersModule],
  controllers: [],
  providers: [],
 })

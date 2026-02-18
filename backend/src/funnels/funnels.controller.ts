@@ -10,6 +10,16 @@ export class FunnelsController {
     return this.funnelsService.getFunnels(parseInt(appId, 10));
   }
 
+  @Get('all/list')
+  async getAllFunnels() {
+    return this.funnelsService.getAllFunnels();
+  }
+
+  @Post('clone')
+  async cloneFunnel(@Body() body: { sourceFunnelId: number; targetAppId: number; name?: string }) {
+    return this.funnelsService.cloneFunnel(body.sourceFunnelId, body.targetAppId, body.name);
+  }
+
   @Get(':id')
   async getFunnel(@Param('id') id: string) {
     return this.funnelsService.getFunnel(parseInt(id, 10));

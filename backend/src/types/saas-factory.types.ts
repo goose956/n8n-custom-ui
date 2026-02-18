@@ -28,6 +28,7 @@ export interface CreateAppDto {
  primary_color?: string;
  locale?: AppLocale;
  n8n_workflow_id?: string;
+ free_product?: boolean;
 }
 
 export interface UpdateAppDto {

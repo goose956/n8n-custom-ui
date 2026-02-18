@@ -121,4 +121,24 @@ export class PagesService {
  this.writeDatabase(db);
  return true;
  }
+
+ /**
+  * Delete all pages matching a given app_id and page_type.
+  * Returns the number of deleted pages.
+  */
+ deleteByAppAndType(app_id: number, page_type: string): number {
+ const db = this.readDatabase();
+ const pages = db.pages || [];
+ const before = pages.length;
+
+ db.pages = pages.filter(
+ (p) => !(p.app_id === app_id && p.page_type === page_type),
+ );
+
+ const deleted = before - db.pages.length;
+ if (deleted > 0) {
+ this.writeDatabase(db);
+ }
+ return deleted;
+ }
 }

@@ -60,6 +60,29 @@ export class PagesController {
  };
  }
 
+ @Delete()
+ deleteBulk(
+ @Query('app_id') app_id: string,
+ @Query('page_type') page_type: string,
+ ) {
+ if (!app_id || !page_type) {
+ return {
+ success: false,
+ error: 'Both app_id and page_type query params are required',
+ };
+ }
+ const count = this.pagesService.deleteByAppAndType(
+ parseInt(app_id, 10),
+ page_type,
+ );
+ return {
+ success: true,
+ deleted: count,
+ message: `Deleted ${count} ${page_type} page(s)`,
+ timestamp: new Date().toISOString(),
+ };
+ }
+
  @Delete(':id')
  delete(@Param('id') id: string) {
  const deleted = this.pagesService.delete(parseInt(id, 10));

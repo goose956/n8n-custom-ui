@@ -1,4 +1,4 @@
-import { Injectable } from'@nestjs/common';
+import { Injectable, Logger } from'@nestjs/common';
 import * as fs from'fs';
 import * as path from'path';
 import { execSync } from'child_process';
@@ -7,6 +7,12 @@ import { CryptoService } from'../shared/crypto.service';
 import { DatabaseService } from'../shared/database.service';
 import { AnalyticsService } from'../analytics/analytics.service';
 import { getPageTemplate, TEMPLATE_PAGE_TYPES } from'./members-templates';
+import { GitOps } from './git-ops';
+import { RetryEngine, RetryEngineContext } from './retry-engine';
+import { PromptHelpers } from './prompt-helpers';
+import { CodeTools } from './code-tools';
+import { DocAgentService } from './doc-agent.service';
+import { TestAgentService, TestAgentContext } from './test-agent.service';
 
 // --- Types ---------------------------------------------------------------------
 
@@ -152,11 +158,33 @@ const DEFAULT_MEMBERS_PAGES: MembersAreaPage[] = [
 
 @Injectable()
 export class ProgrammerAgentService {
+ private readonly logger = new Logger(ProgrammerAgentService.name);
+
+ // Extracted utility classes (break up the God Object)
+ private readonly gitOps = new GitOps();
+ private readonly promptHelpers = new PromptHelpers();
+ private readonly codeTools = new CodeTools();
+ private retryEngine: RetryEngine; // initialized in constructor (needs `this` context)
+
  constructor(
  private readonly cryptoService: CryptoService,
  private readonly db: DatabaseService,
  private readonly analyticsService: AnalyticsService,
- ) {}
+ private readonly docAgent: DocAgentService,
+ private readonly testAgent: TestAgentService,
+ ) {
+   // Wire up the retry engine with service methods it needs
+   const ctx: RetryEngineContext = {
+     callAI: this.callAI.bind(this),
+     readFileFromDisk: this.readFileFromDisk.bind(this),
+     searchCodebase: this.searchCodebase.bind(this),
+     cleanCodeResponse: this.cleanCodeResponse.bind(this),
+     parseFiles: this.parseFiles.bind(this),
+     toPascalCase: this.toPascalCase.bind(this),
+     getDesignSystemContext: this.getDesignSystemContext.bind(this),
+   };
+   this.retryEngine = new RetryEngine(ctx);
+ }
 
  // --- API key helpers -------------------------------------------------------
 
@@ -170,7 +198,8 @@ export class ProgrammerAgentService {
  );
  if (!keyEntry) return null;
  return this.cryptoService.decrypt(keyEntry.value);
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught (returning null): " + err);
  return null;
  }
  }
@@ -303,7 +332,8 @@ export class ProgrammerAgentService {
  url: r.url ||'',
  description: r.description ||'',
  }));
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught (returning []): " + err);
  return [];
  }
  }
@@ -338,7 +368,8 @@ export class ProgrammerAgentService {
  );
 
  return dataRes.data || [];
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught (returning []): " + err);
  return [];
  }
  }
@@ -355,8 +386,8 @@ DESIGN SYSTEM RULES (must follow exactly):
 - Colors: primary=#667eea, secondary=#764ba2, dark=#1a1a2e, bg=#fafbfc
 - Gradients: background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
 - Font: Inter (via theme)
-- Border radius: 2-3 for small, 12-16 for cards (theme default is 12)
-- Shadows: boxShadow:'0 1px 3px rgba(0,0,0,0.08)' for cards,'0 4px 12px rgba(0,0,0,0.1)' for elevated
+- Border radius: 2-3 for small, 16 for cards, 10 for buttons (theme default is 12)
+- Shadows: boxShadow:'0 2px 12px rgba(0,0,0,0.06)' for cards,'0 4px 16px rgba(0,0,0,0.1)' for elevated, border:'1px solid rgba(0,0,0,0.06)' on cards
 - Use sx prop for all styling, never CSS files
 - Export components as named exports: export function ComponentName()
 - Use functional components with hooks
@@ -381,6 +412,39 @@ VISUAL RICHNESS (CRITICAL -- pages must look polished and premium):
 - Add subtle background patterns or gradient headers to hero sections
 - Use Grid containers for responsive card layouts (xs=12, sm=6, md=4 for stat cards)
 `.trim();
+ }
+
+ /** Shared import rules prompt fragment — used by generate_component, modify_file, and fallback prompts */
+ private getImportRulesContext(filePath?: string): string {
+   // Infer import depth from file path
+   let apiImportPath = '../../config/api';
+   if (filePath) {
+     if (/frontend\/src\/components\/[^/]+\.tsx$/.test(filePath)) apiImportPath = '../config/api';
+     else if (/frontend\/src\/components\/members\//.test(filePath)) apiImportPath = '../../config/api';
+     else if (/frontend\/src\/components\/shared\//.test(filePath)) apiImportPath = '../../config/api';
+   }
+   return `
+IMPORT RULES (CRITICAL -- follow exactly):
+- API config: \`import { API } from '${apiImportPath}';\`. API is an OBJECT: use \`API.apps\`, \`API.chat\`, etc. NEVER \`\${API}/path\`.
+- MUI components: \`import { Box, Typography, ... } from '@mui/material';\`
+- React hooks: \`import { useState, useEffect, ... } from 'react';\`
+- Do NOT import from paths that don't exist. If you need a type, define it INLINE in the component file.
+- Do NOT import from \`../../types/\` or \`../../../types/\` -- these directories may not exist. Define interfaces inline.
+`.trim();
+ }
+
+ /** Build API config context block for prompts — reads api.ts once and caches per call */
+ private getApiConfigContext(): string {
+   const apiConfig = this.readFileFromDisk('frontend/src/config/api.ts');
+   if (!apiConfig) return '';
+   return `\n## Frontend API Configuration (frontend/src/config/api.ts):\n\`\`\`typescript\n${apiConfig}\`\`\`\nIMPORTANT: Use the API object from this config for API calls (e.g. \`import { API } from '../../config/api'; fetch(API.apps)\`). The API object has named properties for each endpoint. Do NOT hardcode URLs or create mock endpoints.\n`;
+ }
+
+ /** Estimate cost from token count using the given model's pricing */
+ private estimateCostFromTokens(tokens: number, modelId: string): number {
+   const config = this.getModelConfig(modelId);
+   if (!config) return 0;
+   return (tokens / 1000) * (config as any).costPer1kTokens || 0;
  }
 
  private getAppContext(appId?: number): string {
@@ -426,7 +490,8 @@ STYLE CONSISTENCY RULES:
 - If existing pages use specific icon styles, section layouts, or component patterns, reuse them
 - The new page should look like it belongs in the same app as the existing pages
 `;
- } catch {
+ } catch (err) {
+ this.logger.debug('Failed to build app context: ' + err);
  return'';
  }
  }
@@ -440,7 +505,7 @@ STYLE CONSISTENCY RULES:
  const data = this.db.readSync();
  const app = (data.apps || []).find((a: any) => a.id === appId);
  return app?.slug || null;
- } catch { return null; }
+ } catch (err) { this.logger.debug("Caught (returning null): " + err); return null; }
  }
 
  /**
@@ -471,7 +536,8 @@ STYLE CONSISTENCY RULES:
  const ng = Math.min(255, Math.max(0, Math.round(g * 0.6)));
  const nb = Math.min(255, Math.max(0, Math.round(b * 0.8 + r * 0.2)));
  return`#${nr.toString(16).padStart(2,'0')}${ng.toString(16).padStart(2,'0')}${nb.toString(16).padStart(2,'0')}`;
- } catch {
+ } catch (err) {
+ this.logger.debug('Failed to compute accent color: ' + err);
  return'#764ba2';
  }
  }
@@ -508,7 +574,7 @@ STYLE CONSISTENCY RULES:
  if (results.length > 0) {
  searchResults = [{ query: searchQuery, results }];
  }
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
  }
 
  const appContext = this.getAppContext(appId);
@@ -584,7 +650,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const missingRequired = DEFAULT_MEMBERS_PAGES.filter(dp => dp.required && !existingIds.has(dp.id));
  pages = [...aiPages, ...missingRequired];
  }
- } catch { /* use defaults */ }
+ } catch (err) { this.logger.debug("Caught (use defaults): " + err); }
 
  return { success: true, pages, apiKeysNeeded, searchResults };
  } catch (err) {
@@ -633,7 +699,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  appName = app.name ||'';
  appDescription = app.description ||'';
  }
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
  }
  const appIdentity = appName
  ?`This is the "${appName}" app. App description: "${appDescription}". ALL content, labels, stats, and copy must be specifically about ${appName} and its features.`
@@ -693,7 +759,8 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const sharedFiles = this.parseFiles(sharedResult.content);
  allFiles.push(...sharedFiles);
  allPlanSteps[0].status ='complete';
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught: " + err);
  allPlanSteps[0].status ='failed';
  }
 
@@ -710,7 +777,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const data = this.db.readSync();
  const app = (data.apps || []).find((a: any) => a.id === request.appId);
  if (app) templatePrimaryColor = app.primary_color ||'#667eea';
- } catch { /* use defaults */ }
+ } catch (err) { this.logger.debug("Caught (use defaults): " + err); }
  }
 
  // Generate AI copy for all template pages in one cheap call
@@ -726,9 +793,9 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  totalSubAgentTokens += copyResult.tokensUsed;
  const cleaned = copyResult.content.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
  templateCopy = JSON.parse(cleaned);
- console.log(`[MembersArea] Generated AI copy for template pages (${copyResult.tokensUsed} tokens)`);
+ this.logger.log(`Generated AI copy for template pages (${copyResult.tokensUsed} tokens)`);
  } catch (err) {
- console.warn('[MembersArea] Failed to generate copy, using template defaults:', err);
+ this.logger.warn(`Failed to generate copy, using template defaults: ${err}`);
  }
  }
 
@@ -755,7 +822,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  copy: templateCopy[page.type] || {},
  });
  if (templateCode) {
- console.log(`[MembersArea] Using template with AI copy for ${page.type} page`);
+ this.logger.log(`Using template with AI copy for ${page.type} page`);
  allFiles.push({
  path:`${membersPath}/${page.id}.tsx`,
  content: templateCode,
@@ -797,12 +864,21 @@ Available endpoints (all return { success: boolean, data: T, timestamp: string }
 8. GET /api/analytics/n8n-executions
  Response data: { executions[], summary: { total, success, errors, running, errorRate } }
 
+9. GET /api/apps/${request.appId}/members
+ Response data: Array<{ id, app_id, name, email, plan_name, plan_price, status, created_at, subscription_id }>
+ This returns all registered members for the app -- show in a "Users" tab with name, email, plan/tier, status, signup date.
+
+10. DELETE /api/apps/${request.appId}/members/:userId   (removes a member)
+
+11. PATCH /api/apps/${request.appId}/members/:userId   (body: { status: 'disabled' | 'active' } to enable/disable)
+
 IMPLEMENTATION RULES:
 - Use useEffect + useState to fetch data on mount from these REAL endpoints
 - Show loading spinners while fetching
 - Handle errors gracefully with error states
 - Add a refresh button that re-fetches all data
-- Include tabs or sections for: Overview (KPIs), Analytics (charts), Users/Visitors, Error Logs (with resolve button), API Usage
+- Include tabs or sections for: Users (registered members with plan/tier, disable and delete actions), Analytics (charts), Visitors, Error Logs (with resolve button), API Usage
+- The Users tab is the FIRST tab -- it shows all registered members with columns: Name, Email, Plan, Status, Signed Up, Actions (disable/delete). Include a confirmation dialog before deleting.
 - The support tickets section should show errors from /api/analytics/errors -- the admin can resolve them
 - Do NOT use mock data -- ALL data comes from real API calls
 - Use MUI Table, TableHead, TableRow, TableCell, TableBody for tabular data -- do NOT use @mui/x-data-grid (it is NOT installed)
@@ -886,7 +962,8 @@ Return ONLY the code. No explanations.`;
  allFiles.push(...pageFiles);
  }
  step.status ='complete';
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught: " + err);
  step.status ='failed';
  }
  }
@@ -928,11 +1005,21 @@ ${routerRoutes}
  description:'Members area router',
  });
  routerStep.status ='complete';
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught: " + err);
  routerStep.status ='failed';
  }
 
  this.recordUsage(orchestratorModel, subAgentModel, totalOrchestratorTokens, totalSubAgentTokens);
+
+ // Auto-save all generated files to disk immediately
+ if (allFiles.length > 0) {
+ const writeResult = this.writeGeneratedFilesToDisk(allFiles);
+ this.logger.log(`Auto-saved ${writeResult.written.length}/${allFiles.length} files to disk`);
+ if (writeResult.errors.length > 0) {
+ this.logger.warn(`Save errors: ${writeResult.errors.join(', ')}`);
+ }
+ }
 
  return {
  success: true,
@@ -1010,7 +1097,8 @@ ${routerRoutes}
  subResults.set(task.id, result.content);
  totalSubAgentTokens += result.tokensUsed;
  task.status ='complete';
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught: " + err);
  task.status ='failed';
  }
  }
@@ -1134,7 +1222,14 @@ OUTPUT FORMAT:
  .replace(/\n?```$/m,'')
  .trim();
 
- return { success: true, file: { ...targetFile, content: updatedContent }, tokensUsed: result.tokensUsed };
+ const updatedFile = { ...targetFile, content: updatedContent };
+ // Auto-save refined file to disk
+ try {
+ this.writeGeneratedFilesToDisk([updatedFile]);
+ this.logger.log(`Auto-saved refined file: ${updatedFile.path}`);
+ } catch (e) { this.logger.warn(`Failed to auto-save: ${e}`); }
+
+ return { success: true, file: updatedFile, tokensUsed: result.tokensUsed };
  } catch (err) {
  const message = err instanceof Error ? err.message : String(err);
  return { success: false, file: null, tokensUsed: 0, error: message };
@@ -1244,7 +1339,10 @@ OUTPUT FORMAT:
 
  for (const file of files) {
  try {
- const filePath = path.resolve(projectRoot, file.path);
+ // Normalise path: strip leading slashes, fix bare /src/ to frontend/src/
+ let safePath = file.path.replace(/^\/+/, '').replace(/^\\+/, '');
+ if (safePath.startsWith('src/')) safePath = 'frontend/' + safePath;
+ const filePath = path.resolve(projectRoot, safePath);
  if (!filePath.startsWith(projectRoot)) {
  errors.push(`${file.path}: path escapes project root`);
  continue;
@@ -1260,6 +1358,50 @@ OUTPUT FORMAT:
  }
 
  return { success: errors.length === 0, saved, errors };
+ }
+
+ // --- Git Snapshot & Rollback (delegates to GitOps) --------------------------
+
+ /** Create a git snapshot before the agent starts making changes */
+ createGitSnapshot(label?: string) { return this.gitOps.createSnapshot(label); }
+
+ /** Rollback to a previous git snapshot */
+ rollbackToSnapshot(commitHash: string) { return this.gitOps.rollback(commitHash); }
+
+ /** Get the diff between current state and a snapshot */
+ getSnapshotDiff(commitHash: string) { return this.gitOps.getDiff(commitHash); }
+
+ // --- Codebase Search (delegates to CodeTools) --------------------------------
+
+ searchCodebase(query: string, options?: { includePattern?: string; isRegex?: boolean; maxResults?: number }) {
+   return this.codeTools.searchCodebase(query, options);
+ }
+
+ // --- Diff Generation (delegates to CodeTools) --------------------------------
+
+ private generateDiff(oldContent: string, newContent: string, filePath: string): string {
+   return this.codeTools.generateDiff(oldContent, newContent, filePath);
+ }
+
+ // =========================================================================
+ // DIAGNOSTIC RETRY SYSTEM (delegates to RetryEngine)
+ // =========================================================================
+
+ private async diagnosticRetry(
+   step: any, originalError: string, modelId: string,
+   existingFiles: GeneratedFile[], generatedFiles: GeneratedFile[], modifiedFiles: GeneratedFile[],
+   webContext: string, fileContext: string,
+   sendEvent: (event: string, data: any) => void, appContext: string,
+ ) {
+   return this.retryEngine.diagnosticRetry(step, originalError, modelId, existingFiles, generatedFiles, modifiedFiles, webContext, fileContext, sendEvent, appContext);
+ }
+
+ private async rePlanRemainingSteps(
+   failedSteps: { title: string; error: string }[], completedSteps: { title: string; detail: string }[],
+   remainingSteps: any[], originalMessage: string, modelId: string,
+   existingFiles: GeneratedFile[], generatedFiles: GeneratedFile[], appContext: string,
+ ) {
+   return this.retryEngine.rePlanRemainingSteps(failedSteps, completedSteps, remainingSteps, originalMessage, modelId, existingFiles, generatedFiles, appContext);
  }
 
  // --- Run shell command safely --------------------------------------------
@@ -1289,11 +1431,23 @@ OUTPUT FORMAT:
 
  private installPackages(packages: string[], target:'frontend' |'backend' ='frontend', dev = false): { success: boolean; installed: string[]; error?: string } {
  if (!packages || packages.length === 0) return { success: true, installed: [] };
+
+ // Sanitize package names to prevent command injection
+ const validPkg = /^@?[a-zA-Z0-9][\w.\-\/]*(@[\w.\-^~>=<*]+)?$/;
+ const safe: string[] = [];
+ for (const pkg of packages) {
+ const trimmed = pkg.trim();
+ if (!validPkg.test(trimmed)) {
+ return { success: false, installed: [], error: `Invalid package name rejected: "${trimmed}"` };
+ }
+ safe.push(trimmed);
+ }
+
  const flag = dev ?'--save-dev' :'--save';
- const cmd =`npm install ${flag} ${packages.join('')}`;
+ const cmd = `npm install ${flag} ${safe.join(' ')}`;
  const result = this.runCommand(cmd, target);
  if (result.success) {
- return { success: true, installed: packages };
+ return { success: true, installed: safe };
  }
  return { success: false, installed: [], error: result.error || result.output };
  }
@@ -1307,7 +1461,10 @@ OUTPUT FORMAT:
 
  for (const file of files) {
  try {
- const filePath = path.resolve(projectRoot, file.path);
+ // Normalise path: strip leading slashes, fix bare /src/ to frontend/src/
+ let safePath = file.path.replace(/^\/+/, '').replace(/^\\+/, '');
+ if (safePath.startsWith('src/')) safePath = 'frontend/' + safePath;
+ const filePath = path.resolve(projectRoot, safePath);
  if (!filePath.startsWith(projectRoot)) {
  errors.push(`${file.path}: path escapes project root`);
  continue;
@@ -1327,11 +1484,13 @@ OUTPUT FORMAT:
 
  private readFileFromDisk(filePath: string): string | null {
  const projectRoot = path.resolve(__dirname,'..','..','..');
- const absPath = path.resolve(projectRoot, filePath);
+ let safePath = filePath.replace(/^\/+/, '').replace(/^\\+/, '');
+ if (safePath.startsWith('src/')) safePath = 'frontend/' + safePath;
+ const absPath = path.resolve(projectRoot, safePath);
  if (!absPath.startsWith(projectRoot)) return null;
  try {
  return fs.readFileSync(absPath,'utf-8');
- } catch { return null; }
+ } catch (err) { this.logger.debug("Caught (returning null): " + err); return null; }
  }
 
  // --- List directory -----------------------------------------------------
@@ -1342,7 +1501,7 @@ OUTPUT FORMAT:
  if (!absDir.startsWith(projectRoot)) return [];
  try {
  return fs.readdirSync(absDir, { recursive: true }).map(f => f.toString());
- } catch { return []; }
+ } catch (err) { this.logger.debug("Caught (returning []): " + err); return []; }
  }
 
  // --- Verify TypeScript build (only for files we touched) -----------------
@@ -1425,7 +1584,7 @@ OUTPUT FORMAT:
  synthFile.content = fixedContent;
  fixedFiles.push(synthFile);
  }
- } catch { /* skip */ }
+ } catch (err) { this.logger.debug("Caught (skip): " + err); }
  continue;
  }
 
@@ -1437,13 +1596,16 @@ OUTPUT FORMAT:
  genFile.content = fixedContent;
  fixedFiles.push(genFile);
  }
- } catch { /* skip unfixable files */ }
+ } catch (err) { this.logger.debug("Caught (skip unfixable files): " + err); }
  }
 
  return { fixed: fixedFiles, remainingErrors: [] };
  }
 
  private buildFixPrompt(file: GeneratedFile, errors: string[]): string {
+ // Include diagnostic context if available (set by escalated build verification)
+ const diagnosticCtx = (file as any)._diagnosticContext || '';
+
  return`Fix ALL TypeScript compilation errors in this file. Do NOT remove any existing functionality -- only fix the errors.
 
 ## File: ${file.path}
@@ -1454,12 +1616,19 @@ ${file.content}
 ## Compilation Errors (${errors.length}):
 ${errors.join('\n')}
 
-Common fixes:
-- Missing imports: add the import statement
-- Type errors: fix the type annotation or add a type cast
-- Unused variables: remove the unused variable or add _ prefix
-- Module not found: check if the import path is correct, use relative paths
--'err' is of type'unknown': add type annotation (err: any) or (err as Error)
+${diagnosticCtx ? `## Related files (imports / types referenced by this file):\n${diagnosticCtx}\n` : ''}
+
+## Fix Strategy:
+1. Read each error carefully -- understand the ROOT CAUSE, don't just suppress it
+2. Missing imports: add the import statement with the CORRECT path from the project
+3. Type errors: check what the actual type should be from the imported module, don't just cast to 'any'
+4. Unused variables: prefix with _ only if truly unused. If it should be used, wire it up correctly
+5. Module not found: check the related files above for correct import paths. Use relative paths
+6. Property does not exist: check the interface/type definition in the related files
+7. 'err' is of type 'unknown': use (err instanceof Error ? err.message : String(err))
+
+IMPORTANT: Do NOT remove features, functionality, or imports that aren't causing errors.
+IMPORTANT: Do NOT replace complex logic with simplified stubs -- preserve the original intent.
 
 Fix every single error. Return ONLY the complete corrected file content. No markdown fences, no explanation.`;
  }
@@ -1492,7 +1661,7 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
 
  fs.writeFileSync(appModulePath, content,'utf-8');
  return true;
- } catch { return false; }
+ } catch (err) { this.logger.debug("Caught (returning false): " + err); return false; }
  }
 
  // --- Detect required npm packages from code -----------------------------
@@ -1590,7 +1759,8 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
  const data = this.db.readSync();
  const stats = data.programmerAgentStats || { sessions: 0, totalTokens: 0, orchestratorTokens: 0, subAgentTokens: 0, filesGenerated: 0, history: [] };
  return { success: true, data: stats };
- } catch {
+ } catch (err) {
+ this.logger.debug('Failed to read agent stats: ' + err);
  return { success: true, data: { sessions: 0, totalTokens: 0, orchestratorTokens: 0, subAgentTokens: 0, filesGenerated: 0, history: [] } };
  }
  }
@@ -1652,7 +1822,7 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
  stats.history.push({ date: new Date().toISOString(), orchestratorModel, subAgentModel, orchestratorTokens, subAgentTokens });
  if (stats.history.length > 100) stats.history = stats.history.slice(-100);
  this.db.writeSync(data);
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
  }
 
  // --- Prompt builders ----------------------------------------------------
@@ -1708,7 +1878,7 @@ RULES: Complete runnable files, correct imports, error/loading/empty states, Typ
  status:'pending' as const,
  }));
  }
- } catch { /* fall through */ }
+ } catch (err) { this.logger.debug("Caught (fall through): " + err); }
 
  return [{ id: 1, title:'Generate code', description:'Generate all code in a single pass', agent:'orchestrator', status:'pending' }];
  }
@@ -1876,7 +2046,7 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  } : undefined,
  }));
  }
- } catch { /* parsing failed, return empty */ }
+ } catch (err) { this.logger.debug("Caught (parsing failed, return empty): " + err); }
 
  // Check which tasks are already done (e.g. table already has records)
  for (const task of tasks) {
@@ -2201,7 +2371,8 @@ Rules:
  if (jsonMatch) {
  action = JSON.parse(jsonMatch[0]);
  }
- } catch {
+ } catch (err) {
+ this.logger.debug('Failed to parse backend agent action: ' + err);
  return { success: false, message: `Could not parse AI response for "${task.title}"` };
  }
 
@@ -2375,7 +2546,7 @@ Return ONLY the JSON array. No markdown, no explanation.`;
  autoFix: issue.autoFix || undefined,
  }));
  }
- } catch { /* parsing failed */ }
+ } catch (err) { this.logger.debug("Caught (parsing failed): " + err); }
 
  const errorFiles = new Set(issues.filter(i => i.severity ==='error').map(i => i.file));
  const allFilePaths = tsxFiles.map(f => f.path);
@@ -2456,7 +2627,8 @@ Return ONLY the JSON array. No markdown, no explanation.`;
  } else {
  failed.push(issue.id);
  }
- } catch {
+ } catch (err) {
+ this.logger.debug("Caught: " + err);
  failed.push(issue.id);
  }
  }
@@ -2536,7 +2708,7 @@ Return ONLY the Markdown content. No wrapping code fences.`,
  language:'markdown',
  description:'Members area documentation',
  });
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
 
  // Generate API reference from source code
  try {
@@ -2578,7 +2750,7 @@ Return ONLY the Markdown. No wrapping code fences.`,
  description:'API endpoint reference',
  });
  }
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
 
  return {
  success: true,
@@ -2602,6 +2774,14 @@ Return ONLY the Markdown. No wrapping code fences.`,
  ): Promise<void> {
  const modelId = body.model || DEFAULT_ORCHESTRATOR;
 
+ // --- Tunable limits (extracted from scattered magic numbers) ---
+ const MAX_HISTORY_MESSAGES = 16;
+ const FILE_CONTEXT_LIMIT = 3000;       // chars per file in planner context
+ const COMPONENT_READ_LIMIT = 8000;     // chars when pre-reading member components
+ const SHARED_READ_LIMIT = 4000;        // chars for shared component snippets
+ const COMPONENT_SIZE_CAP = 12000;      // skip pre-reading files larger than this
+ const MODIFY_FILE_FULL_LIMIT = -1;     // no truncation for modify targets (uses line numbers)
+
  // Check AI key is available before doing any work
  const modelConfig = this.getModelConfig(modelId);
  if (modelConfig?.provider ==='anthropic' && !this.getApiKey('anthropic')) {
@@ -2613,10 +2793,12 @@ Return ONLY the Markdown. No wrapping code fences.`,
  return;
  }
 
- const history = (body.conversationHistory || []).map(m => ({
+ // Trim conversation history to last 16 messages to avoid blowing context windows
+ const rawHistory = (body.conversationHistory || []).map(m => ({
  role: m.role as'user' |'assistant',
  content: m.content,
  }));
+ const history = rawHistory.length > MAX_HISTORY_MESSAGES ? rawHistory.slice(-MAX_HISTORY_MESSAGES) : rawHistory;
  const existingFiles = body.files || [];
  const appId = body.appId;
 
@@ -2635,17 +2817,35 @@ Return ONLY the Markdown. No wrapping code fences.`,
  const rows = appId ? (db[t] as any[]).filter((r: any) => !r.app_id || r.app_id === appId) : db[t] as any[];
  return`${t}: ${rows.length} records`;
  }).join(',');
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
+
+ // Smart truncation: keeps head (imports/types) + tail (component end) instead of just head
+ const smartTruncate = (content: string, limit: number): string => {
+   if (content.length <= limit) return content;
+   const headSize = Math.floor(limit * 0.6);
+   const tailSize = limit - headSize - 40;
+   return content.slice(0, headSize) + '\n// ... truncated ...\n' + content.slice(-tailSize);
+ };
 
  // Build file context
  const fileContext = existingFiles.map(f =>
-`### ${f.path} (${f.language})${f.description ?' --' + f.description :''}\n\`\`\`${f.language}\n${f.content.slice(0, 3000)}\n\`\`\``
+`### ${f.path} (${f.language})${f.description ?' --' + f.description :''}\n\`\`\`${f.language}\n${smartTruncate(f.content, FILE_CONTEXT_LIMIT)}\n\`\`\``
  ).join('\n\n');
 
  const appContext = this.getAppContext(appId);
 
  let totalTokens = 0;
+ const MAX_TOKEN_BUDGET = 500_000; // Hard ceiling to prevent runaway cost
  const start = Date.now();
+
+ /** Check if we've exceeded the token budget and emit error if so */
+ const checkBudget = (): boolean => {
+   if (totalTokens > MAX_TOKEN_BUDGET) {
+     sendEvent('error', { message: `Token budget exceeded (${totalTokens.toLocaleString()} / ${MAX_TOKEN_BUDGET.toLocaleString()}). Stopping to prevent excessive cost.` });
+     return true; // over budget
+   }
+   return false;
+ };
 
  // ----------------------------------------------------------------------
  // STEP 0.5: Pre-planning context scan (like Copilot -- read BEFORE you plan)
@@ -2690,8 +2890,8 @@ Return ONLY the Markdown. No wrapping code fences.`,
  const alreadyLoaded = existingFiles.find(f => f.path === memberPath);
  if (!alreadyLoaded) {
  const content = this.readFileFromDisk(memberPath);
- if (content && content.length < 8000) {
- componentSnippets.push(`### ${memberPath}:\n\`\`\`tsx\n${content.slice(0, 4000)}\n\`\`\``);
+ if (content && content.length < COMPONENT_SIZE_CAP) {
+ componentSnippets.push(`### ${memberPath}:\n\`\`\`tsx\n${content.slice(0, COMPONENT_READ_LIMIT)}\n\`\`\``);
  }
  }
  }
@@ -2701,8 +2901,8 @@ Return ONLY the Markdown. No wrapping code fences.`,
  const alreadyLoaded = existingFiles.find(f => f.path === sharedPath);
  if (!alreadyLoaded) {
  const content = this.readFileFromDisk(sharedPath);
- if (content && content.length < 4000) {
- componentSnippets.push(`### ${sharedPath}:\n\`\`\`tsx\n${content.slice(0, 2000)}\n\`\`\``);
+ if (content && content.length < COMPONENT_READ_LIMIT) {
+ componentSnippets.push(`### ${sharedPath}:\n\`\`\`tsx\n${content.slice(0, SHARED_READ_LIMIT)}\n\`\`\``);
  }
  }
  }
@@ -2744,14 +2944,17 @@ ${appTsxContent?.slice(0, 3000) ||'(not found)'}
 ## Available Actions:
 1. **chat** -- Just answer a question / give advice (no file changes)
 2. **search_web** -- Search the web for documentation, API references, solutions
-3. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
-4. **modify_file** -- Modify an existing file (you MUST specify a "targetFile")
-5. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
-6. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
-7. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
-8. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
-9. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile".
-10. **list_directory** -- List files in a directory. Specify "targetDir".
+3. **search_codebase** -- Search the local codebase for a pattern (like grep). Specify "searchQuery". Use this to find existing code, imports, usages, etc. BEFORE modifying files.
+4. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
+5. **modify_file** -- Modify an existing file (you MUST specify a "targetFile")
+6. **modify_files** -- Modify MULTIPLE existing files in a single coordinated step. Specify "targetFiles" (array of file paths) when changes across files must be synchronized (e.g. adding a route + component + type).
+7. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
+8. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
+9. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
+10. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
+11. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile".
+12. **list_directory** -- List files in a directory. Specify "targetDir".
+13. **clarify** -- Ask the user a clarifying question BEFORE building. Only use when the request is genuinely ambiguous and you cannot infer the best approach. Specify "question" with the clarification question.
 
 ## You ALWAYS:
 - Install any npm packages your code needs (xlsx, apify-client, chart.js, etc.)
@@ -2760,6 +2963,9 @@ ${appTsxContent?.slice(0, 3000) ||'(not found)'}
 - Verify the build compiles after writing files
 - Auto-fix any TypeScript compilation errors
 - Create COMPLETE, fully-functional implementations -- not stubs or placeholders
+
+## PROJECT KNOWLEDGE (auto-scanned by documentation agent):
+${this.docAgent.getPromptContext()}
 
 ## Context:
 - Available API keys: ${configuredKeys.join(',') ||'none'}
@@ -2802,35 +3008,41 @@ ${body.message}
 ## Your task:
 Return a JSON execution plan. The plan must be a JSON object with:
 {
- "intent": "chat" | "build",
+ "intent": "chat" | "build" | "clarify",
  "summary": "One-line summary of what you'll do",
+ "question": "Clarifying question (only when intent is 'clarify')",
  "steps": [
  {
  "id": 1,
- "action": "search_web | generate_component | modify_file | install_packages | run_command | delegate_backend | create_api | read_file | list_directory | chat",
+ "action": "search_web | search_codebase | generate_component | modify_file | modify_files | install_packages | run_command | delegate_backend | create_api | read_file | list_directory | chat | clarify",
  "title": "Short step title",
  "detail": "What this step does",
- "searchQuery": "query (for search_web)",
+ "searchQuery": "query (for search_web, search_codebase)",
  "targetFile": "path/to/file (for modify_file, read_file)",
+ "targetFiles": ["path1", "path2"] (for modify_files -- coordinated multi-file edit),
  "targetDir": "path/to/dir (for list_directory)",
  "newFilePath": "path/for/new/file (for generate_component, create_api)",
  "packages": ["pkg1", "pkg2"] (for install_packages),
  "target": "frontend | backend" (for install_packages, run_command),
- "command": "shell command" (for run_command)
+ "command": "shell command" (for run_command),
+ "question": "clarification question (for clarify action)"
  }
  ]
 }
 
 If the request is just a question (intent: "chat"), return a single step with action: "chat".
-Order steps logically: search -> read_file/list_directory -> install_packages -> generate_component -> create_api -> modify_file -> delegate_backend.
+If the request is genuinely ambiguous, use intent: "clarify" with a clear question. Only clarify when you truly cannot infer the answer -- prefer to act.
+Order steps logically: search_codebase -> search_web -> read_file/list_directory -> install_packages -> generate_component -> create_api -> modify_file -> delegate_backend.
 
 IMPORTANT RULES:
+- ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change. This prevents hallucinating file contents.
 - Do NOT add steps for build verification, compile checking, linting, or "npm run build" -- these happen AUTOMATICALLY after all steps complete.
+- Do NOT add steps for testing or verification -- a Test Agent automatically runs after build passes. It performs static analysis, API smoke tests, and AI functional review to verify the code actually works end-to-end.
 - Do NOT add steps to run "npm run build", "tsc", "npx tsc", "npm run lint", or any build/lint/verify commands -- the system handles this.
 - Do NOT add steps to "add API key", "configure API key", or "store API key" -- keys are already stored encrypted and accessed server-side automatically.
 - Only use run_command for custom commands like curl, data migration scripts, or API testing.
 - When reading files, use the FULL relative path from project root (e.g. "frontend/src/components/MyPage.tsx" or "backend/src/app.module.ts").
-- If you're not sure of a file path, use list_directory first to find it.
+- If you're not sure of a file path, use list_directory first to find it, or use search_codebase to grep for patterns.
 - Use **create_api** (NOT delegate_backend) when you need to create a new backend API endpoint. create_api generates the actual NestJS code.
 - Use **delegate_backend** only for DB seeding and backend analysis of existing files.
 - When creating a new backend API, ALWAYS also add a step to modify_file "frontend/src/config/api.ts" to add the new endpoint URL to the API config object.
@@ -2856,13 +3068,38 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  try {
  const jsonMatch = planResult.content.match(/\{[\s\S]*\}/);
  plan = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
- } catch {
+ } catch (err) {
+ this.logger.debug('Plan JSON parsing failed, falling back to chat: ' + err);
  // If plan parsing fails, fall back to chat mode
  plan = { intent:'chat', summary:'Responding to your question', steps: [{ id: 1, action:'chat', title:'Answer', detail: body.message }] };
  }
 
  if (!plan || !plan.steps || plan.steps.length === 0) {
  plan = { intent:'chat', summary:'Responding to your question', steps: [{ id: 1, action:'chat', title:'Answer', detail: body.message }] };
+ }
+
+ // --- Validate plan schema ---
+ const validActions = new Set([
+   'search_web', 'generate_component', 'modify_file', 'install_packages',
+   'run_command', 'read_file', 'delegate_backend', 'create_database',
+   'search_codebase', 'modify_files', 'clarify', 'chat',
+ ]);
+ if (!plan.intent || typeof plan.intent !== 'string') {
+   plan.intent = 'chat';
+ }
+ if (!plan.summary || typeof plan.summary !== 'string') {
+   plan.summary = body.message.slice(0, 120);
+ }
+ // Normalise & filter steps
+ plan.steps = (plan.steps as any[]).filter((s: any, i: number) => {
+   if (!s || typeof s !== 'object') return false;
+   if (!s.action || !validActions.has(s.action)) return false;
+   if (!s.id) s.id = i + 1;
+   if (!s.title || typeof s.title !== 'string') s.title = `Step ${s.id}`;
+   return true;
+ });
+ if (plan.steps.length === 0) {
+   plan = { intent:'chat', summary:'Responding to your question', steps: [{ id: 1, action:'chat', title:'Answer', detail: body.message }] };
  }
 
  // Emit the plan to the client so they see what's coming
@@ -2878,6 +3115,33 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  });
 
  // ------------------------------------------------------------------
+ // STEP 1.5: Handle clarification intent
+ // ------------------------------------------------------------------
+ if (plan.intent === 'clarify' && plan.question) {
+ sendEvent('clarify', { question: plan.question, summary: plan.summary });
+ sendEvent('result', {
+ success: true,
+ response: `\u2753 **Clarification needed:**\n\n${plan.question}`,
+ intent: 'clarify',
+ tokensUsed: totalTokens,
+ });
+ return;
+ }
+
+ // ------------------------------------------------------------------
+ // STEP 1.6: Create a git snapshot before making changes (for undo)
+ // ------------------------------------------------------------------
+ let snapshotHash: string | null = null;
+ if (plan.intent === 'build') {
+ sendEvent('progress', { message: '\ud83d\udcbe Creating snapshot for undo...' });
+ const snapshot = this.createGitSnapshot(plan.summary);
+ if (snapshot.success && snapshot.commitHash) {
+ snapshotHash = snapshot.commitHash;
+ sendEvent('snapshot', { commitHash: snapshot.commitHash, label: plan.summary });
+ }
+ }
+
+ // ------------------------------------------------------------------
  // STEP 2: Execute each step in the plan
  // ------------------------------------------------------------------
 
@@ -2891,6 +3155,16 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  const backendDelegationTasks: BackendTask[] = [];
 
  for (const step of plan.steps) {
+ // Budget guard: stop executing if we've burned too many tokens
+ if (checkBudget()) {
+   sendEvent('result', {
+     success: false,
+     response: `⚠️ Stopped after ${executedPlan.length} steps — token budget exceeded (${totalTokens.toLocaleString()} tokens). Partial results may have been applied.`,
+     generatedFiles, modifiedFiles, executedPlan, tokensUsed: totalTokens,
+   });
+   return;
+ }
+
  const stepResult: any = { id: step.id, title: step.title, status:'running', detail: step.detail };
  executedPlan.push(stepResult);
 
@@ -2914,11 +3188,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  // -- Generate New Component ---------------------------------
  case'generate_component': {
  // Read api.ts config so generated components use correct API patterns
- let genApiConfig ='';
- const genApiFileContent = this.readFileFromDisk('frontend/src/config/api.ts');
- if (genApiFileContent) {
- genApiConfig =`\n## Frontend API Configuration (frontend/src/config/api.ts):\n\`\`\`typescript\n${genApiFileContent}\`\`\`\nUse the API object for API calls: \`import { API } from'../../config/api'; fetch(API.apps)\`. Do NOT hardcode URLs.\n`;
- }
+ const genApiConfig = this.getApiConfigContext();
 
  // Read an existing component as an example template (like Copilot reads existing patterns)
  let exampleComponent ='';
@@ -3011,6 +3281,14 @@ Return ONLY the code. No markdown fences, no explanation.`;
  });
  }
 
+ // Sync generated files into existingFiles so subsequent modify_file steps can find them
+ const newFiles = parsedFiles.length > 0 ? parsedFiles : [{ path: filePath, content: cleanContent, language: 'typescript' as string, description: step.detail || step.title }];
+ for (const nf of newFiles) {
+   const efIdx = existingFiles.findIndex(f => f.path === nf.path);
+   if (efIdx >= 0) existingFiles[efIdx] = { ...existingFiles[efIdx], content: nf.content };
+   else existingFiles.push({ path: nf.path, content: nf.content, language: nf.language || 'typescript', description: nf.description || '' });
+ }
+
  stepResult.status ='done';
  stepResult.detail =`Generated ${parsedFiles.length || 1} file(s)`;
  break;
@@ -3076,11 +3354,7 @@ Return ONLY the code. No markdown fences, no explanation.`;
  }
 
  // Read api.ts config so the AI knows the correct API patterns
- let apiConfigContext ='';
- const apiConfig = this.readFileFromDisk('frontend/src/config/api.ts');
- if (apiConfig) {
- apiConfigContext =`\n## Frontend API Configuration (frontend/src/config/api.ts):\n\`\`\`typescript\n${apiConfig}\`\`\`\nIMPORTANT: Use the API object from this config for API calls (e.g. \`import { API } from'../../config/api'; fetch(API.apps)\`). The API object has named properties for each endpoint. Do NOT hardcode URLs or create mock endpoints.\n`;
- }
+ const apiConfigContext = this.getApiConfigContext();
 
  // Read any components referenced in the step detail so the AI knows what they look like
  let referencedComponentContext ='';
@@ -3249,7 +3523,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  }
  }
  } catch (editErr) {
- console.error('Individual edit failed:', editErr);
+ this.logger.error(`Individual edit failed: ${editErr}`);
  }
  }
 
@@ -3264,7 +3538,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  }
  } catch (editError) {
  // -- RETRY: Full-file approach ----------------------------
- console.error('Line-based edits failed, trying full-file fallback:', editError);
+ this.logger.warn(`Line-based edits failed, trying full-file fallback: ${editError}`);
  const fallbackPrompt =`Modify this existing file according to the instruction. Return the COMPLETE updated file.
 
 ## Current file (${targetFile.path}):
@@ -3318,6 +3592,12 @@ Return ONLY the complete updated file. No markdown fences, no explanations.`;
  content: updatedContent,
  description:`Modified: ${step.detail}`,
  });
+
+ // Keep existingFiles in sync so later steps see the updated content
+ const efIdx = existingFiles.findIndex(f => f.path === targetFile.path);
+ if (efIdx >= 0) {
+   existingFiles[efIdx] = { ...existingFiles[efIdx], content: updatedContent };
+ }
 
  stepResult.status ='done';
  break;
@@ -3427,7 +3707,7 @@ Include controller, service, AND module files.`;
  }
  } catch (apiErr) {
  // API generation failed -- leave as manual
- console.error(`Failed to auto-generate API for "${apiTask.title}":`, apiErr);
+ this.logger.error(`Failed to auto-generate API for "${apiTask.title}": ${apiErr}`);
  }
  }
 
@@ -3480,19 +3760,34 @@ Include controller, service, AND module files.`;
  break;
  }
 
- // Skip build/lint/verify commands -- these are handled automatically in step 3c
- const buildCmds = ['npm run build','npx tsc','npm run lint','npx eslint','npm run check','tsc --noEmit','tsc','eslint'];
+ // Skip build/lint/verify/test commands -- these are handled automatically in step 3c+3d
+ const buildCmds = ['npm run build','npx tsc','npm run lint','npx eslint','npm run check','tsc --noEmit','tsc','eslint','npm test','npm run test','jest','vitest'];
  if (buildCmds.some(b => command.toLowerCase().includes(b))) {
  stepResult.status ='done';
- stepResult.detail ='Skipped -- build verification happens automatically after all steps';
+ stepResult.detail ='Skipped -- build verification and testing happen automatically after all steps';
  break;
  }
 
- // Security: block dangerous commands
- const blocked = ['rm -rf /','format','del /s','shutdown','reboot'];
- if (blocked.some(b => command.toLowerCase().includes(b))) {
+ // Security: allowlist -- only permit known safe commands
+ const allowedPrefixes = [
+   'npm test', 'npm run', 'npm ls', 'npm outdated', 'npm info', 'npm view',
+   'npx ', 'node ', 'echo ', 'cat ', 'type ', 'dir ', 'ls ',
+   'git status', 'git log', 'git diff', 'git show', 'git branch',
+   'curl ', 'wget ', 'find ', 'grep ', 'head ', 'tail ', 'wc ',
+   'pwd', 'cd ', 'mkdir ',
+ ];
+ const cmdLower = command.trim().toLowerCase();
+ const isAllowed = allowedPrefixes.some(p => cmdLower.startsWith(p));
+ if (!isAllowed) {
  stepResult.status ='failed';
- stepResult.detail ='Command blocked for safety';
+ stepResult.detail =`Command blocked: only safe commands are allowed (npm, npx, node, git, etc.). Got: "${command.slice(0, 80)}"`;
+ break;
+ }
+
+ // Additional safety: block shell chaining operators
+ if (/[;&|`$]/.test(command) && !command.startsWith('echo')) {
+ stepResult.status ='failed';
+ stepResult.detail ='Command blocked: shell operators (;, &, |, `, $) are not allowed';
  break;
  }
 
@@ -3731,6 +4026,136 @@ Return ALL 3 files (controller, service, module) using ===FILE: path=== and ===E
  break;
  }
 
+ // -- Search Codebase (grep) ---------------------------------
+ case'search_codebase': {
+ const query = step.searchQuery || step.detail || body.message;
+ const searchOpts: { includePattern?: string; isRegex?: boolean; maxResults?: number } = {};
+ if (step.targetFile) searchOpts.includePattern = step.targetFile;
+
+ sendEvent('progress', { message: `🔍 Searching codebase for "${query}"...` });
+ const searchResult = this.searchCodebase(query, searchOpts);
+ const matches = searchResult.matches;
+ if (matches.length > 0) {
+ const formatted = matches.slice(0, 30).map(r => `${r.file}:${r.line}: ${r.text}`).join('\n');
+ webContext += `\nCodebase search results for "${query}":\n${formatted}\n`;
+
+ // Auto-read the most relevant files found
+ const uniqueFiles = [...new Set(matches.map(r => r.file))].slice(0, 5);
+ for (const foundFile of uniqueFiles) {
+ if (!existingFiles.find(f => f.path === foundFile)) {
+ const content = this.readFileFromDisk(foundFile);
+ if (content) {
+ const ext = path.extname(foundFile).slice(1);
+ existingFiles.push({
+ path: foundFile,
+ content,
+ language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext,
+ description: `Found via search: ${foundFile}`,
+ });
+ }
+ }
+ }
+
+ stepResult.status = 'done';
+ stepResult.detail = `Found ${matches.length} matches across ${uniqueFiles.length} files for "${query}"`;
+ } else {
+ stepResult.status = 'done';
+ stepResult.detail = `No matches found for "${query}" -- continuing`;
+ webContext += `\nNo codebase matches for "${query}".\n`;
+ }
+ break;
+ }
+
+ // -- Multi-File Coordinated Edit ----------------------------
+ case'modify_files': {
+ const targetFilePaths: string[] = step.targetFiles || [];
+ if (targetFilePaths.length === 0) {
+ stepResult.status = 'failed';
+ stepResult.detail = 'No target files specified for modify_files';
+ break;
+ }
+
+ sendEvent('progress', { message: `📝 Coordinated edit across ${targetFilePaths.length} files...` });
+
+ // Read all target files
+ const filesToModify: Array<{path: string; content: string; language: string}> = [];
+ for (const fp of targetFilePaths) {
+ // Try exact path and fallbacks
+ const pathsToTry = [fp, `frontend/${fp}`, `backend/${fp}`, fp.replace(/^src\//, 'frontend/src/')];
+ for (const tryPath of pathsToTry) {
+ const content = this.readFileFromDisk(tryPath);
+ if (content) {
+ const ext = path.extname(tryPath).slice(1);
+ filesToModify.push({ path: tryPath, content, language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext });
+ break;
+ }
+ }
+ }
+
+ if (filesToModify.length === 0) {
+ stepResult.status = 'failed';
+ stepResult.detail = `Could not read any of: ${targetFilePaths.join(', ')}`;
+ break;
+ }
+
+ // Send all files to AI for coordinated modification
+ const multiFilePrompt = `You must modify ${filesToModify.length} files in a COORDINATED way. All changes must be consistent across files.
+
+## Task: ${step.detail}
+
+## USER'S ORIGINAL REQUEST:
+"${body.message}"
+
+${filesToModify.map(f => `## FILE: ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``).join('\n\n')}
+
+${webContext ? `## Context:\n${webContext}` : ''}
+
+Return ALL modified files using this format:
+===FILE: path/to/file.ext===
+(complete file content)
+===END_FILE===
+
+Include EVERY file, even if unchanged. Ensure imports, types, and references are consistent across all files.`;
+
+ const multiResult = await this.callAI(
+ modelId,
+ `Expert full-stack developer. You modify multiple files in a coordinated way, ensuring consistency across all changes. ${this.getDesignSystemContext()}`,
+ multiFilePrompt,
+ );
+ totalTokens += multiResult.tokensUsed || 0;
+
+ const parsedMultiFiles = this.parseFiles(multiResult.content);
+ if (parsedMultiFiles.length > 0) {
+ for (const parsed of parsedMultiFiles) {
+ // Check if this was an existing file being modified vs a new file
+ const original = filesToModify.find(f => f.path === parsed.path || parsed.path.endsWith(path.basename(f.path)));
+ if (original) {
+ modifiedFiles.push({
+ ...parsed,
+ description: `Modified (coordinated): ${step.detail}`,
+ });
+ } else {
+ generatedFiles.push(parsed);
+ }
+ }
+ stepResult.status = 'done';
+ stepResult.detail = `Coordinated edit: ${parsedMultiFiles.length} files modified`;
+ } else {
+ stepResult.status = 'failed';
+ stepResult.detail = 'AI returned no parseable files for multi-file edit';
+ }
+ break;
+ }
+
+ // -- Clarify (ask user a question) --------------------------
+ case'clarify': {
+ const question = step.question || step.detail || 'Could you clarify what you want?';
+ sendEvent('clarify', { question, stepId: step.id });
+ stepResult.status = 'done';
+ stepResult.detail = `Asked for clarification: ${question}`;
+ break;
+ }
+
  // -- Chat / Advise ------------------------------------------
  case'chat':
  default: {
@@ -3753,47 +4178,57 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
  }
  } catch (stepErr) {
  stepResult.status ='failed';
- stepResult.detail =`Error: ${stepErr instanceof Error ? stepErr.message :'Unknown'}`;
+ const errorMsg = stepErr instanceof Error ? stepErr.message :'Unknown error';
+ stepResult.detail =`Error: ${errorMsg}`;
 
- // Notify client of failure
+ // Notify client of initial failure
  sendEvent('step_complete', { id: step.id, title: step.title, status:'failed', detail: stepResult.detail });
 
- // -- Retry with alternative approach --------------------------
- if (step.action !=='chat' && step.action !=='search_web') {
- sendEvent('progress', { message:` Retrying "${step.title}" with alternative approach...` });
- try {
- const retryPrompt =`The previous attempt to "${step.title}" failed with: ${stepResult.detail}
+ // -- Diagnostic Retry System (3 escalating strategies) ---------
+ if (step.action !=='chat' && step.action !=='search_web' && step.action !=='clarify') {
+ sendEvent('progress', { message: `🧠 Engaging diagnostic retry system for "${step.title}"...` });
 
-Please try an alternative approach. Original task: ${step.detail}
+ const retryResult = await this.diagnosticRetry(
+   step,
+   errorMsg,
+   modelId,
+   existingFiles,
+   generatedFiles,
+   modifiedFiles,
+   webContext,
+   fileContext,
+   sendEvent,
+   appContext,
+ );
+ totalTokens += retryResult.tokensUsed;
 
-${webContext ?`Web context:\n${webContext}` :''}
-
-Return ONLY the code. No explanation.`;
-
- const retryResult = await this.callAI(modelId,`Expert coder retrying a failed step. ${this.getDesignSystemContext()}`, retryPrompt);
- totalTokens += retryResult.tokensUsed || 0;
-
- const retryClean = retryResult.content
- .replace(/^```(?:tsx?|typescript|javascript)?\n?/m,'')
- .replace(/\n?```$/m,'')
- .trim();
-
- if (retryClean.length > 50) {
- const retryFiles = this.parseFiles(retryResult.content);
- if (retryFiles.length > 0) {
- generatedFiles.push(...retryFiles);
+ if (retryResult.success && retryResult.files.length > 0) {
+   // Merge recovered files into the appropriate arrays
+   for (const file of retryResult.files) {
+     const existingGenIdx = generatedFiles.findIndex(f => f.path === file.path);
+     const existingModIdx = modifiedFiles.findIndex(f => f.path === file.path);
+     if (existingGenIdx >= 0) {
+       generatedFiles[existingGenIdx] = file;
+     } else if (existingModIdx >= 0) {
+       modifiedFiles[existingModIdx] = file;
+     } else {
+       generatedFiles.push(file);
+     }
+   }
+   stepResult.status ='done';
+   stepResult.detail += ` → ${retryResult.detail}`;
+   sendEvent('progress', { message: `✅ Recovered: ${retryResult.detail}` });
  } else {
- generatedFiles.push({
- path: step.newFilePath || step.targetFile ||`frontend/src/components/${this.toPascalCase(step.title)}.tsx`,
- content: retryClean,
- language:'typescript',
- description:`Retry: ${step.detail}`,
- });
+   stepResult.detail += ` → ${retryResult.detail}`;
+   sendEvent('progress', { message: `❌ All retry strategies exhausted for "${step.title}"` });
+   // Record this failure as a gotcha so future sessions avoid it
+   try {
+     this.docAgent.addGotcha(
+       `Step "${step.title}" (${step.action}) failed: ${errorMsg.slice(0, 200)}`,
+       retryResult.detail || 'All retry strategies exhausted',
+     );
+   } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
  }
- stepResult.status ='done';
- stepResult.detail +=' (succeeded on retry)';
- }
- } catch { /* retry also failed, keep original failure */ }
  }
  }
 
@@ -3801,6 +4236,136 @@ Return ONLY the code. No explanation.`;
  if (stepResult.status ==='done' || stepResult.status ==='failed') {
  sendEvent('step_complete', { id: step.id, title: step.title, status: stepResult.status, detail: stepResult.detail });
  }
+ }
+
+ // ------------------------------------------------------------------
+ // STEP 2.3: Re-plan if multiple steps failed
+ // ------------------------------------------------------------------
+ const failedStepResults = executedPlan.filter(s => s.status === 'failed');
+ const completedStepResults = executedPlan.filter(s => s.status === 'done');
+ const executedStepIds = new Set(executedPlan.map(s => s.id));
+ const remainingSteps = plan.steps.filter((s: any) => !executedStepIds.has(s.id));
+
+ if (failedStepResults.length >= 2 && remainingSteps.length > 0) {
+   sendEvent('progress', { message: `🔄 ${failedStepResults.length} steps failed — re-planning remaining ${remainingSteps.length} step(s)...` });
+
+   const rePlanResult = await this.rePlanRemainingSteps(
+     failedStepResults.map(s => ({ title: s.title, error: s.detail || 'Unknown' })),
+     completedStepResults.map(s => ({ title: s.title, detail: s.detail || '' })),
+     remainingSteps,
+     body.message,
+     modelId,
+     existingFiles,
+     generatedFiles,
+     appContext,
+   );
+   totalTokens += rePlanResult.tokensUsed;
+
+   if (rePlanResult.success && rePlanResult.revisedSteps.length > 0) {
+     sendEvent('progress', { message: `📋 Revised plan: ${rePlanResult.revisedSteps.length} new step(s)` });
+     sendEvent('plan', {
+       summary: `Revised plan after ${failedStepResults.length} failures`,
+       intent: 'build',
+       steps: rePlanResult.revisedSteps.map((s: any) => ({ id: s.id, title: s.title, action: s.action })),
+     });
+
+     // Execute the revised steps (re-enter the step loop)
+     for (const revisedStep of rePlanResult.revisedSteps) {
+       const rStepResult: any = { id: revisedStep.id, title: revisedStep.title, status: 'running', detail: revisedStep.detail };
+       executedPlan.push(rStepResult);
+       sendEvent('step_start', { id: revisedStep.id, title: revisedStep.title, action: revisedStep.action });
+
+       try {
+         // For revised steps, only handle the most common actions to avoid deep recursion
+         switch (revisedStep.action) {
+           case 'search_codebase': {
+             const q = revisedStep.searchQuery || revisedStep.detail;
+             const sr = this.searchCodebase(q, {});
+             if (sr.matches.length > 0) {
+               const formatted = sr.matches.slice(0, 20).map(r => `${r.file}:${r.line}: ${r.text}`).join('\n');
+               webContext += `\nRevised search "${q}":\n${formatted}\n`;
+               const uniqueFiles = [...new Set(sr.matches.map(r => r.file))].slice(0, 5);
+               for (const ff of uniqueFiles) {
+                 if (!existingFiles.find(f => f.path === ff)) {
+                   const c = this.readFileFromDisk(ff);
+                   if (c) existingFiles.push({ path: ff, content: c, language: 'typescript', description: `Revised search` });
+                 }
+               }
+             }
+             rStepResult.status = 'done';
+             rStepResult.detail = `Found ${sr.matches.length} matches`;
+             break;
+           }
+           case 'generate_component':
+           case 'modify_file':
+           case 'modify_files': {
+             const targetPath = revisedStep.targetFile || revisedStep.newFilePath;
+             let existingContent = '';
+             if (targetPath) {
+               const ef = existingFiles.find(f => f.path === targetPath);
+               existingContent = ef ? ef.content : (this.readFileFromDisk(targetPath) || '');
+             }
+
+             const revisedPrompt = `${revisedStep.detail}
+
+${existingContent ? `## Current file (${targetPath}):\n\`\`\`\n${existingContent.slice(0, 6000)}\n\`\`\`\n` : ''}
+${webContext ? `## Context:\n${webContext.slice(0, 4000)}\n` : ''}
+${fileContext ? `## Project:\n${fileContext.slice(0, 3000)}\n` : ''}
+
+Generate the complete code. No explanation, no markdown fences.`;
+
+             const genResult = await this.callAI(modelId, `Expert coder executing revised plan step. ${this.getDesignSystemContext()}. ${appContext}`, revisedPrompt);
+             totalTokens += genResult.tokensUsed || 0;
+             const clean = this.cleanCodeResponse(genResult.content);
+
+             if (clean.length > 50) {
+               const files = this.parseFiles(genResult.content);
+               if (files.length > 0) {
+                 generatedFiles.push(...files);
+               } else {
+                 generatedFiles.push({
+                   path: targetPath || `frontend/src/components/${this.toPascalCase(revisedStep.title)}.tsx`,
+                   content: clean,
+                   language: 'typescript',
+                   description: `Revised: ${revisedStep.detail}`,
+                 });
+               }
+               rStepResult.status = 'done';
+               rStepResult.detail = `Revised step completed`;
+             } else {
+               rStepResult.status = 'failed';
+               rStepResult.detail = 'Revised step produced insufficient output';
+             }
+             break;
+           }
+           case 'read_file': {
+             const content = this.readFileFromDisk(revisedStep.targetFile);
+             if (content) {
+               webContext += `\nFile ${revisedStep.targetFile}:\n${content.slice(0, 3000)}\n`;
+               if (!existingFiles.find(f => f.path === revisedStep.targetFile)) {
+                 existingFiles.push({ path: revisedStep.targetFile, content, language: 'typescript', description: 'Revised read' });
+               }
+               rStepResult.status = 'done';
+             } else {
+               rStepResult.status = 'done';
+               rStepResult.detail = `File not found: ${revisedStep.targetFile}`;
+             }
+             break;
+           }
+           default: {
+             rStepResult.status = 'done';
+             rStepResult.detail = `Skipped action "${revisedStep.action}" in revised plan`;
+             break;
+           }
+         }
+       } catch (rErr) {
+         rStepResult.status = 'failed';
+         rStepResult.detail = `Revised step error: ${rErr instanceof Error ? rErr.message : String(rErr)}`;
+       }
+
+       sendEvent('step_complete', { id: revisedStep.id, title: revisedStep.title, status: rStepResult.status, detail: rStepResult.detail });
+     }
+   }
  }
 
  // ------------------------------------------------------------------
@@ -3841,7 +4406,7 @@ Return ONLY the code. No explanation.`;
  });
  }
  }
- } catch { /* auto-delegation is best-effort */ }
+ } catch (err) { this.logger.debug("Caught (auto-delegation is best-effort): " + err); }
  }
 
  // ------------------------------------------------------------------
@@ -3916,7 +4481,7 @@ Return ONLY the code. No explanation.`;
  }
  }
  }
- } catch { /* non-critical */ }
+ } catch (err) { this.logger.debug("Caught (non-critical): " + err); }
 
  // 3b: Detect and install any missing npm packages
  const hadInstallStep = plan.steps.some((s: any) => s.action ==='install_packages');
@@ -3962,7 +4527,7 @@ Return ONLY the code. No explanation.`;
  }
  }
 
- // 3c: Verify TypeScript build and auto-fix errors (retry loop, up to 3 attempts)
+ // 3c: Verify TypeScript build and auto-fix errors (retry loop, up to 5 attempts with diagnostic escalation)
  const hasFrontendFiles = allToWrite.some(f => f.path.startsWith('frontend/'));
  const hasBackendFiles = allToWrite.some(f => f.path.startsWith('backend/'));
 
@@ -3978,11 +4543,50 @@ Return ONLY the code. No explanation.`;
  if (!buildCheck.success && buildCheck.errors.length > 0) {
  sendEvent('progress', { message:`[!] ${buildCheck.errors.length} build error(s) in ${target} -- attempting auto-fix...` });
  let fixAttempt = 0;
- const maxAttempts = 3;
+ const maxAttempts = 5; // increased from 3: 3 direct fixes + 2 diagnostic attempts
  let lastFixCount = 0;
+ let previousErrorCount = buildCheck.errors.length;
+ let stuckCount = 0; // track if error count stops decreasing
 
  while (!buildCheck.success && buildCheck.errors.length > 0 && fixAttempt < maxAttempts) {
  fixAttempt++;
+
+ // After 3 basic attempts, escalate to diagnostic fix approach
+ if (fixAttempt > 3 && stuckCount >= 2) {
+   sendEvent('progress', { message: `🧠 Escalating to diagnostic build fix (attempt ${fixAttempt})...` });
+
+   // Read related files to give the AI more context
+   const errorFiles = [...new Set(buildCheck.errors.map(e => {
+     const m = e.match(/^(.+?)\(\d+,\d+\):/);
+     return m ? m[1].replace(/\\/g, '/') : '';
+   }).filter(Boolean))];
+
+   let diagnosticBuildContext = '';
+   for (const errFile of errorFiles.slice(0, 3)) {
+     // Find imports in the error file and read them too
+     const errContent = this.readFileFromDisk(errFile) || this.readFileFromDisk(`${target}/${errFile}`);
+     if (errContent) {
+       const importPaths = errContent.match(/from\s+['"]([^'"]+)['"]/g) || [];
+       for (const imp of importPaths.slice(0, 5)) {
+         const impPath = imp.match(/from\s+['"]([^'"]+)['"]/)?.[1];
+         if (impPath && impPath.startsWith('.')) {
+           const resolvedPath = path.join(path.dirname(errFile), impPath).replace(/\\/g, '/') + '.ts';
+           const impContent = this.readFileFromDisk(resolvedPath) || this.readFileFromDisk(resolvedPath + 'x');
+           if (impContent) {
+             diagnosticBuildContext += `\n## Imported file: ${resolvedPath}\n\`\`\`typescript\n${impContent.slice(0, 2000)}\n\`\`\`\n`;
+           }
+         }
+       }
+     }
+   }
+
+   // Use the diagnostic context in the fix prompt
+   const diagFixFiles = allToWrite.filter(f => f.path.startsWith(`${target}/`));
+   for (const df of diagFixFiles) {
+     (df as any)._diagnosticContext = diagnosticBuildContext;
+   }
+ }
+
  const targetFiles = allToWrite.filter(f => f.path.startsWith(`${target}/`));
  const fixResult = await this.autoFixBuildErrors(buildCheck.errors, targetFiles, modelId);
  totalTokens += 800; // estimate per fix attempt
@@ -4004,7 +4608,20 @@ Return ONLY the code. No explanation.`;
  // Re-verify (only our files)
  buildCheck = this.verifyBuild(target, ourFilePaths);
  if (buildCheck.success) break; // all clean!
+
+ // Track if we're making progress
+ if (buildCheck.errors.length >= previousErrorCount) {
+   stuckCount++;
  } else {
+   stuckCount = 0;
+ }
+ previousErrorCount = buildCheck.errors.length;
+ } else {
+ stuckCount++;
+ if (stuckCount >= 2 && fixAttempt < maxAttempts) {
+   // Don't break immediately -- let it try the diagnostic approach
+   continue;
+ }
  break; // AI couldn't fix anything, stop retrying
  }
  }
@@ -4029,6 +4646,62 @@ Return ONLY the code. No explanation.`;
  sendEvent('step_complete', { id:`build-${target}`, title:`Build verification (${target})`, status:'done', detail:`${target} -- compiles clean` });
  }
  }
+ }
+
+ // ------------------------------------------------------------------
+ // STEP 3d: Test Agent — functional verification
+ // ------------------------------------------------------------------
+ if ((generatedFiles.length > 0 || modifiedFiles.length > 0) && buildErrors.length === 0) {
+   sendEvent('progress', { message: '🧪 Running test agent...' });
+   try {
+     const testCtx: TestAgentContext = {
+       userMessage: body.message,
+       generatedFiles,
+       modifiedFiles,
+       callAI: this.callAI.bind(this),
+       modelId,
+       appId,
+     };
+     const testReport = await this.testAgent.runTests(testCtx, sendEvent);
+     totalTokens += testReport.tokensUsed;
+
+     // Add test results to the executed plan
+     const testStatus = testReport.failures > 0 ? 'failed' as const : 'done' as const;
+     executedPlan.push({
+       id: executedPlan.length + 1,
+       title: 'Test agent verification',
+       status: testStatus,
+       detail: testReport.summary,
+     });
+     sendEvent('step_complete', {
+       id: 'test-agent',
+       title: 'Test agent verification',
+       status: testStatus,
+       detail: testReport.summary,
+     });
+
+     // Send individual test results so frontend can display them
+     sendEvent('test_results', {
+       passed: testReport.passed,
+       warnings: testReport.warnings,
+       failures: testReport.failures,
+       results: testReport.results,
+       summary: testReport.summary,
+     });
+
+     // If there are failures, record them as gotchas for the doc agent
+     for (const fail of testReport.results.filter(r => r.severity === 'fail')) {
+       try {
+         this.docAgent.addGotcha(
+           `Test failure: ${fail.title} in ${fail.file || 'unknown'}`,
+           fail.detail,
+         );
+       } catch { /* non-critical */ }
+     }
+   } catch (err) {
+     this.logger.warn('Test agent failed: ' + err);
+     sendEvent('progress', { message: '⚠️ Test agent encountered an error — skipping' });
+   }
  }
 
  // ------------------------------------------------------------------
@@ -4126,6 +4799,16 @@ Return ONLY the code. No explanation.`;
  const config = this.getModelConfig(modelId);
  await this.trackCost(config?.provider ||'anthropic', modelId, Math.round(totalTokens * 0.7), Math.round(totalTokens * 0.3), duration,'coder-agent');
 
+ // Generate diffs for all modified files
+ const diffs: Array<{file: string; diff: string}> = [];
+ for (const mf of modifiedFiles) {
+ const original = existingFiles.find(f => f.path === mf.path);
+ if (original) {
+ const diff = this.generateDiff(original.content, mf.content, mf.path);
+ if (diff) diffs.push({ file: mf.path, diff });
+ }
+ }
+
  sendEvent('result', {
  success: true,
  response: report.join('\n'),
@@ -4138,7 +4821,11 @@ Return ONLY the code. No explanation.`;
  filesWritten: filesWritten.length > 0 ? filesWritten : undefined,
  packagesInstalled: packagesInstalled.length > 0 ? packagesInstalled : undefined,
  buildVerified: buildErrors.length === 0 && filesWritten.length > 0,
+ diffs: diffs.length > 0 ? diffs : undefined,
+ snapshotHash: snapshotHash || undefined,
  tokensUsed: totalTokens,
+ estimatedCost: this.estimateCostFromTokens(totalTokens, modelId),
+ durationMs: Date.now() - start,
  });
  } catch (err) {
  sendEvent('error', { message:`Error: ${err instanceof Error ? err.message :'Unknown error occurred'}` });
@@ -4218,15 +4905,37 @@ ${pageDesc}
 
 STYLE: ${styleGuide}
 
+DESIGN CONSISTENCY (CRITICAL — the upsell page must look like it belongs in the SAME app as the rest of the funnel):
+- Font family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif
+- Font weights: 800 for headings, 700 for subheadings/buttons, 600 for labels, 400 for body text
+- Background: #fafbfc (page), #fff (cards)
+- Text colors: #1a1a2e (headings), #333 (subheadings), #555-#666 (body), #888-#999 (muted)
+- Primary gradient: linear-gradient(135deg, #667eea, #764ba2) — use on primary CTAs and hero accents
+- Card style: background #fff, border-radius 16px, padding 32px, box-shadow 0 2px 12px rgba(0,0,0,0.06), border 1px solid rgba(0,0,0,0.06)
+- Primary button: gradient background, border-radius 10px, padding 14px 32px, font-weight 700, full-width, hover translateY(-1px) with shadow
+- Secondary/decline button: transparent background, subtle text, font-size 0.82rem, no border
+- Benefits grid: grid layout, 200px min-width, gap 16px, items have bg #f8f9ff, border-radius 12px, padding 20px 16px
+- Benefit icons: emoji icons (⚡✨🔒🚀💎📊🎯) at 1.8rem, NOT svg/img icons
+- Trust badges: inline flex, pills with bg #f0f0f0, border-radius 20px, padding 6px 14px, font-weight 600, font-size 0.72rem
+- Price display: font-size 2rem, font-weight 800, color #667eea, with period text in 0.85rem #999
+- Strikethrough prices: text-decoration line-through, color #999
+- Checkmark lists: ✓ prefix in #27ae60 font-weight 700, item text in 0.82rem #555
+- Max-width container: 720px centered with 40px 24px padding
+- Hero section: text-align center, h1 at 2rem weight 800, subtitle at 1.05rem color #666
+- All spacing consistent: 24px between sections, 16px between items, 12px between heading and subheading
+- Use the same color palette throughout — NO random bright colors, keep it polished and cohesive
+
 CONVERSION OPTIMIZATION RULES:
 - Above-the-fold CTA — the main action button must be visible without scrolling
 - Use visual hierarchy: headline → subheadline → benefits → social proof → CTA
 - Price anchoring: show original price crossed out next to the offer price
-- Feature bullets with checkmark icons (CheckCircle in green)
-- Trust signals: guarantee badge, secure payment icon, testimonial quote
-- Urgency elements when appropriate: "Limited time", "Only X left", timer-style elements
+- Feature bullets with checkmark prefix (✓ in green)
+- Trust signals: guarantee badge, secure payment icon, testimonial quote — use the trust-badge pill style
+- Urgency elements when appropriate: "Limited time", "Only X left" — use subtle urgency, not garish
 - The "Yes" CTA should be 3x more prominent than any "No thanks" option
-- Use color psychology: green for go/buy, red for urgency/savings
+- Colors for status: green (#27ae60) for success/savings, subtle orange for urgency
+
+THE PAGE MUST LOOK LIKE IT WAS BUILT BY THE SAME DESIGNER AS THE PRICING, REGISTER, AND CHECKOUT PAGES. Consistent fonts, colors, spacing, card styles, and button styles throughout.
 
 STRIPE INTEGRATION:
 - Include a handleCheckout function that calls: fetch(\`\${API_BASE}/api/stripe/checkout\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: APP_ID, price_id: PRICE_ID, success_url: window.location.origin + '/thank-you', cancel_url: window.location.href }) })
@@ -4289,7 +4998,7 @@ The component should be a complete, self-contained React component that looks pr
    const updatedCode = result.file?.content || request.code;
    let htmlPreview: string | undefined;
    if (result.success && result.file?.content) {
-     try { htmlPreview = await this.convertToHtmlPreview(updatedCode); } catch {}
+     try { htmlPreview = await this.convertToHtmlPreview(updatedCode); } catch (err) { this.logger.debug("Caught: " + err); }
    }
    return {
      success: result.success,
@@ -4312,16 +5021,30 @@ The component should be a complete, self-contained React component that looks pr
 RULES:
 - Output a complete <!DOCTYPE html> document with <html>, <head>, <body>
 - Use ONLY inline styles that precisely match the MUI styling from the React code
-- Use Google Fonts link for Inter/Roboto: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+- Use Google Fonts link for Inter: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+- Set body font-family to: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif
 - Replace MUI icons with appropriate Unicode/emoji equivalents:
   • CheckCircle → ✅  • Timer → ⏱️  • ShoppingCart → 🛒  • Star → ⭐  • Security/Shield → 🔒
   • ThumbUp → 👍  • TrendingUp → 📈  • Warning → ⚠️  • CheckBox → ☑️  • ArrowForward → →
 - Replicate ALL gradients, shadows, border-radius, spacing, colors exactly
+
+DESIGN TOKENS TO ENFORCE (override any deviations in the React code):
+- Body: margin 0, background #fafbfc, font-family Inter
+- Headings: color #1a1a2e, font-weight 800
+- Body text: color #555 or #666, line-height 1.6
+- Muted text: color #888 or #999
+- Cards: background #fff, border-radius 16px, padding 32px, box-shadow 0 2px 12px rgba(0,0,0,0.06), border 1px solid rgba(0,0,0,0.06)
+- Primary buttons: background linear-gradient(135deg, #667eea, #764ba2), color #fff, border-radius 10px, padding 14px 32px, font-weight 700, hover translateY(-1px)
+- Container: max-width 720px, margin 0 auto, padding 40px 24px
+- Benefits: background #f8f9ff, border-radius 12px, padding 20px 16px
+- Trust badges: background #f0f0f0, border-radius 20px, padding 6px 14px, font-weight 600
+- Price: font-size 2rem, font-weight 800, color #667eea
+- Checkmarks: ✓ in color #27ae60, font-weight 700
+
 - Make buttons look clickable with hover effects (CSS :hover)
 - Responsive: use max-width containers, flexbox/grid as in original
 - The page must look production-ready and PREMIUM
 - Do NOT include any JavaScript or React code
-- Body margin should be 0
 - Output ONLY the raw HTML. No markdown fences, no explanation, no comments.`;
 
    const result = await this.callAI(model, systemPrompt, `Convert this React component to a standalone HTML page:\n\n${reactCode}`);

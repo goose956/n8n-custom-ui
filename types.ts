@@ -1,46 +1,47 @@
-```typescript
-// Type for User information
 export interface UserProfile {
-    id: string;  // Unique user ID
-    username: string;  // User's TikTok username
-    email: string;  // User's email address
-    createdAt: string;  // Account creation date
-    updatedAt: string;  // Last profile update date
+    id: string; // Unique identifier for the user
+    name: string; // User's full name
+    email: string; // User's email address
+    linkedInAccount: string; // LinkedIn profile URL
+    aiPreferences: AiPreferences; // User's AI customization options
 }
 
-// Type for TikTok script performance
-export interface ScriptPerformance {
-    scriptId: string;  // Unique script ID
-    views: number;  // Number of views
-    likes: number;  // Number of likes
-    comments: number;  // Number of comments
-    shares: number;  // Number of shares
-    engagementRate: number;  // Engagement rate as a percentage
+export interface AiPreferences {
+    welcomes: boolean; // Enable personalized welcome messages
+    responseTemplates: string[]; // List of AI response templates
 }
 
-// Type for recent viral trends
-export interface ViralTrend {
-    trendId: string;  // Unique trend ID
-    trendName: string;  // Name of the trend
-    engagementRate: number;  // Engagement rate for the trend
-    createdAt: string;  // Date trend was identified
+export interface MessageStats {
+    totalSent: number; // Total automated messages sent
+    totalClicked: number; // Total messages that received clicks
+    engagementRate: number; // Percentage of messages with engagement
 }
 
-// Type for user script history
-export interface UserScriptHistory {
-    historyId: string;  // Unique history ID
-    scriptId: string;  // Unique script ID
-    createdAt: string;  // Date script was created
-    performance: ScriptPerformance;  // Performance metrics
+export interface EngagementReport {
+    profileViews: number; // Number of profile views
+    messageOpenRate: number; // Percentage of messages opened
+    responseTimeline: ResponseTimeline[]; // Time to respond to messages
 }
 
-// Type for billing details
-export interface BillingInfo {
-    subscriptionId: string;  // Unique subscription ID
-    plan: string;  // Current plan name
-    status: 'active' | 'inactive' | 'cancelled';  // Subscription status
-    renewalDate: string;  // Next renewal date
-    lastPayment: string;  // Date of last payment
-    paymentMethod: 'credit_card' | 'paypal';  // Payment method
+export interface ResponseTimeline {
+    date: string; // Date of interaction
+    responseTime: number; // Time taken to respond in minutes
 }
-```
+
+export interface AutomatedMessage {
+    id: string; // Unique identifier for the message template
+    content: string; // Content of the automated message
+    successRate: number; // Success rate of the message template
+}
+
+export interface AdminAnalytics {
+    overallSuccessRate: number; // Success rate across all users
+    totalUsers: number; // Total number of users
+    totalMessagesSent: number; // Total messages sent by users
+    averageEngagement: number; // Average engagement across all messages
+}
+
+export interface SupportInquiry {
+    userId: string; // The ID of the user submitting the inquiry
+    message: string; // User's message or feedback
+}

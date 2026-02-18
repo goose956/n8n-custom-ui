@@ -367,7 +367,8 @@ import {
  Box, Typography, Paper, Card, CardContent, Grid, Chip, Button,
  Table, TableHead, TableRow, TableCell, TableBody, Tabs, Tab,
  CircularProgress, Divider, Avatar, Tooltip, IconButton, Skeleton, LinearProgress,
- Snackbar, Alert,
+ Snackbar, Alert, Menu, MenuItem, Dialog, DialogTitle, DialogContent,
+ DialogContentText, DialogActions,
 } from'@mui/material';
 import Dashboard from'@mui/icons-material/Dashboard';
 import People from'@mui/icons-material/People';
@@ -383,6 +384,11 @@ import Visibility from'@mui/icons-material/Visibility';
 import ArrowUpward from'@mui/icons-material/ArrowUpward';
 import Speed from'@mui/icons-material/Speed';
 import Storage from'@mui/icons-material/Storage';
+import Delete from'@mui/icons-material/Delete';
+import MoreVert from'@mui/icons-material/MoreVert';
+import Block from'@mui/icons-material/Block';
+import PersonAdd from'@mui/icons-material/PersonAdd';
+import GroupAdd from'@mui/icons-material/GroupAdd';
 
 const API_BASE ='http://localhost:3000';
 
@@ -391,6 +397,7 @@ interface AppAnalytics { app_id: number; total_page_views: number; unique_visito
 interface Visitor { visitor_id: string; first_visit: string; last_visit: string; page_views: number; pages: string[]; }
 interface ErrorLog { id: number; source: string; severity: string; message: string; timestamp: string; resolved: boolean; }
 interface ApiUsageSummary { totalCalls: number; successRate: number; totalTokens: number; totalCost: number; avgDuration: number; byProvider: Record<string,number>; byModule: Record<string,number>; }
+interface AppMember { id: number; app_id: number; name: string; email: string; plan_name: string; plan_price: number; status: string; created_at: string; subscription_id?: number; }
 
 export function MembersAdminPage() {
  const [tab, setTab] = useState(0);
@@ -401,17 +408,21 @@ export function MembersAdminPage() {
  const [errors, setErrors] = useState<ErrorLog[]>([]);
  const [errorSummary, setErrorSummary] = useState<any>(null);
  const [apiUsage, setApiUsage] = useState<ApiUsageSummary | null>(null);
+ const [members, setMembers] = useState<AppMember[]>([]);
  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity:'success' |'error' }>({ open: false, message:'', severity:'success' });
+ const [memberMenu, setMemberMenu] = useState<{ el: HTMLElement | null; member: AppMember | null }>({ el: null, member: null });
+ const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; member: AppMember | null }>({ open: false, member: null });
 
  const fetchAll = useCallback(async () => {
  setLoading(true);
  try {
- const [statsRes, analyticsRes, visitorsRes, errorsRes, apiRes] = await Promise.all([
+ const [statsRes, analyticsRes, visitorsRes, errorsRes, apiRes, membersRes] = await Promise.all([
  fetch(API_BASE +'/api/apps/${v.appId}/stats').then(r => r.json()),
  fetch(API_BASE +'/api/analytics/app/${v.appId}').then(r => r.json()),
  fetch(API_BASE +'/api/analytics/app/${v.appId}/visitors').then(r => r.json()),
  fetch(API_BASE +'/api/analytics/errors?resolved=false').then(r => r.json()),
  fetch(API_BASE +'/api/analytics/api-usage').then(r => r.json()),
+ fetch(API_BASE +'/api/apps/${v.appId}/members').then(r => r.json()).catch(() => ({ data: [] })),
  ]);
  setStats(statsRes);
  setAnalytics(analyticsRes);
@@ -423,6 +434,7 @@ export function MembersAdminPage() {
  if (apiRes && typeof apiRes ==='object') {
  setApiUsage(apiRes.summary || apiRes);
  }
+ setMembers(Array.isArray(membersRes?.data) ? membersRes.data : Array.isArray(membersRes) ? membersRes : []);
  } catch (err) {
  console.error('Admin fetch error:', err);
  setSnackbar({ open: true, message:'Failed to load some data. Check the backend.', severity:'error' });
@@ -443,6 +455,30 @@ export function MembersAdminPage() {
  }
  };
 
+ const toggleMemberStatus = async (member: AppMember) => {
+ const newStatus = member.status === 'disabled' ? 'active' : 'disabled';
+ try {
+ await fetch(API_BASE + '/api/apps/${v.appId}/members/' + member.id, {
+  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ status: newStatus }),
+ });
+ setMembers(prev => prev.map(m => m.id === member.id ? { ...m, status: newStatus } : m));
+ setSnackbar({ open: true, message: newStatus === 'disabled' ? 'User disabled' : 'User re-enabled', severity: 'success' });
+ } catch { setSnackbar({ open: true, message: 'Failed to update user', severity: 'error' }); }
+ setMemberMenu({ el: null, member: null });
+ };
+
+ const confirmDeleteMember = async () => {
+ if (!deleteDialog.member) return;
+ try {
+ await fetch(API_BASE + '/api/apps/${v.appId}/members/' + deleteDialog.member.id, { method: 'DELETE' });
+ setMembers(prev => prev.filter(m => m.id !== deleteDialog.member!.id));
+ setSnackbar({ open: true, message: 'User removed', severity: 'success' });
+ } catch { setSnackbar({ open: true, message: 'Failed to delete user', severity: 'error' }); }
+ setDeleteDialog({ open: false, member: null });
+ setMemberMenu({ el: null, member: null });
+ };
+
  const severity = (s: string) => {
  const m: Record<string, { color: string; bg: string; icon: React.ReactNode }> = {
  critical: { color:'#d32f2f', bg:'#ffebee', icon: <Error sx={{ fontSize: 14 }} /> },
@@ -450,6 +486,14 @@ export function MembersAdminPage() {
  warning: { color:'#f57f17', bg:'#fffde7', icon: <Warning sx={{ fontSize: 14 }} /> },
  };
  return m[s] || m.warning;
+ };
+
+ const memberStatusChip = (status: string) => {
+ if (status === 'active' || status === 'free') return { label: status === 'free' ? 'Free' : 'Active', color: '#2e7d32', bg: '#e8f5e9' };
+ if (status === 'disabled') return { label: 'Disabled', color: '#d32f2f', bg: '#ffebee' };
+ if (status === 'cancelled') return { label: 'Cancelled', color: '#e65100', bg: '#fff3e0' };
+ if (status === 'past_due') return { label: 'Past Due', color: '#e65100', bg: '#fff3e0' };
+ return { label: status, color: '#6a1b9a', bg: '#f3e5f5' };
  };
 
  if (loading) {
@@ -463,6 +507,8 @@ export function MembersAdminPage() {
  </Box>
  );
  }
+
+ const activeMembers = members.filter(m => m.status !== 'disabled' && m.status !== 'cancelled').length;
 
  return (
  <Box sx={{ p: 3 }}>
@@ -481,8 +527,8 @@ export function MembersAdminPage() {
  {/* KPI cards */}
  <Grid container spacing={2} sx={{ mb: 3 }}>
  {[
- { label:'Page Views', value: analytics?.total_page_views ?? 0, icon: <Visibility />, color:'#1565c0', bg:'#e3f2fd' },
- { label:'Unique Visitors', value: analytics?.unique_visitors ?? 0, icon: <People />, color:'#2e7d32', bg:'#e8f5e9' },
+ { label:'Members', value: members.length, icon: <People />, color:'#1565c0', bg:'#e3f2fd', sub: activeMembers + ' active' },
+ { label:'Page Views', value: analytics?.total_page_views ?? 0, icon: <Visibility />, color:'#2e7d32', bg:'#e8f5e9' },
  { label:'Revenue', value:'$' + (stats?.total_revenue ?? 0).toLocaleString(), icon: <AttachMoney />, color:'#e65100', bg:'#fff3e0' },
  { label:'Subscriptions', value: stats?.active_subscriptions ?? 0, icon: <TrendingUp />, color:'#6a1b9a', bg:'#f3e5f5' },
  ].map((kpi, i) => (
@@ -493,6 +539,7 @@ export function MembersAdminPage() {
  <Box>
  <Typography variant="h5" sx={{ fontWeight: 700 }}>{kpi.value}</Typography>
  <Typography variant="body2" color="text.secondary">{kpi.label}</Typography>
+ {kpi.sub && <Typography variant="caption" color="text.secondary">{kpi.sub}</Typography>}
  </Box>
  </CardContent>
  </Card>
@@ -503,14 +550,75 @@ export function MembersAdminPage() {
  {/* Tabs */}
  <Paper sx={{ borderRadius: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', overflow:'hidden' }}>
  <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom:'1px solid #eee','& .Mui-selected': { color:'${p}' },'& .MuiTabs-indicator': { backgroundColor:'${p}' } }}>
- <Tab label="Visitors" icon={<People sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform:'none', fontWeight: 600 }} />
+ <Tab label={'Users (' + members.length + ')'} icon={<People sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform:'none', fontWeight: 600 }} />
+ <Tab label="Visitors" icon={<Visibility sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform:'none', fontWeight: 600 }} />
  <Tab label="Error Logs" icon={<BugReport sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform:'none', fontWeight: 600 }} />
  <Tab label="API Usage" icon={<Api sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform:'none', fontWeight: 600 }} />
  </Tabs>
 
  <Box sx={{ p: 2 }}>
- {/* Visitors tab */}
+ {/* Users tab */}
  {tab === 0 && (
+ <Box>
+ <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+ <Typography variant="h6" sx={{ fontWeight: 700 }}>Registered Members</Typography>
+ <Chip icon={<GroupAdd />} label={activeMembers + ' active / ' + members.length + ' total'} size="small" sx={{ fontWeight: 600 }} />
+ </Box>
+ {members.length > 0 ? (
+ <Table size="small">
+ <TableHead>
+ <TableRow sx={{ bgcolor:'#fafafa' }}>
+ <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+ <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
+ <TableCell sx={{ fontWeight: 700 }}>Plan</TableCell>
+ <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+ <TableCell sx={{ fontWeight: 700 }}>Signed Up</TableCell>
+ <TableCell sx={{ fontWeight: 700 }} align="center">Actions</TableCell>
+ </TableRow>
+ </TableHead>
+ <TableBody>
+ {members.map((m, i) => {
+ const sc = memberStatusChip(m.status);
+ return (
+ <TableRow key={m.id} sx={{ bgcolor: m.status === 'disabled' ? '#ffebee' : i % 2 === 0 ? '#fff' : '#fafafa' }}>
+ <TableCell>
+ <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+ <Avatar sx={{ width: 28, height: 28, fontSize: 13, bgcolor: '${p}20', color: '${p}' }}>{m.name?.charAt(0)?.toUpperCase() || '?'}</Avatar>
+ <Typography variant="body2" sx={{ fontWeight: 600, opacity: m.status === 'disabled' ? 0.5 : 1, textDecoration: m.status === 'disabled' ? 'line-through' : 'none' }}>{m.name}</Typography>
+ </Box>
+ </TableCell>
+ <TableCell><Typography variant="body2" color="text.secondary">{m.email}</Typography></TableCell>
+ <TableCell><Chip size="small" label={m.plan_name + (m.plan_price > 0 ? ' ($' + m.plan_price + ')' : '')} sx={{ fontWeight: 600, fontSize: 11 }} /></TableCell>
+ <TableCell><Chip size="small" label={sc.label} sx={{ fontWeight: 600, fontSize: 11, bgcolor: sc.bg, color: sc.color }} /></TableCell>
+ <TableCell><Typography variant="body2" color="text.secondary">{m.created_at ? new Date(m.created_at).toLocaleDateString() : '--'}</Typography></TableCell>
+ <TableCell align="center">
+ <IconButton size="small" onClick={e => setMemberMenu({ el: e.currentTarget, member: m })}><MoreVert fontSize="small" /></IconButton>
+ </TableCell>
+ </TableRow>
+ );
+ })}
+ </TableBody>
+ </Table>
+ ) : (
+ <Box sx={{ textAlign: 'center', py: 4 }}>
+ <PersonAdd sx={{ fontSize: 48, color: '#ccc', mb: 1 }} />
+ <Typography color="text.secondary">No registered members yet</Typography>
+ <Typography variant="body2" color="text.secondary">Users who sign up via the register page will appear here</Typography>
+ </Box>
+ )}
+ <Menu anchorEl={memberMenu.el} open={Boolean(memberMenu.el)} onClose={() => setMemberMenu({ el: null, member: null })}>
+ {memberMenu.member?.status === 'disabled' ? (
+ <MenuItem onClick={() => memberMenu.member && toggleMemberStatus(memberMenu.member)}><CheckCircle sx={{ mr: 1, fontSize: 18, color: '#2e7d32' }} /> Re-enable User</MenuItem>
+ ) : (
+ <MenuItem onClick={() => memberMenu.member && toggleMemberStatus(memberMenu.member)}><Block sx={{ mr: 1, fontSize: 18, color: '#e65100' }} /> Disable User</MenuItem>
+ )}
+ <MenuItem onClick={() => { setDeleteDialog({ open: true, member: memberMenu.member }); }} sx={{ color: '#d32f2f' }}><Delete sx={{ mr: 1, fontSize: 18 }} /> Delete User</MenuItem>
+ </Menu>
+ </Box>
+ )}
+
+ {/* Visitors tab */}
+ {tab === 1 && (
  <Table size="small">
  <TableHead>
  <TableRow sx={{ bgcolor:'#fafafa' }}>
@@ -538,7 +646,7 @@ export function MembersAdminPage() {
  )}
 
  {/* Errors tab */}
- {tab === 1 && (
+ {tab === 2 && (
  <Box>
  {errorSummary && (
  <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -587,7 +695,7 @@ export function MembersAdminPage() {
  )}
 
  {/* API Usage tab */}
- {tab === 2 && (
+ {tab === 3 && (
  <Box>
  {apiUsage ? (
  <Grid container spacing={2}>
@@ -613,6 +721,21 @@ export function MembersAdminPage() {
  )}
  </Box>
  </Paper>
+
+ {/* Delete member confirmation dialog */}
+ <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, member: null })}>
+ <DialogTitle sx={{ fontWeight: 700 }}>Delete User</DialogTitle>
+ <DialogContent>
+ <DialogContentText>
+ Are you sure you want to permanently delete <strong>{deleteDialog.member?.name}</strong> ({deleteDialog.member?.email})?
+ This will revoke their access and remove their subscription.
+ </DialogContentText>
+ </DialogContent>
+ <DialogActions>
+ <Button onClick={() => setDeleteDialog({ open: false, member: null })}>Cancel</Button>
+ <Button onClick={confirmDeleteMember} color="error" variant="contained" sx={{ fontWeight: 600 }}>Delete</Button>
+ </DialogActions>
+ </Dialog>
 
  <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar({ ...snackbar, open: false })} anchorOrigin={{ vertical:'bottom', horizontal:'center' }}>
  <Alert severity={snackbar.severity} onClose={() => setSnackbar({ ...snackbar, open: false })}>{snackbar.message}</Alert>

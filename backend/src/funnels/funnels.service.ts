@@ -140,4 +140,55 @@ export class FunnelsService {
     await this.writeDatabase(db);
     return { success: true, data: db.funnels[idx] };
   }
+
+  /** Clone a funnel from one app to another (or the same app) */
+  async cloneFunnel(sourceFunnelId: number, targetAppId: number, newName?: string): Promise<{ success: boolean; data: Funnel }> {
+    const db = await this.readDatabase();
+    if (!db.funnels) db.funnels = [];
+    const source = db.funnels.find(f => f.id === sourceFunnelId);
+    if (!source) throw new NotFoundException(`Source funnel ${sourceFunnelId} not found`);
+
+    const maxId = db.funnels.reduce((max, f) => Math.max(max, f.id), 0);
+    const now = new Date().toISOString();
+
+    // Deep-clone the tiers/steps, generating fresh IDs and removing page links
+    const clonedTiers: FunnelTier[] = source.tiers.map(tier => ({
+      id: `${tier.id}-clone-${Date.now()}`,
+      name: tier.name,
+      color: tier.color,
+      steps: tier.steps.map(step => ({
+        id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        pageType: step.pageType,
+        label: step.label,
+        // pageId is intentionally omitted — pages belong to source app
+        config: step.config ? JSON.parse(JSON.stringify(step.config)) : undefined,
+      })),
+    }));
+
+    const cloned: Funnel = {
+      id: maxId + 1,
+      app_id: targetAppId,
+      name: newName || `${source.name} (clone)`,
+      description: source.description,
+      tiers: clonedTiers,
+      created_at: now,
+      updated_at: now,
+    };
+
+    db.funnels.push(cloned);
+    await this.writeDatabase(db);
+    return { success: true, data: cloned };
+  }
+
+  /** Get all funnels across all apps (for clone picker) */
+  async getAllFunnels(): Promise<{ success: boolean; data: (Funnel & { appName?: string })[] }> {
+    const db = await this.readDatabase();
+    if (!db.funnels) db.funnels = [];
+    const apps = (db as any).apps || [];
+    const result = db.funnels.map(f => {
+      const app = apps.find((a: any) => a.id === f.app_id);
+      return { ...f, appName: app?.name || `App ${f.app_id}` };
+    });
+    return { success: true, data: result };
+  }
 }

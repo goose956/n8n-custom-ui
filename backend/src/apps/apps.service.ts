@@ -119,10 +119,10 @@ export class AppManagementService {
 
  if (!skipDefaults) {
  // Create default pages for the new app
- await this.createDefaultPages(db, newApp.id, newApp.locale);
+ await this.createDefaultPages(db, newApp.id, newApp.locale, dto.free_product);
 
  // Create default plan
- await this.createDefaultPlan(db, newApp.id);
+ await this.createDefaultPlan(db, newApp.id, dto.free_product);
  }
 
  await this.writeDatabase(db);
@@ -190,8 +190,19 @@ export class AppManagementService {
  /**
  * Create default pages for a new app
  */
- private async createDefaultPages(db: SaaSDatabaseSchema, appId: number, locale?: string): Promise<void> {
- const pageTypes: Array<{ type: Page['page_type']; title: string }> = [
+ private async createDefaultPages(db: SaaSDatabaseSchema, appId: number, locale?: string, freeProduct?: boolean): Promise<void> {
+ const pageTypes: Array<{ type: Page['page_type']; title: string }> = freeProduct
+ ? [
+ { type:'index', title:'Home' },
+ { type:'features', title:'Features' },
+ { type:'register', title:'Free Sign Up' },
+ { type:'about', title:'About' },
+ { type:'blog-page', title:'Blog' },
+ { type:'thanks', title:'Thank You' },
+ { type:'login', title:'Log In' },
+ { type:'admin', title:'Admin Dashboard' },
+ ]
+ : [
  { type:'index', title:'Home' },
  { type:'features', title:'Features' },
  { type:'pricing', title:'Pricing' },
@@ -201,6 +212,7 @@ export class AppManagementService {
  { type:'checkout', title:'Upgrade' },
  { type:'login', title:'Log In' },
  { type:'register', title:'Register' },
+ { type:'admin', title:'Admin Dashboard' },
  ];
 
  const maxId = Math.max(0, ...(db.pages?.map(p => p.id) || [0]));
@@ -212,7 +224,7 @@ export class AppManagementService {
  app_id: appId,
  page_type: page.type,
  title: page.title,
- content_json: this.getDefaultContentJson(page.type, page.title, locale),
+ content_json: this.getDefaultContentJson(page.type, page.title, locale, freeProduct, appId),
  custom_css: undefined,
  custom_component_path: undefined,
  created_at: new Date().toISOString(),
@@ -227,7 +239,7 @@ export class AppManagementService {
  /**
  * Get rich default content for a page type
  */
- private getDefaultContentJson(type: string, title: string, locale?: string): Record<string, any> {
+ private getDefaultContentJson(type: string, title: string, locale?: string, freeProduct?: boolean, appId?: number): Record<string, any> {
  const isUK = locale !=='en-US'; // default to UK
  const c = isUK ?'£' :'$'; // currency symbol
  // Localised spelling helpers
@@ -243,17 +255,23 @@ export class AppManagementService {
  const centre = isUK ?'centre' :'center';
  const catalogue = isUK ?'catalogue' :'catalog';
 
+ // Nav links — swap Pricing for Free Sign Up when freeProduct is set
+ const pricingLink = freeProduct
+  ? { label:'Free Sign Up', url:'/register' }
+  : { label:'Pricing', url:'/pricing' };
+ const ctaText = freeProduct ? 'Sign Up Free' : 'Get Started';
+
  switch (type) {
  case'index':
  return {
  page_type:'index',
  nav: { brand:'Acme SaaS', links: [
  { label:'Features', url:'/features' },
- { label:'Pricing', url:'/pricing' },
+ pricingLink,
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
  { label:'Log In', url:'/login' },
- ], cta:'Get Started' },
+ ], cta: ctaText },
  hero: {
  badge:' Now in Public Beta',
  headline:'Build, Ship & Scale Your Dream Product',
@@ -311,10 +329,10 @@ export class AppManagementService {
  page_type:'features',
  nav: { brand:'Acme SaaS', links: [
  { label:'Features', url:'/features' },
- { label:'Pricing', url:'/pricing' },
+ pricingLink,
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
- ], cta:'Get Started' },
+ ], cta: ctaText },
  hero: {
  badge:'✨ Powerful Features',
  headline:'Everything You Need, Nothing You Don\'t',
@@ -370,10 +388,10 @@ export class AppManagementService {
  page_type:'pricing',
  nav: { brand:'Acme SaaS', links: [
  { label:'Features', url:'/features' },
- { label:'Pricing', url:'/pricing' },
+ pricingLink,
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
- ], cta:'Get Started' },
+ ], cta: ctaText },
  hero: {
  headline:'Simple, Transparent Pricing',
  subheading:'No hidden fees, no surprises. Choose the plan that fits your needs and scale as you grow.',
@@ -433,10 +451,10 @@ export class AppManagementService {
  page_type:'about',
  nav: { brand:'Acme SaaS', links: [
  { label:'Features', url:'/features' },
- { label:'Pricing', url:'/pricing' },
+ pricingLink,
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
- ], cta:'Get Started' },
+ ], cta: ctaText },
  hero: {
  headline:'Our Story',
  subheading:'We\'re on a mission to make building software products accessible to everyone -- from indie hackers to enterprise teams.',
@@ -478,10 +496,10 @@ export class AppManagementService {
  page_type:'blog-page',
  nav: { brand:'Acme SaaS', links: [
  { label:'Features', url:'/features' },
- { label:'Pricing', url:'/pricing' },
+ pricingLink,
  { label:'About', url:'/about' },
  { label:'Blog', url:'/blog' },
- ], cta:'Get Started' },
+ ], cta: ctaText },
  hero: {
  headline:'Blog & Resources',
  subheading:'Insights, tutorials, and updates from our team. Publish blog posts to see them here.',
@@ -586,6 +604,12 @@ export class AppManagementService {
  headline:'Create Your Account',
  subheading:'Join thousands of builders and start creating something amazing today.',
  },
+ api: {
+ register_endpoint:`/api/apps/${appId}/members/register`,
+ method:'POST',
+ body_fields: ['first_name','last_name','email','password'],
+ note:'On successful registration, redirect to /login or show a success message. On 409 conflict, show "email already exists".',
+ },
  form: {
  fields: [
  { name:'first_name', label:'First Name', type:'text', placeholder:'John', required: true },
@@ -625,7 +649,7 @@ export class AppManagementService {
  /**
  * Create default plan for a new app
  */
- private async createDefaultPlan(db: SaaSDatabaseSchema, appId: number): Promise<void> {
+ private async createDefaultPlan(db: SaaSDatabaseSchema, appId: number, freeProduct?: boolean): Promise<void> {
  const maxId = Math.max(0, ...(db.plans?.map(p => p.id) || [0]));
 
  const freePlan: Plan = {
@@ -635,11 +659,17 @@ export class AppManagementService {
  price: 0,
  billing_period:'monthly',
  features_json: {
- test_count: 10,
- support:'community',
+ test_count: freeProduct ? 'unlimited' : 10,
+ support: freeProduct ? 'email' : 'community',
  },
  created_at: new Date().toISOString(),
  };
+
+ if (freeProduct) {
+ db.plans = db.plans || [];
+ db.plans.push(freePlan);
+ return;
+ }
 
  const proPlan: Plan = {
  id: maxId + 2,

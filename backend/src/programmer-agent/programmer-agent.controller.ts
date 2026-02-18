@@ -1,6 +1,34 @@
-import { Controller, Post, Get, Body, Query, Res } from'@nestjs/common';
-import { ProgrammerAgentService } from'./programmer-agent.service';
-import { Response } from'express';
+import { Controller, Post, Get, Body, Query, Res, HttpException, HttpStatus } from '@nestjs/common';
+import { ProgrammerAgentService } from './programmer-agent.service';
+import { Response } from 'express';
+
+/**
+ * Simple in-memory rate limiter — no external deps.
+ * Limits AI-heavy endpoints to prevent runaway cost.
+ */
+class RateLimiter {
+  private readonly requests = new Map<string, number[]>();
+
+  /** Returns true if the request should be allowed */
+  check(key: string, maxRequests: number, windowMs: number): boolean {
+    const now = Date.now();
+    const timestamps = this.requests.get(key) || [];
+    const valid = timestamps.filter(t => now - t < windowMs);
+    if (valid.length >= maxRequests) return false;
+    valid.push(now);
+    this.requests.set(key, valid);
+    return true;
+  }
+}
+
+const rateLimiter = new RateLimiter();
+
+// Rate limit settings: max requests per window
+const RATE_LIMITS = {
+  coderChat:   { max: 10, windowMs: 60_000 },   // 10 per minute
+  generate:    { max: 5,  windowMs: 60_000 },    // 5 per minute
+  planMembers: { max: 10, windowMs: 60_000 },    // 10 per minute
+} as const;
 
 @Controller('api/programmer-agent')
 export class ProgrammerAgentController {
@@ -18,6 +46,9 @@ export class ProgrammerAgentController {
  orchestratorModel?: string;
  },
  ) {
+ if (!rateLimiter.check('planMembers', RATE_LIMITS.planMembers.max, RATE_LIMITS.planMembers.windowMs)) {
+   throw new HttpException('Too many requests — please wait before planning again', HttpStatus.TOO_MANY_REQUESTS);
+ }
  return this.agentService.planMembersArea(body.prompt, body.appId, body.orchestratorModel);
  }
 
@@ -38,6 +69,9 @@ export class ProgrammerAgentController {
  pages?: { id: string; name: string; description: string; type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'custom'; required: boolean }[];
  },
  ) {
+ if (!rateLimiter.check('generate', RATE_LIMITS.generate.max, RATE_LIMITS.generate.windowMs)) {
+   throw new HttpException('Too many requests — please wait before generating again', HttpStatus.TOO_MANY_REQUESTS);
+ }
  return this.agentService.generate(body);
  }
 
@@ -340,6 +374,11 @@ export class ProgrammerAgentController {
  },
  @Res() res: Response,
  ) {
+ // Rate limit: prevent rapid-fire expensive AI sessions
+ if (!rateLimiter.check('coderChat', RATE_LIMITS.coderChat.max, RATE_LIMITS.coderChat.windowMs)) {
+   res.status(429).json({ error: 'Too many requests — please wait before sending another message' });
+   return;
+ }
  // Set up SSE headers
  res.setHeader('Content-Type','text/event-stream');
  res.setHeader('Cache-Control','no-cache');
@@ -351,11 +390,17 @@ export class ProgrammerAgentController {
  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
  };
 
+ // Heartbeat: send ping every 15s to prevent proxy/client timeouts
+ const heartbeat = setInterval(() => {
+   try { res.write(`event: ping\ndata: {}\n\n`); } catch { /* connection closed */ }
+ }, 15_000);
+
  try {
  await this.agentService.coderChatStream(body, sendEvent);
  } catch (err) {
  sendEvent('error', { message: err instanceof Error ? err.message :'Unknown error' });
  } finally {
+ clearInterval(heartbeat);
  sendEvent('done', {});
  res.end();
  }
@@ -396,5 +441,57 @@ export class ProgrammerAgentController {
    },
  ) {
    return this.agentService.refineUpsellPage(body);
+ }
+
+ /**
+  * Rollback to a previous git snapshot (undo coder agent changes)
+  */
+ @Post('rollback')
+ async rollback(
+   @Body() body: { commitHash: string },
+ ) {
+   if (!body.commitHash) {
+     return { success: false, error: 'Missing commitHash' };
+   }
+   return this.agentService.rollbackToSnapshot(body.commitHash);
+ }
+
+ /**
+  * Search the codebase with grep
+  */
+ @Post('search-codebase')
+ async searchCodebase(
+   @Body() body: { query: string; include?: string; extensions?: string[] },
+ ) {
+   if (!body.query) {
+     return { success: false, error: 'Missing query' };
+   }
+   const result = this.agentService.searchCodebase(body.query, {
+     includePattern: body.include,
+   });
+   return { success: true, matches: result.matches, count: result.totalMatches };
+ }
+
+ /**
+  * Create a git snapshot manually
+  */
+ @Post('snapshot')
+ async createSnapshot(
+   @Body() body: { label?: string },
+ ) {
+   return this.agentService.createGitSnapshot(body.label);
+ }
+
+ /**
+  * Get diff between a snapshot and current state
+  */
+ @Post('snapshot-diff')
+ async getSnapshotDiff(
+   @Body() body: { commitHash: string },
+ ) {
+   if (!body.commitHash) {
+     return { success: false, error: 'Missing commitHash' };
+   }
+   return this.agentService.getSnapshotDiff(body.commitHash);
  }
 }

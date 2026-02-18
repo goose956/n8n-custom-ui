@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Component } from'react';
-import { API } from'../config/api';
+import { API, API_BASE_URL } from'../config/api';
 import {
  Box,
  Typography,
@@ -562,7 +562,32 @@ function RenderCheckoutPage({ data, primaryColor, appId }: { data: any; primaryC
  );
 }
 
-function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+function RenderAdminPage({ data, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
+ const [members, setMembers] = useState<any[]>([]);
+ const [loadingMembers, setLoadingMembers] = useState(false);
+
+ // Fetch real members from the API
+ useEffect(() => {
+  if (!appId) return;
+  setLoadingMembers(true);
+  fetch(`${API.apps}/${appId}/members`)
+   .then(r => r.json())
+   .then(json => {
+    const list = json.data || json || [];
+    setMembers(Array.isArray(list) ? list : []);
+   })
+   .catch(() => setMembers([]))
+   .finally(() => setLoadingMembers(false));
+ }, [appId]);
+
+ // Build live KPIs from real member data (override static ones when we have real data)
+ const liveKpis = members.length > 0 ? [
+  { label: 'Total Members', value: String(members.length), change: `+${members.filter((m: any) => { const d = new Date(m.created_at); const week = Date.now() - 7*24*60*60*1000; return d.getTime() > week; }).length} this week`, up: true },
+  { label: 'Active', value: String(members.filter((m: any) => m.status === 'active' || m.status === 'free').length), change: '', up: true },
+  { label: 'Paid', value: String(members.filter((m: any) => m.plan_price > 0).length), change: '', up: true },
+  { label: 'MRR', value: `$${members.reduce((sum: number, m: any) => sum + (m.plan_price || 0), 0).toFixed(0)}`, change: '', up: true },
+ ] : data.kpis;
+
  return (
  <Box sx={{ px: 3, py: 3 }}>
  {/* Dashboard Title */}
@@ -571,12 +596,13 @@ function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: stri
  )}
 
  {/* KPIs */}
- {Array.isArray(data.kpis) && (
- <Box sx={{ display:'grid', gridTemplateColumns:`repeat(${data.kpis.length}, 1fr)`, gap: 2, mb: 3 }}>
- {data.kpis.map((kpi: any, i: number) => (
+ {Array.isArray(liveKpis) && (
+ <Box sx={{ display:'grid', gridTemplateColumns:`repeat(${liveKpis.length}, 1fr)`, gap: 2, mb: 3 }}>
+ {liveKpis.map((kpi: any, i: number) => (
  <Paper key={i} elevation={0} sx={{ p: 2.5, border:'1px solid #eee', borderRadius: 3 }}>
  <Typography variant="caption" sx={{ color:'#999', fontWeight: 600, textTransform:'uppercase', letterSpacing:'0.04em' }}>{kpi.label}</Typography>
  <Typography sx={{ fontSize:'1.6rem', fontWeight: 800, color:'#1a1a2e', my: 0.5 }}>{kpi.value}</Typography>
+ {kpi.change && (
  <Chip
  label={kpi.change}
  size="small"
@@ -586,6 +612,7 @@ function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: stri
  color: kpi.up ?'#2e7d32' :'#d32f2f',
  }}
  />
+ )}
  </Paper>
  ))}
  </Box>
@@ -625,30 +652,53 @@ function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: stri
  </Paper>
  )}
 
- <Box sx={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 2 }}>
- {/* Recent Users */}
- {Array.isArray(data.recent_users) && (
- <Paper elevation={0} sx={{ p: 2.5, border:'1px solid #eee', borderRadius: 3 }}>
- <Typography sx={{ fontWeight: 700, mb: 2, fontSize:'0.95rem' }}>Recent Users</Typography>
- {data.recent_users.map((u: any, i: number) => (
- <Box key={i} sx={{ display:'flex', justifyContent:'space-between', alignItems:'center', py: 1, borderBottom:'1px solid #f5f5f5','&:last-child': { borderBottom:'none' } }}>
- <Box>
- <Typography sx={{ fontWeight: 600, fontSize:'0.85rem', color:'#1a1a2e' }}>{u.name}</Typography>
- <Typography variant="caption" sx={{ color:'#bbb' }}>{u.email}</Typography>
+ {/* Registered Members — full-width table */}
+ <Paper elevation={0} sx={{ p: 2.5, border:'1px solid #eee', borderRadius: 3, mb: 3 }}>
+ <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+  <Typography sx={{ fontWeight: 700, fontSize:'0.95rem' }}>
+   Registered Members {members.length > 0 && <Chip label={members.length} size="small" sx={{ ml: 1, height: 20, fontSize: '0.7rem', fontWeight: 700, bgcolor: `${primaryColor}15`, color: primaryColor }} />}
+  </Typography>
+  {loadingMembers && <CircularProgress size={16} />}
  </Box>
- <Box sx={{ textAlign:'right' }}>
- <Chip label={u.plan} size="small" sx={{ height: 20, fontSize:'0.65rem', fontWeight: 600, mb: 0.25 }} />
- <Typography variant="caption" sx={{ display:'block', color: u.status ==='Active' ?'#2e7d32' : u.status ==='Trial' ?'#ed6c02' :'#d32f2f', fontWeight: 600 }}>
- {u.status} - {u.mrr}
- </Typography>
- </Box>
- </Box>
- ))}
- </Paper>
+ {!appId && (
+  <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>No app selected — cannot load members</Typography>
  )}
+ {appId && !loadingMembers && members.length === 0 && (
+  <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>No members registered yet. Use the Register page to add members.</Typography>
+ )}
+ {members.length > 0 && (
+  <Box sx={{ overflowX: 'auto' }}>
+   {/* Table header */}
+   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 0.8fr 0.8fr', gap: 1, px: 1, py: 1, bgcolor: '#f8f9fa', borderRadius: 1.5, mb: 0.5 }}>
+    <Typography variant="caption" sx={{ fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>Name</Typography>
+    <Typography variant="caption" sx={{ fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>Email</Typography>
+    <Typography variant="caption" sx={{ fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>Membership</Typography>
+    <Typography variant="caption" sx={{ fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}>Joined</Typography>
+   </Box>
+   {/* Table rows */}
+   {members.map((m: any, i: number) => {
+    const tierName = (m.plan_name || 'Free').toLowerCase();
+    const tierColor = tierName.includes('gold') || tierName.includes('enterprise') ? '#f59e0b'
+     : tierName.includes('pro') || tierName.includes('professional') ? primaryColor
+     : '#6b7280';
+    const tierBg = tierName.includes('gold') || tierName.includes('enterprise') ? '#fef3c7'
+     : tierName.includes('pro') || tierName.includes('professional') ? `${primaryColor}15`
+     : '#f3f4f6';
+    const joined = m.created_at ? new Date(m.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+    return (
+     <Box key={m.id || i} sx={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 0.8fr 0.8fr', gap: 1, px: 1, py: 1.25, alignItems: 'center', borderBottom: '1px solid #f5f5f5', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: '#fafafa' } }}>
+      <Typography sx={{ fontWeight: 600, fontSize: '0.85rem', color: '#1a1a2e' }}>{m.name}</Typography>
+      <Typography sx={{ fontSize: '0.82rem', color: '#888' }}>{m.email}</Typography>
+      <Chip label={m.plan_name || 'Free'} size="small" sx={{ height: 22, fontSize: '0.7rem', fontWeight: 700, bgcolor: tierBg, color: tierColor, width: 'fit-content' }} />
+      <Typography sx={{ fontSize: '0.8rem', color: '#999' }}>{joined}</Typography>
+     </Box>
+    );
+   })}
+  </Box>
+ )}
+ </Paper>
 
- {/* Right column */}
- <Box sx={{ display:'flex', flexDirection:'column', gap: 2 }}>
+ <Box sx={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 2 }}>
  {/* System Health */}
  {Array.isArray(data.system_health) && (
  <Paper elevation={0} sx={{ p: 2.5, border:'1px solid #eee', borderRadius: 3 }}>
@@ -681,12 +731,15 @@ function RenderAdminPage({ data, primaryColor }: { data: any; primaryColor: stri
  )}
  </Box>
  </Box>
- </Box>
  );
 }
 
 // --- Pricing Page -----------------------------------------------------------
-function RenderPricingPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+function RenderPricingPage({ data, primaryColor, onNavigate }: { data: any; primaryColor: string; onNavigate?: (pageType: string, plan?: any) => void }) {
+ const isFree = (plan: any) => {
+  const p = (plan.price_monthly || plan.price || '').toString().toLowerCase();
+  return p === '£0' || p === '$0' || p === '€0' || p === '0' || p === 'free' || p.includes('free');
+ };
  return (
  <Box sx={{ px: 3, py: 3 }}>
  {/* Hero */}
@@ -737,8 +790,20 @@ function RenderPricingPage({ data, primaryColor }: { data: any; primaryColor: st
  </Box>
  ))}
  </Box>
- <Button variant={plan.popular ?'contained' :'outlined'} fullWidth sx={{ fontWeight: 700, borderRadius: 2, textTransform:'none', ...(plan.popular ? { background:`linear-gradient(135deg, ${primaryColor}, #764ba2)` } : { borderColor:'#ddd', color:'#555' }) }}>
- {plan.cta}
+ <Button variant={plan.popular ?'contained' :'outlined'} fullWidth
+ onClick={() => {
+  if (onNavigate) {
+   if (isFree(plan)) {
+    onNavigate('register', plan);
+   } else if ((plan.cta || '').toLowerCase().includes('contact')) {
+    // "Contact Sales" — no navigation
+   } else {
+    onNavigate('checkout', plan);
+   }
+  }
+ }}
+ sx={{ fontWeight: 700, borderRadius: 2, textTransform:'none', cursor: 'pointer', ...(plan.popular ? { background:`linear-gradient(135deg, ${primaryColor}, #764ba2)` } : { borderColor:'#ddd', color:'#555' }) }}>
+ {isFree(plan) ? 'Get Started Free' : plan.cta}
  </Button>
  </Paper>
  </Grid>
@@ -1593,8 +1658,65 @@ function RenderLoginPage({ data, primaryColor }: { data: any; primaryColor: stri
  );
 }
 
-function RenderRegisterPage({ data, primaryColor }: { data: any; primaryColor: string }) {
+function RenderRegisterPage({ data, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
  const gradient = `linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`;
+ const [formValues, setFormValues] = useState<Record<string, string>>({});
+ const [submitting, setSubmitting] = useState(false);
+ const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+
+ // Build the register endpoint — prefer appId prop, fall back to content_json api block
+ const registerUrl = (() => {
+  if (appId) return `${API.apps}/${appId}/members/register`;
+  // Fall back to the api.register_endpoint stored in the page's content_json
+  if (data.api?.register_endpoint) {
+   const ep = data.api.register_endpoint as string;
+   // If it's a relative path, prepend the API base
+   if (ep.startsWith('/')) return `${API_BASE_URL}${ep}`;
+   return ep;
+  }
+  return null;
+ })();
+
+ const handleChange = (fieldName: string, value: string) => {
+  setFormValues(prev => ({ ...prev, [fieldName]: value }));
+ };
+
+ const handleSubmit = async () => {
+  if (submitting) return;
+  // Basic validation
+  const email = formValues['email'] || '';
+  const password = formValues['password'] || '';
+  if (!email) { setResult({ success: false, message: 'Email is required' }); return; }
+  if (!password) { setResult({ success: false, message: 'Password is required' }); return; }
+  if (!registerUrl) { setResult({ success: false, message: 'No app selected — cannot register. Missing appId and api.register_endpoint.' }); return; }
+
+  setSubmitting(true);
+  setResult(null);
+  try {
+   const res = await fetch(registerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+     first_name: formValues['first_name'] || formValues['name'] || '',
+     last_name: formValues['last_name'] || '',
+     email,
+     password,
+    }),
+   });
+   const json = await res.json();
+   if (json.success) {
+    setResult({ success: true, message: `Welcome ${json.data?.name || ''}! Account created successfully.` });
+    setFormValues({});
+   } else {
+    setResult({ success: false, message: json.message || 'Registration failed' });
+   }
+  } catch (err: any) {
+   setResult({ success: false, message: err?.message || 'Network error' });
+  } finally {
+   setSubmitting(false);
+  }
+ };
+
  return (
  <Box sx={{ minHeight: '100vh', display: 'flex' }}>
   {/* Left side — benefits */}
@@ -1625,13 +1747,27 @@ function RenderRegisterPage({ data, primaryColor }: { data: any; primaryColor: s
    <Paper elevation={0} sx={{ p: 5, borderRadius: 4, border: '1px solid #eee', width: '100%', maxWidth: 440 }}>
     <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5, color: '#1a1a2e' }}>Create Account</Typography>
     <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Fill in your details to get started</Typography>
+    {result && (
+     <Alert severity={result.success ? 'success' : 'error'} sx={{ mb: 2, borderRadius: 2 }} onClose={() => setResult(null)}>
+      {result.message}
+     </Alert>
+    )}
     <Box sx={{ display: 'grid', gridTemplateColumns: data.form?.fields?.some((f: any) => f.name === 'first_name') ? '1fr 1fr' : '1fr', gap: 2 }}>
      {data.form?.fields?.map((f: any, i: number) => {
       const isHalf = f.name === 'first_name' || f.name === 'last_name';
       return (
        <Box key={i} sx={{ gridColumn: isHalf ? 'auto' : '1 / -1', mb: 0.5 }}>
-        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#555' }}>{f.label}</Typography>
-        <Box sx={{ border: '1px solid #ddd', borderRadius: 2, px: 1.5, py: 1, bgcolor: '#fff', fontSize: '0.9rem', color: '#bbb' }}>{f.placeholder}</Box>
+        <TextField
+         fullWidth
+         size="small"
+         label={f.label}
+         placeholder={f.placeholder}
+         type={f.name === 'password' ? 'password' : f.name === 'email' ? 'email' : 'text'}
+         value={formValues[f.name] || ''}
+         onChange={(e) => handleChange(f.name, e.target.value)}
+         disabled={submitting || result?.success === true}
+         sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#fff' } }}
+        />
        </Box>
       );
      })}
@@ -1642,8 +1778,14 @@ function RenderRegisterPage({ data, primaryColor }: { data: any; primaryColor: s
       <Typography component="span" sx={{ color: primaryColor, fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>{data.form.terms.link_text}</Typography>
      </Typography>
     )}
-    <Button fullWidth variant="contained" sx={{ background: gradient, fontWeight: 700, py: 1.2, borderRadius: 2, fontSize: '0.95rem', mt: 2.5, mb: 2 }}>
-     {data.form?.submit_text || 'Create Account'}
+    <Button
+     fullWidth
+     variant="contained"
+     onClick={handleSubmit}
+     disabled={submitting || result?.success === true}
+     sx={{ background: gradient, fontWeight: 700, py: 1.2, borderRadius: 2, fontSize: '0.95rem', mt: 2.5, mb: 2 }}
+    >
+     {submitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : result?.success ? '✅ Registered!' : (data.form?.submit_text || 'Create Account')}
     </Button>
     {data.social_login && (
      <Box sx={{ mt: 1 }}>
@@ -1668,7 +1810,7 @@ function RenderRegisterPage({ data, primaryColor }: { data: any; primaryColor: s
 }
 
 // Route the page type to the correct renderer
-function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primaryColor: string; appId?: number }) {
+function RenderPage({ data: rawData, primaryColor, appId, onNavigate }: { data: any; primaryColor: string; appId?: number; onNavigate?: (pageType: string, plan?: any) => void }) {
  // Resolve AI styled-text objects (e.g. {text:"...", color:"orange"}) into <span> elements
  const data = resolveStyledText(rawData);
  const pageType = rawData.page_type;
@@ -1677,15 +1819,15 @@ function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primary
  case'thanks': return <RenderThanksPage data={data} primaryColor={primaryColor} />;
  case'members': return <RenderMembersPage data={data} primaryColor={primaryColor} />;
  case'checkout': return <RenderCheckoutPage data={data} primaryColor={primaryColor} appId={appId} />;
- case'admin': return <RenderAdminPage data={data} primaryColor={primaryColor} />;
- case'pricing': return <RenderPricingPage data={data} primaryColor={primaryColor} />;
+ case'admin': return <RenderAdminPage data={data} primaryColor={primaryColor} appId={appId} />;
+ case'pricing': return <RenderPricingPage data={data} primaryColor={primaryColor} onNavigate={onNavigate} />;
  case'about': return <RenderAboutPage data={data} primaryColor={primaryColor} />;
  case'features': return <RenderFeaturesPage data={data} primaryColor={primaryColor} />;
  case'blog-page': return <RenderBlogPage data={data} primaryColor={primaryColor} />;
  case'faq': return <RenderFaqPage data={data} primaryColor={primaryColor} />;
  case'contact': return <RenderContactPage data={data} primaryColor={primaryColor} />;
  case'login': return <RenderLoginPage data={data} primaryColor={primaryColor} />;
- case'register': return <RenderRegisterPage data={data} primaryColor={primaryColor} />;
+ case'register': return <RenderRegisterPage data={data} primaryColor={primaryColor} appId={appId} />;
  case'tool': return <RenderToolPage data={data} primaryColor={primaryColor} />;
  default:
  // Try to auto-detect
@@ -1693,16 +1835,16 @@ function RenderPage({ data: rawData, primaryColor, appId }: { data: any; primary
  if (data.features_section || data.nav) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
  if (data.order_confirmation || data.next_steps) return <RenderThanksPage data={data} primaryColor={primaryColor} />;
  if (data.welcome || data.courses) return <RenderMembersPage data={data} primaryColor={primaryColor} />;
- if (data.billing_toggle || data.comparison) return <RenderPricingPage data={data} primaryColor={primaryColor} />;
+ if (data.billing_toggle || data.comparison) return <RenderPricingPage data={data} primaryColor={primaryColor} onNavigate={onNavigate} />;
  if (data.plans || data.payment_form) return <RenderCheckoutPage data={data} primaryColor={primaryColor} appId={appId} />;
- if (data.kpis || data.revenue_chart) return <RenderAdminPage data={data} primaryColor={primaryColor} />;
+ if (data.kpis || data.revenue_chart) return <RenderAdminPage data={data} primaryColor={primaryColor} appId={appId} />;
  if (data.values || data.team || data.timeline) return <RenderAboutPage data={data} primaryColor={primaryColor} />;
  if (data.feature_categories) return <RenderFeaturesPage data={data} primaryColor={primaryColor} />;
  if (data.featured_post || data.posts) return <RenderBlogPage data={data} primaryColor={primaryColor} />;
  if (data.categories && data.support_cta) return <RenderFaqPage data={data} primaryColor={primaryColor} />;
  if (data.form && data.contact_info) return <RenderContactPage data={data} primaryColor={primaryColor} />;
  if (data.form?.fields && data.register_cta) return <RenderLoginPage data={data} primaryColor={primaryColor} />;
- if (data.form?.fields && data.login_cta) return <RenderRegisterPage data={data} primaryColor={primaryColor} />;
+ if (data.form?.fields && data.login_cta) return <RenderRegisterPage data={data} primaryColor={primaryColor} appId={appId} />;
  // Handle legacy renderer keys
  if (data.hero || data.sections || data.pricing) return <RenderIndexPage data={data} primaryColor={primaryColor} />;
  return <RenderGenericPage data={data} />;
@@ -1802,6 +1944,12 @@ export function AppPreviewPage() {
  };
 
  const primaryColor = selectedApp?.primary_color ||'#667eea';
+
+ // Handle pricing CTA navigation — free plans go to register, paid plans to checkout
+ const handlePricingNavigate = useCallback((pageType: string, _plan?: any) => {
+  const target = pages.find(p => p.page_type === pageType);
+  if (target) navigateTo(target);
+ }, [pages]);
 
  // --- No app selected ------------------------------------------------------
  if (!selectedApp) {
@@ -1964,7 +2112,7 @@ export function AppPreviewPage() {
  </Box>
  {/* Rendered page */}
  <PreviewErrorBoundary>
- <RenderPage data={page.content_json as any} primaryColor={primaryColor} appId={selectedApp?.id} />
+ <RenderPage data={page.content_json as any} primaryColor={primaryColor} appId={selectedApp?.id} onNavigate={handlePricingNavigate} />
  </PreviewErrorBoundary>
  </Box>
  ))}
@@ -1983,7 +2131,7 @@ export function AppPreviewPage() {
  )
  ) : activePage?.content_json ? (
  <PreviewErrorBoundary>
- <RenderPage data={activePage.content_json} primaryColor={primaryColor} appId={selectedApp?.id} />
+ <RenderPage data={activePage.content_json} primaryColor={primaryColor} appId={selectedApp?.id} onNavigate={handlePricingNavigate} />
  </PreviewErrorBoundary>
  ) : (
  <Box sx={{ display:'flex', justifyContent:'center', alignItems:'center', height:'100%', flexDirection:'column' }}>

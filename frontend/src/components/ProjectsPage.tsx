@@ -21,6 +21,8 @@ import {
  Tooltip,
  ToggleButtonGroup,
  ToggleButton,
+ Checkbox,
+ FormControlLabel,
 } from'@mui/material';
 import {
  Add as AddIcon,
@@ -50,6 +52,7 @@ interface CreateAppDto {
  description?: string;
  primary_color?: string;
  locale?:'en-GB' |'en-US';
+ free_product?: boolean;
 }
 
 export function ProjectsPage() {
@@ -71,6 +74,7 @@ export function ProjectsPage() {
  description:'',
  primary_color:'#1976d2',
  locale:'en-GB',
+ free_product: false,
  });
  const [formLoading, setFormLoading] = useState(false);
  const [aiGenerating, setAiGenerating] = useState(false);
@@ -116,6 +120,7 @@ export function ProjectsPage() {
  description:'',
  primary_color:'#1976d2',
  locale:'en-GB',
+ free_product: false,
  });
  }
  setOpenDialog(true);
@@ -130,6 +135,7 @@ export function ProjectsPage() {
  description:'',
  primary_color:'#1976d2',
  locale:'en-GB',
+ free_product: false,
  });
  setExtraQuestions({ targetAudience:'', keyProblem:'', uniqueValue:'' });
  setShowExtraQuestions(false);
@@ -427,6 +433,34 @@ export function ProjectsPage() {
  Affects currency (£/\$) and spellings in generated pages
  </Typography>
  </Box>
+ {!editingApp && (
+ <Box sx={{
+  bgcolor: formData.free_product ? '#e8f5e9' : '#fafbfc',
+  border: formData.free_product ? '1.5px solid #27ae60' : '1.5px solid rgba(0,0,0,0.08)',
+  borderRadius: 2, px: 2, py: 1, transition: 'all 0.2s',
+ }}>
+ <FormControlLabel
+  control={
+   <Checkbox
+    checked={!!formData.free_product}
+    onChange={(e) => setFormData({ ...formData, free_product: e.target.checked })}
+    sx={{ color: '#27ae60', '&.Mui-checked': { color: '#27ae60' } }}
+   />
+  }
+  label={
+   <Box>
+    <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', color: formData.free_product ? '#1b5e20' : '#333' }}>
+     Free Product
+    </Typography>
+    <Typography sx={{ fontSize: '0.75rem', color: '#888', lineHeight: 1.3 }}>
+     No pricing page — replaces "Pricing" with "Free Sign Up" in navigation.
+     Perfect for free tools with optional upsell funnels.
+    </Typography>
+   </Box>
+  }
+ />
+ </Box>
+ )}
  <TextField
  label="Description"
  fullWidth

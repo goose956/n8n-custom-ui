@@ -319,6 +319,14 @@ export function ProgrammerAgentPage() {
  // Retry state
  const [retryingSteps, setRetryingSteps] = useState<string[]>([]);
 
+  // Test results state
+  const [testResults, setTestResults] = useState<{
+    passed: number; warnings: number; failures: number;
+    results: Array<{ id: string; category: string; severity: 'pass' | 'warn' | 'fail'; title: string; detail: string; file?: string; line?: number }>;
+    summary: string;
+  } | null>(null);
+  const [showTestResults, setShowTestResults] = useState(false);
+
  const promptRef = useRef<HTMLTextAreaElement>(null);
  const coderChatEndRef = useRef<HTMLDivElement>(null);
 
@@ -505,6 +513,8 @@ export function ProgrammerAgentPage() {
  }
 
  setGenerating(true);
+  setTestResults(null);
+  setShowTestResults(false);
  setPhase('generating');
  setFiles([]);
  setPlan([]);
@@ -873,7 +883,19 @@ export function ProgrammerAgentPage() {
  finalData = eventData;
  break;
  }
- case'error': {
+ case'ping': {
+ // Heartbeat from server
+ break;
+ }
+ case'test_results': {
+  setTestResults(eventData);
+  const p = eventData.passed || 0;
+  const w = eventData.warnings || 0;
+  const f = eventData.failures || 0;
+  appendWorkingLine(`\nTest Results: ${p} passed, ${w} warnings, ${f} failures`);
+  break;
+  }
+  case'error': {
  appendWorkingLine(`\nŒ ${eventData.message}`);
  break;
  }
@@ -884,6 +906,9 @@ export function ProgrammerAgentPage() {
  }
  }
  }
+
+ if (inactivityTimer) clearTimeout(inactivityTimer);
+ coderAbortRef.current = null;
 
  // Process the final result data
  if (finalData) {
@@ -936,17 +961,29 @@ export function ProgrammerAgentPage() {
  }
 
  // Add final summary as a separate message
- if (finalData.response) {
- setCoderMessages(prev => [...prev, {
- id:`summary-${Date.now()}`,
- role:'assistant',
- content: finalData.success ? finalData.response :` ï¸ ${finalData.response}`,
- }]);
- }
+   if (finalData.response) {
+     const tokenFooter = finalData.tokensUsed
+       ? `\n\n---\n*${finalData.tokensUsed.toLocaleString()} tokens${finalData.estimatedCost ? ` · ~$${finalData.estimatedCost.toFixed(4)}` : ''}${finalData.durationMs ? ` · ${(finalData.durationMs / 1000).toFixed(1)}s` : ''}*`
+       : '';
+     setCoderMessages(prev => [...prev, {
+       id:`summary-${Date.now()}`,
+       role:'assistant',
+       content: (finalData.success ? finalData.response : ` ï¸ ${finalData.response}`) + tokenFooter,
+     }]);
+   }
  }
  }
  } catch (err) {
  console.error('Chat send error:', err);
+ if (err instanceof DOMException && err.name === 'AbortError') {
+ setChatMessages(prev => [...prev, {
+ id: (Date.now() + 1).toString(),
+ role:'assistant',
+ content:'Cancelled by user.',
+ }]);
+ coderAbortRef.current = null;
+ return;
+ }
  setChatMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
@@ -2363,7 +2400,74 @@ export function ProgrammerAgentPage() {
  {/* *** DESIGN CHAT *** */}
  {chatMode ==='design' && (
  <>
- <Box sx={{
+ {/* Test Results panel */}
+  {testResults && (
+  <Box sx={{ px: 2, py: 1.5, borderBottom:'1px solid #c8e6c9' }}>
+  <Box
+  sx={{ display:'flex', alignItems:'center', gap: 1, cursor:'pointer', userSelect:'none' }}
+  onClick={() => setShowTestResults(!showTestResults)}
+  >
+  <Typography variant="caption" sx={{ fontWeight: 700, color:'#2e7d32', fontSize:'0.78rem' }}>
+  Test Results
+  </Typography>
+  <Chip label={`${testResults.passed} passed`} size="small"
+  sx={{ bgcolor:'#e8f5e9', color:'#2e7d32', fontWeight: 600, fontSize:'0.7rem', height: 20 }} />
+  {testResults.warnings > 0 && (
+  <Chip label={`${testResults.warnings} warn`} size="small"
+  sx={{ bgcolor:'#fff3e0', color:'#e65100', fontWeight: 600, fontSize:'0.7rem', height: 20 }} />
+  )}
+  {testResults.failures > 0 && (
+  <Chip label={`${testResults.failures} fail`} size="small"
+  sx={{ bgcolor:'#ffebee', color:'#c62828', fontWeight: 600, fontSize:'0.7rem', height: 20 }} />
+  )}
+  <Box sx={{ flex: 1 }} />
+  <IconButton size="small" sx={{ p: 0.3 }}>
+  {showTestResults ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
+  </IconButton>
+  </Box>
+  <Collapse in={showTestResults}>
+  <Box sx={{ mt: 1, maxHeight: 300, overflow:'auto' }}>
+  {testResults.results.map((tr: any, idx: number) => (
+  <Box key={tr.id || idx} sx={{
+  display:'flex', alignItems:'flex-start', gap: 1, py: 0.5, px: 1,
+  borderBottom:'1px solid #f0f0f0', fontSize:'0.78rem',
+  bgcolor: tr.severity ==='fail' ?'#fff5f5' : tr.severity ==='warn' ?'#fffaf0' :'transparent',
+  }}>
+  <Typography sx={{
+  fontSize:'0.75rem', fontWeight: 700, minWidth: 36, textAlign:'center',
+  color: tr.severity ==='pass' ?'#2e7d32' : tr.severity ==='warn' ?'#e65100' :'#c62828',
+  bgcolor: tr.severity ==='pass' ?'#e8f5e9' : tr.severity ==='warn' ?'#fff3e0' :'#ffebee',
+  borderRadius: 1, px: 0.5, py: 0.2, lineHeight: 1.4,
+  }}>
+  {tr.severity ==='pass' ?'PASS' : tr.severity ==='warn' ?'WARN' :'FAIL'}
+  </Typography>
+  <Box sx={{ flex: 1, minWidth: 0 }}>
+  <Typography sx={{ fontSize:'0.78rem', fontWeight: 600, color:'#333' }}>
+  {tr.title}
+  </Typography>
+  <Typography sx={{ fontSize:'0.72rem', color:'#666', mt: 0.2 }}>
+  {tr.detail}
+  </Typography>
+  {tr.file && (
+  <Typography sx={{ fontSize:'0.68rem', color:'#999', mt: 0.2, fontFamily:'monospace' }}>
+  {tr.file}{tr.line ? `:${tr.line}` :''}
+  </Typography>
+  )}
+  </Box>
+  <Chip label={tr.category} size="small" variant="outlined"
+  sx={{ fontSize:'0.65rem', height: 18, borderColor:'#ddd', color:'#888' }} />
+  </Box>
+  ))}
+  {testResults.summary && (
+  <Typography sx={{ fontSize:'0.72rem', color:'#555', mt: 1, fontStyle:'italic', px: 1 }}>
+  {testResults.summary}
+  </Typography>
+  )}
+  </Box>
+  </Collapse>
+  </Box>
+  )}
+  <Box sx={{
  flex: 1, overflow:'auto', px: 2, py: 1.5, display:'flex', flexDirection:'column', gap: 1.5,
 '&::-webkit-scrollbar': { width: 6 },'&::-webkit-scrollbar-thumb': { bgcolor:'#ccc', borderRadius: 3 },
  }}>
