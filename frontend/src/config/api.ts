@@ -24,4 +24,6 @@ export const API = {
  stripe:`${API_BASE_URL}/api/stripe`,
  preview:`${API_BASE_URL}/api/preview`,
  linkedinScraper: `${API_BASE_URL}/api/linkedin-scraper`,
+ linkedinProfileScraper: `${API_BASE_URL}/api/linkedin-profile-scraper`,
+ linkedin: `${API_BASE_URL}/api/linkedin`,
 } as const;
