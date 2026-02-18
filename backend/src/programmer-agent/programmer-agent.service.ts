@@ -1372,8 +1372,8 @@ OUTPUT FORMAT:
  /** Create a git snapshot before the agent starts making changes */
  createGitSnapshot(label?: string) { return this.gitOps.createSnapshot(label); }
 
- /** Rollback to a previous git snapshot */
- rollbackToSnapshot(commitHash: string) { return this.gitOps.rollback(commitHash); }
+ /** Rollback to a previous git snapshot -- only reverts agent-touched files, not the whole project */
+ rollbackToSnapshot(commitHash: string, touchedFiles?: string[]) { return this.gitOps.rollback(commitHash, touchedFiles); }
 
  /** Get the diff between current state and a snapshot */
  getSnapshotDiff(commitHash: string) { return this.gitOps.getDiff(commitHash); }
@@ -2955,22 +2955,37 @@ ${appTsxContent?.slice(0, 3000) ||'(not found)'}
 
  const plannerPrompt =`You are an elite autonomous coding agent that can FULLY complete ANY programming task. You have access to the filesystem, npm, shell commands, and can write, compile, and verify code end-to-end.
 
+## CORE WORKFLOW (Cline-inspired -- follow this EXACT methodology):
+1. **ANALYZE** -- Break the task into clear, sequential steps. Think about what files need to change and what information you need first.
+2. **SEARCH** -- ALWAYS search the codebase or read files BEFORE modifying them. Never assume you know what a file contains. Use search_codebase to find patterns, then read_file to examine the full file.
+3. **IMPLEMENT** -- Make changes one file at a time. For new files use generate_component. For existing files use modify_file with the EXACT current content as context.
+4. **VERIFY** -- After making changes, the system auto-runs build verification. You don't need to add build/lint steps.
+
+## CRITICAL RULES (non-negotiable):
+- **NEVER modify a file you haven't read.** Always include a read_file or search_codebase step BEFORE any modify_file step. This prevents hallucinating file contents.
+- **Search before assuming.** When you need to find where something is defined, imported, or used, use search_codebase first. Don't guess file paths or code structure.
+- **One concern per step.** Each step should do ONE thing. Don't combine searching + modifying in one step.
+- **Use tools to find info, don't ask the user.** If you're unsure about file structure, imports, or existing code, use search_codebase/read_file/list_directory to find out.
+- **Be direct and technical.** No conversational filler. State what you'll do and do it.
+
 ## Available Actions:
 1. **chat** -- Just answer a question / give advice (no file changes)
 2. **search_web** -- Search the web for documentation, API references, solutions
 3. **search_codebase** -- Search the local codebase for a pattern (like grep). Specify "searchQuery". Use this to find existing code, imports, usages, etc. BEFORE modifying files.
-4. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
-5. **modify_file** -- Modify an existing file (you MUST specify a "targetFile")
-6. **modify_files** -- Modify MULTIPLE existing files in a single coordinated step. Specify "targetFiles" (array of file paths) when changes across files must be synchronized (e.g. adding a route + component + type).
-7. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
-8. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
-9. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
-10. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
-11. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile".
-12. **list_directory** -- List files in a directory. Specify "targetDir".
-13. **clarify** -- Ask the user a clarifying question BEFORE building. Only use when the request is genuinely ambiguous and you cannot infer the best approach. Specify "question" with the clarification question.
+4. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile". ALWAYS do this before modify_file if you haven't already read the file via search_codebase.
+5. **list_directory** -- List files in a directory. Specify "targetDir". Use when you need to discover what files exist.
+6. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
+7. **modify_file** -- Modify an existing file (you MUST specify a "targetFile"). REQUIRES a prior read_file or search_codebase step for the same file.
+8. **modify_files** -- Modify MULTIPLE existing files in a single coordinated step. Specify "targetFiles" (array of file paths) when changes across files must be synchronized (e.g. adding a route + component + type).
+9. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
+10. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
+11. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
+12. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
+13. **delete_file** -- Delete a file from disk. Specify "targetFile". The system will confirm with the user before deleting.
+14. **clarify** -- Ask the user a clarifying question BEFORE building. Only use when the request is genuinely ambiguous and you cannot infer the best approach. Specify "question" with the clarification question.
 
 ## You ALWAYS:
+- Search/read files BEFORE modifying them -- NEVER assume file contents
 - Install any npm packages your code needs (xlsx, apify-client, chart.js, etc.)
 - Write files directly to disk, not just hold them in memory
 - Auto-register new NestJS modules in app.module.ts
@@ -3148,18 +3163,62 @@ ALWAYS include your full plan in "steps" even if confidence is low. The system w
 
 Order steps logically: search_codebase -> search_web -> read_file/list_directory -> install_packages -> generate_component -> create_api -> modify_file -> delegate_backend.
 
+## MANDATORY STEP ORDERING (Cline-inspired):
+Every modify_file step MUST be preceded by either:
+- A search_codebase step that found the file, OR
+- A read_file step that loaded the file contents
+This is NON-NEGOTIABLE. You cannot modify what you haven't read. The AI doing the modification needs to see the REAL file contents, not hallucinated content.
+
+Pattern: search_codebase("pattern in file") -> read_file(targetFile) -> modify_file(targetFile)
+Shortcut: If the file is already in "Current project files" above, you can skip the read_file step.
+
 ## ACTION SELECTION RULES (CRITICAL):
 - User says "create", "make", "build", "add a new" + page/component -> use **generate_component** with newFilePath. Do NOT use modify_file on an existing file.
-- User says "modify", "change", "update", "fix", "edit" + an existing page -> use **modify_file** with targetFile pointing to the existing file.
+- User says "modify", "change", "update", "fix", "edit" + an existing page -> use **read_file** (if not already loaded) then **modify_file** with targetFile pointing to the existing file.
 - User says "delete", "remove" + a file -> use **delete_file** with targetFile. The system will confirm with the user before deleting.
 - User says "scraper", "Apify", "API integration" -> use **create_api** for backend + **generate_component** or **modify_file** for frontend. The create_api tool will auto-search the web for documentation if needed.
 - If an external service requires an API key that is NOT in the available keys list, add a step with action "chat" that tells the user they need to add the missing key in Settings.
 
-IMPORTANT RULES:
-- ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change. This prevents hallucinating file contents.
+## MEMBERS AREA ARCHITECTURE (CRITICAL -- you MUST follow this):
+Members area apps have this structure:
+- **index.tsx** -- React Router with <Routes>/<Route> for each page. Each page is imported and mapped to a route path.
+- **MembersLayout.tsx** or a layout file -- Contains a sidebar/nav with links to each page. Has a "routes" array.
+- **Individual page files** (e.g. dashboard.tsx, settings.tsx) -- The actual page components.
+
+**When CREATING a new page in a members area, you MUST do ALL of these:**
+1. search_codebase -- Find the app's index.tsx to see current imports and routes
+2. generate_component -- Create the new page file
+3. modify_file -- Add the import + <Route> entry to the app's index.tsx
+4. search_codebase -- Find the app's layout/sidebar/nav file (look for "routes" array or navigation links)
+5. modify_file -- Add a nav link/menu item for the new page in the layout
+This is NOT optional. A page without routing and navigation is BROKEN and INVISIBLE to users.
+
+**When DELETING a page from a members area, you MUST do ALL of these:**
+1. search_codebase -- Find the import and Route for this page in index.tsx
+2. modify_file -- Remove the import and <Route> from index.tsx
+3. search_codebase -- Find the nav entry for this page in the layout file
+4. modify_file -- Remove the nav link/menu item from the layout
+5. delete_file -- Delete the actual page file
+This is how real apps work. Pages need routing AND navigation. Do NOT create/delete files in isolation.
+
+IMPORTANT RULES (Cline-inspired methodology):
+
+## READ-BEFORE-WRITE (most critical rule):
+- **NEVER modify a file without reading it first.** Every modify_file MUST be preceded by read_file or search_codebase for that file. This is the #1 cause of broken code -- the AI hallucinates file contents it hasn't read.
+- ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change.
+- When you need to understand code structure, use search_codebase with patterns like "export function", "import.*from", "const.*=", "interface ", etc.
+- If a file is already shown in "Current project files" above, you can skip the explicit read step.
+
+## SEARCH-DISCOVER-ACT:
+- When you don't know exactly where something is, use list_directory to discover the file tree, then search_codebase to find patterns, then read_file to see the full context, and ONLY THEN modify_file.
+- When modifying imports, routes, or navigation: ALWAYS search_codebase first to find the exact current import/route/nav structure. Never guess.
+
+## BUILD & VERIFY (automated):
 - Do NOT add steps for build verification, compile checking, linting, or "npm run build" -- these happen AUTOMATICALLY after all steps complete.
-- Do NOT add steps for testing or verification -- a Test Agent automatically runs after build passes. It performs static analysis, API smoke tests, and AI functional review to verify the code actually works end-to-end.
+- Do NOT add steps for testing or verification -- a Test Agent automatically runs after build passes.
 - Do NOT add steps to run "npm run build", "tsc", "npx tsc", "npm run lint", or any build/lint/verify commands -- the system handles this.
+
+## API & PACKAGES:
 - Do NOT add steps to "add API key", "configure API key", or "store API key" -- keys are already stored encrypted and accessed server-side automatically.
 - Only use run_command for custom commands like curl, data migration scripts, or API testing.
 - When reading files, use the FULL relative path from project root (e.g. "frontend/src/components/MyPage.tsx" or "backend/src/app.module.ts").
@@ -3171,20 +3230,24 @@ IMPORTANT RULES:
 
 CRITICAL: Be PROPORTIONAL to the request.
 - For simple UI changes (add a form, edit text, change styling, add a section), use 1-3 steps max (generate_component and/or modify_file). Do NOT create backend APIs or tables unless the user explicitly asks for backend functionality.
-- For medium requests (add a new page with API calls), use 3-5 steps.
-- For large features (build a complete scraper with backend + frontend + data), use 5-8 steps.
+- For creating/deleting a page in a members area, use 4-6 steps (create/delete file + update router + update navigation). This is necessary architecture -- not over-engineering.
+- For medium requests (add a new page with specific features + API calls), use 5-7 steps.
+- For large features (build a complete scraper with backend + frontend + data), use 6-10 steps.
 
 NEVER create unrelated backend tasks. If the user asks "add a contact form", do NOT also create tables for scripts, analytics, FAQs, user profiles, or community posts. Only create what the user actually asked for.
 NEVER add a delegate_backend step unless the user specifically asks for database seeding or backend analysis.
 
-For example, if asked to "add a contact form to a page", you should plan: generate_component (ContactForm.tsx) -> modify_file (import and add ContactForm to the target page). That's it -- 2 steps.
-If asked to "create a new page called goldie", you should plan: generate_component with newFilePath "frontend/src/components/members/<app>/goldie.tsx". That's 1 step. Do NOT modify any existing file.
-If asked to "delete the goldie page", you should plan: delete_file with targetFile "frontend/src/components/members/<app>/goldie.tsx". The system confirms before deleting.
+EXAMPLES of correct plans:
+- "add a contact form to a page" -> generate_component (ContactForm.tsx) -> modify_file (import + add ContactForm to the target page). 2 steps.
+- "create a new page called goldie" -> search_codebase (find index.tsx router) -> generate_component (goldie.tsx) -> modify_file (add import + Route to index.tsx) -> search_codebase (find layout/nav) -> modify_file (add nav link to layout). 5 steps -- page MUST be routed and navigable.
+- "create a new BLANK page called goldie" -> same 5 steps as above, but generate_component detail says "BLANK minimal page -- just a title, no functionality". The word "blank" means MINIMAL.
+- "delete the goldie page" -> search_codebase (find goldie in index.tsx) -> modify_file (remove import + Route) -> search_codebase (find goldie in layout/nav) -> modify_file (remove nav entry) -> delete_file (goldie.tsx). 5 steps -- clean up ALL references.
+- "modify the dashboard page" -> search_codebase (find dashboard.tsx) -> read_file (read it) -> modify_file (make changes). 2-3 steps.
 
 Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  try {
- const planResult = await this.callAI(modelId,'You are an autonomous builder agent that creates execution plans. Return only valid JSON.', plannerPrompt, history);
+ const planResult = await this.callAI(modelId,'You are an autonomous builder agent. Analyze the request carefully, search/read before modifying, and create a precise execution plan. Return only valid JSON.', plannerPrompt, history);
  totalTokens += planResult.tokensUsed || 0;
 
  let plan: any;
@@ -3204,8 +3267,8 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  // --- Validate plan schema ---
  const validActions = new Set([
    'search_web', 'generate_component', 'modify_file', 'install_packages',
-   'run_command', 'read_file', 'delegate_backend', 'create_database',
-   'search_codebase', 'modify_files', 'delete_file', 'chat', 'create_api',
+   'run_command', 'read_file', 'list_directory', 'delegate_backend', 'create_database',
+   'search_codebase', 'modify_files', 'delete_file', 'chat', 'create_api', 'clarify',
  ]);
  if (!plan.intent || typeof plan.intent !== 'string') {
    plan.intent = 'chat';
@@ -3251,6 +3314,39 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  if (plan.intent === 'clarify') {
    plan.intent = 'build';
  }
+
+ // --- Cline-inspired: Auto-inject read_file before modify_file if no prior search/read exists ---
+ // This is the "ALWAYS read before edit" rule from Cline's methodology
+ const loadedFilePaths = new Set(existingFiles.map(f => f.path));
+ const stepsWithReadBefore = new Set<string>();
+ const augmentedSteps: any[] = [];
+ let nextId = Math.max(...plan.steps.map((s: any) => s.id || 0), 0) + 100;
+
+ for (let i = 0; i < plan.steps.length; i++) {
+   const step = plan.steps[i];
+   // Track which files have been read/searched by prior steps
+   if ((step.action === 'read_file' || step.action === 'search_codebase') && step.targetFile) {
+     stepsWithReadBefore.add(step.targetFile);
+   }
+   // For modify_file: check if the target was read in a prior step or is already loaded
+   if (step.action === 'modify_file' && step.targetFile) {
+     const alreadyRead = loadedFilePaths.has(step.targetFile) || stepsWithReadBefore.has(step.targetFile);
+     if (!alreadyRead) {
+       // Auto-inject a read_file step before this modify_file
+       this.logger.debug(`Auto-injecting read_file for "${step.targetFile}" before modify_file (Cline: search before edit)`);
+       augmentedSteps.push({
+         id: nextId++,
+         action: 'read_file',
+         title: `Read ${step.targetFile.split('/').pop()}`,
+         detail: `Auto-read file before modification: ${step.targetFile}`,
+         targetFile: step.targetFile,
+       });
+       stepsWithReadBefore.add(step.targetFile);
+     }
+   }
+   augmentedSteps.push(step);
+ }
+ plan.steps = augmentedSteps;
 
  // --- Confidence-based clarification ---
  const confidence = typeof plan.confidence === 'number' ? plan.confidence : 100;
@@ -3308,6 +3404,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  const executedPlan: { id: number; title: string; status: string; detail?: string }[] = [];
  const generatedFiles: GeneratedFile[] = [];
  const modifiedFiles: GeneratedFile[] = [];
+ const deletedFiles: string[] = [];
  const dbChanges: { table: string; action: string; count: number }[] = [];
  let searchResults: { title: string; url: string; description: string }[] = [];
  let chatResponse ='';
@@ -3347,6 +3444,24 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  // -- Generate New Component ---------------------------------
  case'generate_component': {
+ // Detect if the user wants a blank/empty/placeholder page
+ const userMsg = (body.message || '').toLowerCase();
+ const isBlankPage = /\b(blank|empty|placeholder|skeleton|stub|bare|minimal|shell)\b/.test(userMsg);
+
+ // Duplicate file detection -- check if file already exists
+ if (step.newFilePath) {
+   const existingContent = this.readFileFromDisk(step.newFilePath);
+   if (existingContent) {
+     this.logger.warn(`File already exists: ${step.newFilePath} -- skipping generate to avoid duplicate`);
+     stepResult.status = 'done';
+     stepResult.detail = `File already exists: ${step.newFilePath} -- skipped to avoid overwriting`;
+     // Add to existingFiles so later steps can reference it
+     const ext = path.extname(step.newFilePath).slice(1);
+     existingFiles.push({ path: step.newFilePath, content: existingContent, language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext, description: 'Already exists on disk' });
+     break;
+   }
+ }
+
  // Read api.ts config so generated components use correct API patterns
  const genApiConfig = this.getApiConfigContext();
 
@@ -3354,7 +3469,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  let exampleComponent ='';
  const targetDir = step.newFilePath?.includes('members/') ? membersDir :'frontend/src/components';
  const existingComponents = this.listDirectory(targetDir).filter(f => f.endsWith('.tsx') && !f.includes('ProgrammerAgent'));
- if (existingComponents.length > 0) {
+ if (!isBlankPage && existingComponents.length > 0) {
  // Pick a component to use as example pattern
  const examplePath =`${targetDir}/${existingComponents[0]}`;
  const exampleContent = this.readFileFromDisk(examplePath);
@@ -3363,7 +3478,29 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  }
  }
 
- const componentPrompt =`Generate a complete, production-quality React component.
+ // Build different prompts for blank vs full components
+ let componentPrompt: string;
+ const componentName = this.toPascalCase((step.newFilePath || 'NewComponent').split('/').pop()?.replace(/\.tsx$/, '') || 'NewComponent');
+
+ if (isBlankPage) {
+   // User explicitly asked for a blank/empty page - generate MINIMAL component
+   componentPrompt = `Generate a BLANK, MINIMAL React component page. The user explicitly asked for a BLANK page.
+
+## File path: ${step.newFilePath || 'frontend/src/components/NewComponent.tsx'}
+## Component name: ${componentName}
+
+The component must be EXTREMELY SIMPLE -- under 30 lines total. It should contain:
+1. Import React from 'react'
+2. Import Box and Typography from '@mui/material'
+3. A named export function called ${componentName}
+4. Return a Box with some padding containing ONLY a Typography with the page title "${componentName}"
+5. Nothing else. No state, no effects, no API calls, no interfaces, no loading states.
+
+CRITICAL: The user said "blank". Do NOT add dashboards, stats, cards, dialogs, CRUD, forms, charts, API calls. MINIMAL. Under 30 lines.
+
+Return ONLY the code. No markdown fences, no explanation.`;
+ } else {
+   componentPrompt = `Generate a complete, production-quality React component.
 
 ${this.getDesignSystemContext()}
 ${appContext}
@@ -3399,12 +3536,16 @@ Cards with plan name, price, features list, and a CTA button.
 - Do NOT import from \`../../types/\` or \`../../../types/\` -- these directories may not exist. Define interfaces inline.
 - The import depth depends on the file's location. For files in \`frontend/src/components/\`, use \`../config/api\`. For \`frontend/src/components/members/\`, use \`../../config/api\`. For \`frontend/src/components/shared/\`, use \`../../config/api\`.
 
+## COMPLEXITY MATCHING (CRITICAL):
+Match the complexity of your output to what the user ACTUALLY asked for:
+- If they just say "create a page" with no specific features, generate a SIMPLE page with a title and maybe a placeholder message. Do NOT add dashboards, stats, CRUD, dialogs, or API integrations.
+- If they ask for specific features (e.g. "a page with a table of users"), include those features and ONLY those features.
+- Only add loading states, error handling, and API calls if the user's request implies data fetching.
+
 CRITICAL RULES:
 - Export as a named export
 - Include all imports
 - Use MUI components and sx prop styling
-- Include loading states, error handling, empty states
-- Make it fully functional with useState, event handlers, etc.
 - Include proper TypeScript types
 - Make it look polished and professional
 - Follow the import patterns and API call patterns from the example component
@@ -3412,8 +3553,9 @@ CRITICAL RULES:
 - NEVER hardcode API URLs or use mock endpoints
 
 Return ONLY the code. No markdown fences, no explanation.`;
+ }
 
- const genResult = await this.callAI(modelId,`Expert React developer. ${this.getDesignSystemContext()}`, componentPrompt);
+ const genResult = await this.callAI(modelId,`Expert React developer. Study existing code patterns before writing. Match import patterns, API call patterns, and styling from existing components. ${this.getDesignSystemContext()}`, componentPrompt);
  totalTokens += genResult.tokensUsed || 0;
 
  const filePath = step.newFilePath ||`frontend/src/components/${this.toPascalCase(step.title.replace(/\s+/g,'-'))}.tsx`;
@@ -3459,8 +3601,9 @@ Return ONLY the code. No markdown fences, no explanation.`;
  const targetPath = step.targetFile;
  let targetFile = existingFiles.find(f => f.path === targetPath);
 
- // Fallback: read from disk if not in existingFiles
+ // Cline-inspired: ALWAYS read the file before modifying -- never assume contents
  if (!targetFile && targetPath) {
+ sendEvent('progress', { message: `📖 Auto-reading ${targetPath} before modification (search-before-edit)...` });
  const diskContent = this.readFileFromDisk(targetPath);
  if (diskContent) {
  const ext = path.extname(targetPath).slice(1);
@@ -3540,6 +3683,12 @@ Return ONLY the code. No markdown fences, no explanation.`;
 
  const modifyPrompt =`You are modifying an existing file. Return LINE-BASED EDITS.
 
+BEFORE making any edits, analyze the file:
+1. What is this file's purpose and structure?
+2. Where exactly does the change need to go?
+3. What existing code will be affected?
+4. Will the change break any existing functionality?
+
 ## Current file (${targetFile.path}) -- ${totalLines} lines:
 \`\`\`${targetFile.language}
 ${numberedContent}
@@ -3552,7 +3701,7 @@ ${numberedContent}
 ${apiConfigContext}
 ${referencedComponentContext}
 ${componentLibrary}
-${webContext ?`## Web research for reference:\n${webContext}` :''}
+${webContext ?`## Prior step results and context:\n${webContext}` :''}
 
 Return a JSON object with line-based edits. Each edit specifies a line range to replace or a line to insert after.
 
@@ -3623,7 +3772,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  const modResult = await this.callAI(
  modelId,
-`Expert code editor. You produce line-based edits using line numbers. NEVER return the whole file. Return a JSON object with an edits array only. ${this.getDesignSystemContext()}`,
+`Expert code editor. Analyze the file structure BEFORE making edits. Make MINIMAL, TARGETED changes -- preserve all existing code that isn't being changed. Return a JSON object with an edits array only. ${this.getDesignSystemContext()}`,
  modifyPrompt,
  );
  totalTokens += modResult.tokensUsed || 0;
@@ -4375,8 +4524,10 @@ Include EVERY file, even if unchanged. Ensure imports, types, and references are
  break;
  }
  fs.unlinkSync(absPath);
+ deletedFiles.push(delPath);
  stepResult.status = 'done';
  stepResult.detail = `Deleted file: ${delPath}`;
+ sendEvent('file_deleted', { path: delPath });
  sendEvent('progress', { message: `Deleted: ${delPath}` });
  } catch (delErr) {
  stepResult.status = 'failed';
@@ -4395,7 +4546,7 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
 
  const chatResult = await this.callAI(
  modelId,
-`You are an elite full-stack coding agent. Available API keys: ${configuredKeys.join(',') ||'none'}. Database: ${dbSummary}. ${appContext}`,
+`You are an elite full-stack coding agent. Be DIRECT and TECHNICAL -- never start responses with "Great", "Certainly", "Sure", "Of course", or other conversational fluff. Get straight to the answer. Available API keys: ${configuredKeys.join(',') ||'none'}. Database: ${dbSummary}. ${appContext}`,
  chatPrompt,
  history,
  );
@@ -4476,6 +4627,10 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
  // Notify client of step completion (final status)
  if (stepResult.status ==='done' || stepResult.status ==='failed') {
  sendEvent('step_complete', { id: step.id, title: step.title, status: stepResult.status, detail: stepResult.detail });
+ 
+ // Cline-inspired: Accumulate step results as context for subsequent steps
+ // This ensures each step knows what happened before it
+ webContext += `\n[Step ${step.id} ${stepResult.status}: ${step.title}] ${stepResult.detail || ''}\n`;
  }
  }
 
@@ -5056,6 +5211,7 @@ Generate the complete code. No explanation, no markdown fences.`;
  plan: executedPlan,
  generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
  modifiedFiles: modifiedFiles.length > 0 ? modifiedFiles : undefined,
+ deletedFiles: deletedFiles.length > 0 ? deletedFiles : undefined,
  dbChanges: dbChanges.length > 0 ? dbChanges : undefined,
  backendTasks: backendDelegationTasks.length > 0 ? backendDelegationTasks : undefined,
  searchResults: searchResults.length > 0 ? searchResults : undefined,

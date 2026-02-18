@@ -448,12 +448,12 @@ export class ProgrammerAgentController {
   */
  @Post('rollback')
  async rollback(
-   @Body() body: { commitHash: string },
+   @Body() body: { commitHash: string; touchedFiles?: string[] },
  ) {
    if (!body.commitHash) {
      return { success: false, error: 'Missing commitHash' };
    }
-   return this.agentService.rollbackToSnapshot(body.commitHash);
+   return this.agentService.rollbackToSnapshot(body.commitHash, body.touchedFiles);
  }
 
  /**

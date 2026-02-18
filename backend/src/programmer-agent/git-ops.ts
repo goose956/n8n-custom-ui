@@ -45,13 +45,43 @@ export class GitOps {
     }
   }
 
-  /** Rollback to a previous git snapshot */
-  rollback(commitHash: string): { success: boolean; filesReverted: number; error?: string } {
+  /** Rollback to a previous git snapshot -- SAFE file-level rollback (does NOT reset the entire project) */
+  rollback(commitHash: string, touchedFiles?: string[]): { success: boolean; filesReverted: number; error?: string } {
     try {
+      // Get list of files changed between snapshot and HEAD
       const diffOutput = execSync(`git diff --name-only ${commitHash} HEAD`, { cwd: this.projectRoot, encoding: 'utf-8', stdio: 'pipe', timeout: 15000 });
       const changedFiles = diffOutput.trim().split('\n').filter(f => f.trim());
-      execSync(`git reset --hard ${commitHash}`, { cwd: this.projectRoot, encoding: 'utf-8', stdio: 'pipe', timeout: 30000 });
-      return { success: true, filesReverted: changedFiles.length };
+
+      // If we know which files the agent touched, only revert THOSE files
+      // This prevents reverting improvements to the service itself or other unrelated files
+      const filesToRevert = touchedFiles && touchedFiles.length > 0
+        ? changedFiles.filter(f => touchedFiles.some(tf => f.endsWith(tf) || tf.endsWith(f) || f === tf))
+        : changedFiles;
+
+      if (filesToRevert.length === 0) {
+        return { success: true, filesReverted: 0 };
+      }
+
+      // Revert only the specific files to their state at the snapshot commit
+      // This is SAFE -- it only touches the files we specify, not the entire project
+      const fileList = filesToRevert.map(f => `"${f}"`).join(' ');
+      execSync(`git checkout ${commitHash} -- ${fileList}`, { cwd: this.projectRoot, encoding: 'utf-8', stdio: 'pipe', timeout: 30000 });
+
+      // Check for files that were created after the snapshot (not in snapshot) -- these should be deleted
+      for (const file of filesToRevert) {
+        try {
+          execSync(`git show ${commitHash}:${file}`, { cwd: this.projectRoot, encoding: 'utf-8', stdio: 'pipe', timeout: 5000 });
+        } catch {
+          // File didn't exist at snapshot time -- delete it
+          const absPath = path.join(this.projectRoot, file);
+          if (fs.existsSync(absPath)) {
+            fs.unlinkSync(absPath);
+            this.logger.debug(`Deleted file that didn't exist at snapshot: ${file}`);
+          }
+        }
+      }
+
+      return { success: true, filesReverted: filesToRevert.length };
     } catch (err) {
       this.logger.error(`Rollback failed: ${err instanceof Error ? err.message : err}`);
       return { success: false, filesReverted: 0, error: err instanceof Error ? err.message : String(err) };
