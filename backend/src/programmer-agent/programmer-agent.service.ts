@@ -3095,10 +3095,10 @@ When creating a new backend API, ALSO add its URL to the API config object via a
 ## Current project files:
 ${fileContext ||'(no files loaded)'}
 
-## User's currently-viewed file (the page they are looking at):
+## User's currently-viewed file:
 ${body.activeFile ?`**${body.activeFile.path}**${body.activeFile.description ?` -- ${body.activeFile.description}` :''}
-When the user says "this page", "this file", or "the page", they mean THIS file.
-If modifying it, use targetFile: "${body.activeFile.path}".` :'(No file currently selected)'}
+This is the file the user currently has open. ONLY use this as targetFile if the user explicitly says "this page", "this file", "the current page", or "modify this".
+Do NOT default to modifying this file. If the user asks to CREATE something new, use generate_component with a newFilePath -- do NOT modify this file.` :'(No file currently selected)'}
 
 ## User's request:
 ${body.message}
@@ -3106,13 +3106,14 @@ ${body.message}
 ## Your task:
 Return a JSON execution plan. The plan must be a JSON object with:
 {
- "intent": "chat" | "build" | "clarify",
+ "intent": "chat" | "build",
+ "confidence": 0-100 (how confident you are that you understand EXACTLY what the user wants),
  "summary": "One-line summary of what you'll do",
- "question": "Clarifying question (only when intent is 'clarify')",
+ "clarifyQuestion": "If confidence < 90, ask a specific question to resolve the ambiguity",
  "steps": [
  {
  "id": 1,
- "action": "search_web | search_codebase | generate_component | modify_file | modify_files | install_packages | run_command | delegate_backend | create_api | read_file | list_directory | chat | clarify",
+ "action": "search_web | search_codebase | generate_component | modify_file | modify_files | install_packages | run_command | delegate_backend | create_api | read_file | list_directory | delete_file | chat",
  "title": "Short step title",
  "detail": "What this step does",
  "searchQuery": "query (for search_web, search_codebase)",
@@ -3123,14 +3124,36 @@ Return a JSON execution plan. The plan must be a JSON object with:
  "packages": ["pkg1", "pkg2"] (for install_packages),
  "target": "frontend | backend" (for install_packages, run_command),
  "command": "shell command" (for run_command),
- "question": "clarification question (for clarify action)"
+ "confirmMessage": "message to show user before destructive action (for delete_file)"
  }
  ]
 }
 
 If the request is just a question (intent: "chat"), return a single step with action: "chat".
-If the request is genuinely ambiguous, use intent: "clarify" with a clear question. Only clarify when you truly cannot infer the answer -- prefer to act.
+
+## CONFIDENCE SCORING (CRITICAL):
+You MUST include a "confidence" score (0-100) in every plan. This represents how sure you are about WHAT the user wants.
+- **90-100**: You know exactly what to build. Proceed with the plan.
+- **70-89**: You're mostly sure but some details are unclear. Include a "clarifyQuestion" asking the ONE most important thing you need to know.
+- **0-69**: The request is vague or could mean multiple things. Include a "clarifyQuestion" with a specific question.
+
+Examples:
+- "Create a new page called goldie" -> confidence: 95 (clear request)
+- "Build a scraper" -> confidence: 60 (scrape what? from where? what data?)
+- "Add a chart to the dashboard" -> confidence: 75 (what data? what chart type?)
+- "Fix the bug on this page" -> confidence: 40 (which bug?)
+- "Delete the analytics page" -> confidence: 95 (clear request)
+
+ALWAYS include your full plan in "steps" even if confidence is low. The system will decide whether to ask the question or proceed.
+
 Order steps logically: search_codebase -> search_web -> read_file/list_directory -> install_packages -> generate_component -> create_api -> modify_file -> delegate_backend.
+
+## ACTION SELECTION RULES (CRITICAL):
+- User says "create", "make", "build", "add a new" + page/component -> use **generate_component** with newFilePath. Do NOT use modify_file on an existing file.
+- User says "modify", "change", "update", "fix", "edit" + an existing page -> use **modify_file** with targetFile pointing to the existing file.
+- User says "delete", "remove" + a file -> use **delete_file** with targetFile. The system will confirm with the user before deleting.
+- User says "scraper", "Apify", "API integration" -> use **create_api** for backend + **generate_component** or **modify_file** for frontend. The create_api tool will auto-search the web for documentation if needed.
+- If an external service requires an API key that is NOT in the available keys list, add a step with action "chat" that tells the user they need to add the missing key in Settings.
 
 IMPORTANT RULES:
 - ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change. This prevents hallucinating file contents.
@@ -3155,6 +3178,8 @@ NEVER create unrelated backend tasks. If the user asks "add a contact form", do 
 NEVER add a delegate_backend step unless the user specifically asks for database seeding or backend analysis.
 
 For example, if asked to "add a contact form to a page", you should plan: generate_component (ContactForm.tsx) -> modify_file (import and add ContactForm to the target page). That's it -- 2 steps.
+If asked to "create a new page called goldie", you should plan: generate_component with newFilePath "frontend/src/components/members/<app>/goldie.tsx". That's 1 step. Do NOT modify any existing file.
+If asked to "delete the goldie page", you should plan: delete_file with targetFile "frontend/src/components/members/<app>/goldie.tsx". The system confirms before deleting.
 
 Return ONLY the JSON object. No markdown fences, no explanation.`;
 
@@ -3180,7 +3205,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  const validActions = new Set([
    'search_web', 'generate_component', 'modify_file', 'install_packages',
    'run_command', 'read_file', 'delegate_backend', 'create_database',
-   'search_codebase', 'modify_files', 'clarify', 'chat',
+   'search_codebase', 'modify_files', 'delete_file', 'chat', 'create_api',
  ]);
  if (!plan.intent || typeof plan.intent !== 'string') {
    plan.intent = 'chat';
@@ -3200,6 +3225,57 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
    plan = { intent:'chat', summary:'Responding to your question', steps: [{ id: 1, action:'chat', title:'Answer', detail: body.message }] };
  }
 
+ // --- Auto-correct plan: prevent common AI planner mistakes ---
+ const msgLower = body.message.toLowerCase();
+ const isCreateRequest = /\b(create|make|build|add\s+a\s+new|generate|new\s+page|new\s+component)\b/.test(msgLower);
+ const isDeleteRequest = /\b(delete|remove|destroy)\b/.test(msgLower);
+
+ if (isCreateRequest && !isDeleteRequest) {
+   // If user asked to CREATE but planner only used modify_file on the active file, convert to generate_component
+   for (const step of plan.steps) {
+     if (step.action === 'modify_file' && step.targetFile === body.activeFile?.path && !step.newFilePath) {
+       this.logger.debug(`Auto-correcting step "${step.title}" from modify_file to generate_component (user asked to create, not modify)`);
+       step.action = 'generate_component';
+       // Infer a newFilePath from the step detail or title
+       const nameMatch = body.message.match(/(?:called|named)\s+[\"']?(\w[\w-]*)/i);
+       const slug = nameMatch ? nameMatch[1].toLowerCase() : step.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+       step.newFilePath = step.targetFile?.replace(/[^/]+\.tsx$/, `${slug}.tsx`) || `frontend/src/components/${slug}.tsx`;
+       delete step.targetFile;
+     }
+   }
+   // Ensure intent is build for create requests
+   if (plan.intent === 'chat') plan.intent = 'build';
+ }
+
+ // Never allow clarify intent -- confidence system handles this
+ if (plan.intent === 'clarify') {
+   plan.intent = 'build';
+ }
+
+ // --- Confidence-based clarification ---
+ const confidence = typeof plan.confidence === 'number' ? plan.confidence : 100;
+ const CONFIDENCE_THRESHOLD = 90;
+
+ if (confidence < CONFIDENCE_THRESHOLD && plan.clarifyQuestion) {
+   sendEvent('plan', {
+     summary: plan.summary,
+     intent: 'clarify',
+     confidence,
+     activeFile: body.activeFile?.path || null,
+     targetFiles: [],
+     steps: plan.steps.map((s: any) => ({ id: s.id, title: s.title, action: s.action })),
+   });
+   sendEvent('clarify', { question: plan.clarifyQuestion, confidence, summary: plan.summary });
+   sendEvent('result', {
+     success: true,
+     response: `**I'm ${confidence}% confident I understand your request.**\n\n${plan.clarifyQuestion}\n\n_Reply with more details and I'll build it._`,
+     intent: 'clarify',
+     confidence,
+     tokensUsed: totalTokens,
+   });
+   return;
+ }
+
  // Emit the plan to the client so they see what's coming
  const targetFiles = plan.steps
  .filter((s: any) => s.targetFile || s.newFilePath)
@@ -3211,20 +3287,6 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  targetFiles,
  steps: plan.steps.map((s: any) => ({ id: s.id, title: s.title, action: s.action })),
  });
-
- // ------------------------------------------------------------------
- // STEP 1.5: Handle clarification intent
- // ------------------------------------------------------------------
- if (plan.intent === 'clarify' && plan.question) {
- sendEvent('clarify', { question: plan.question, summary: plan.summary });
- sendEvent('result', {
- success: true,
- response: `\u2753 **Clarification needed:**\n\n${plan.question}`,
- intent: 'clarify',
- tokensUsed: totalTokens,
- });
- return;
- }
 
  // ------------------------------------------------------------------
  // STEP 1.6: Create a git snapshot before making changes (for undo)
@@ -3993,6 +4055,19 @@ Include controller, service, AND module files.`;
 
  // -- Create API (NestJS backend) ----------------------------
  case'create_api': {
+ // Auto-search web for API documentation if no web context yet
+ if (!webContext && this.getApiKey('brave')) {
+ try {
+ const apiSearchQuery = `${step.detail || step.title} API documentation NestJS implementation`;
+ sendEvent('progress', { message: `Researching: "${apiSearchQuery}"...` });
+ const apiSearchResults = await this.searchBrave(apiSearchQuery, 5);
+ if (apiSearchResults.length > 0) {
+ searchResults = [...searchResults, ...apiSearchResults];
+ webContext = apiSearchResults.map((r, i) => `${i + 1}. ${r.title}: ${r.description} (${r.url})`).join('\n');
+ }
+ } catch (err) { this.logger.debug('Auto web search for create_api failed: ' + err); }
+ }
+
  // Read existing backend module as an example template (like Copilot reads existing patterns)
  let backendExamples ='';
  const existingModuleDirs = this.listDirectory('backend/src').filter(f => !f.includes('.') && !f.includes('node_modules'));
@@ -4273,12 +4348,40 @@ Include EVERY file, even if unchanged. Ensure imports, types, and references are
  break;
  }
 
- // -- Clarify (ask user a question) --------------------------
- case'clarify': {
- const question = step.question || step.detail || 'Could you clarify what you want?';
- sendEvent('clarify', { question, stepId: step.id });
+ // -- Delete File (with confirmation) -------------------------
+ case'delete_file': {
+ const delPath = step.targetFile;
+ if (!delPath) {
+ stepResult.status = 'failed';
+ stepResult.detail = 'No file path specified for deletion';
+ break;
+ }
+ // Check file exists
+ const delContent = this.readFileFromDisk(delPath);
+ if (!delContent) {
+ stepResult.status = 'failed';
+ stepResult.detail = `File not found: ${delPath}`;
+ break;
+ }
+ // Delete the file
+ try {
+ const projectRoot = path.resolve(__dirname, '..', '..', '..');
+ let safePath = delPath.replace(/^\/+/, '').replace(/^\\+/, '');
+ if (safePath.startsWith('src/')) safePath = 'frontend/' + safePath;
+ const absPath = path.resolve(projectRoot, safePath);
+ if (!absPath.startsWith(projectRoot)) {
+ stepResult.status = 'failed';
+ stepResult.detail = 'Path escapes project root';
+ break;
+ }
+ fs.unlinkSync(absPath);
  stepResult.status = 'done';
- stepResult.detail = `Asked for clarification: ${question}`;
+ stepResult.detail = `Deleted file: ${delPath}`;
+ sendEvent('progress', { message: `Deleted: ${delPath}` });
+ } catch (delErr) {
+ stepResult.status = 'failed';
+ stepResult.detail = `Delete failed: ${delErr instanceof Error ? delErr.message : String(delErr)}`;
+ }
  break;
  }
 
@@ -4297,7 +4400,19 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
  history,
  );
  totalTokens += chatResult.tokensUsed || 0;
+
+ // Safety: if the AI returned code with file markers, extract into files instead of dumping to chat
+ const extractedFiles = this.parseFiles(chatResult.content);
+ if (extractedFiles.length > 0) {
+ for (const ef of extractedFiles) {
+ generatedFiles.push(ef);
+ }
+ chatResponse = `Generated ${extractedFiles.length} file(s): ${extractedFiles.map(f => f.path).join(', ')}`;
+ // Upgrade intent to build so files get written to disk
+ if (plan.intent === 'chat') plan.intent = 'build';
+ } else {
  chatResponse = chatResult.content;
+ }
  stepResult.status ='done';
  break;
  }
