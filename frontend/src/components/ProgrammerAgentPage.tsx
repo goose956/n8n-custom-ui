@@ -319,6 +319,13 @@ export function ProgrammerAgentPage() {
  // Retry state
  const [retryingSteps, setRetryingSteps] = useState<string[]>([]);
 
+  // Coder Agent enhanced state
+  const [snapshotHash, setSnapshotHash] = useState<string | null>(null);
+  const [undoLoading, setUndoLoading] = useState(false);
+  const [fileDiffs, setFileDiffs] = useState<{ file: string; diff: string }[]>([]);
+  const [showDiffs, setShowDiffs] = useState(false);
+  const [clarifyQuestion, setClarifyQuestion] = useState<string | null>(null);
+
   // Test results state
   const [testResults, setTestResults] = useState<{
     passed: number; warnings: number; failures: number;
@@ -825,11 +832,23 @@ export function ProgrammerAgentPage() {
 
  let finalData: any = null;
 
+ // Inactivity timeout: abort if no events received for 90s
+ let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+ const resetInactivityTimer = () => {
+ if (inactivityTimer) clearTimeout(inactivityTimer);
+ inactivityTimer = setTimeout(() => {
+ abortCtrl.abort();
+ appendWorkingLine('\nConnection timed out (no response for 90s). Try again.');
+ }, 90_000);
+ };
+ resetInactivityTimer();
+
  // Read SSE events
  let reading = true;
  while (reading) {
  const { value, done } = await reader.read();
  if (done) break;
+ resetInactivityTimer();
 
  sseBuffer += decoder.decode(value, { stream: true });
  const events = sseBuffer.split('\n\n');
@@ -879,6 +898,18 @@ export function ProgrammerAgentPage() {
  appendWorkingLine(eventData.message);
  break;
  }
+ case'snapshot': {
+ if (eventData.hash) {
+ setSnapshotHash(eventData.hash);
+ appendWorkingLine('Snapshot saved for undo');
+ }
+ break;
+ }
+ case'clarify': {
+ setClarifyQuestion(eventData.question || 'Could you clarify?');
+ appendWorkingLine('\nClarification needed: ' + (eventData.question || ''));
+ break;
+ }
  case'result': {
  finalData = eventData;
  break;
@@ -912,6 +943,10 @@ export function ProgrammerAgentPage() {
 
  // Process the final result data
  if (finalData) {
+ // Save snapshot hash and file diffs for undo
+ if (finalData.snapshotHash) setSnapshotHash(finalData.snapshotHash);
+ if (finalData.diffs) { setFileDiffs(finalData.diffs); setShowDiffs(false); }
+
  // Update conversation history
  setCoderHistory(prev => [
  ...prev,
@@ -2400,7 +2435,86 @@ export function ProgrammerAgentPage() {
  {/* *** DESIGN CHAT *** */}
  {chatMode ==='design' && (
  <>
- {/* Test Results panel */}
+ {/* Undo & Diff toolbar */}
+  {snapshotHash && (
+  <Box sx={{ px: 2, py: 1, borderBottom:'1px solid #e0e0e0', display:'flex', alignItems:'center', gap: 1, bgcolor:'#f5f5f5' }}>
+  <Button size="small" variant="outlined" color="warning"
+  disabled={undoLoading}
+  onClick={async () => {
+  setUndoLoading(true);
+  try {
+  const res = await fetch(`${API_BASE_URL}/api/programmer-agent/rollback`, {
+  method:'POST', headers: {'Content-Type':'application/json' },
+  body: JSON.stringify({ hash: snapshotHash, appId: selectedAppId }),
+  });
+  const data = await res.json();
+  setSnack({ open: true, msg: data.message || 'Rolled back', severity:'success' });
+  setSnapshotHash(null);
+  } catch (e: any) { setSnack({ open: true, msg: e.message, severity:'error' }); }
+  setUndoLoading(false);
+  }}
+  sx={{ fontSize:'0.68rem', textTransform:'none' }}>
+  {undoLoading ? 'Rolling back...' : 'Undo Changes'}
+  </Button>
+  {fileDiffs.length > 0 && (
+  <Button size="small" onClick={() => setShowDiffs(!showDiffs)}
+  sx={{ fontSize:'0.68rem', textTransform:'none', color:'#1976d2' }}>
+  {showDiffs ? 'Hide Diffs' : `Show Diffs (${fileDiffs.length})`}
+  </Button>
+  )}
+  </Box>
+  )}
+  {showDiffs && fileDiffs.length > 0 && (
+  <Box sx={{ maxHeight: 300, overflow:'auto', bgcolor:'#1e1e1e', borderBottom:'1px solid #333' }}>
+  {fileDiffs.map((d: any, i: number) => (
+  <Box key={i} sx={{ mb: 1 }}>
+  <Typography sx={{ fontSize:'0.72rem', color:'#89b4fa', px: 1, py: 0.5, fontWeight: 600, fontFamily:'monospace' }}>
+  {d.file}
+  </Typography>
+  <pre style={{ margin: 0, padding:'0 8px', fontSize:'0.68rem', fontFamily:'monospace', lineHeight: 1.4 }}>
+  {(d.diff || '').split('\n').map((line: string, li: number) => {
+  let color ='#ccc'; let bg ='transparent';
+  if (line.startsWith('+')) { color ='#a6e3a1'; bg ='rgba(166,227,161,0.1)'; }
+  else if (line.startsWith('-')) { color ='#f38ba8'; bg ='rgba(243,139,168,0.1)'; }
+  else if (line.startsWith('@@')) { color ='#89b4fa'; }
+  return <div key={li} style={{ color, backgroundColor: bg, paddingLeft: 4 }}>{line}</div>;
+  })}
+  </pre>
+  </Box>
+  ))}
+  </Box>
+  )}
+
+  {/* Clarification question banner */}
+  {clarifyQuestion && (
+  <Box sx={{ px: 2, py: 1.5, borderBottom:'1px solid #bbdefb', bgcolor:'#e3f2fd' }}>
+  <Typography variant="caption" sx={{ fontWeight: 700, color:'#1565c0', fontSize:'0.78rem', display:'block', mb: 1 }}>
+  Clarification needed
+  </Typography>
+  <Typography variant="body2" sx={{ color:'#333', mb: 1.5, fontSize:'0.82rem' }}>
+  {clarifyQuestion}
+  </Typography>
+  <Box sx={{ display:'flex', gap: 1 }}>
+  <TextField size="small" fullWidth placeholder="Type your answer..."
+  value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
+  onKeyPress={(e: any) => {
+  if (e.key ==='Enter' && !e.shiftKey && chatInput.trim()) {
+  e.preventDefault();
+  setClarifyQuestion(null);
+  handleChatSend();
+  }
+  }}
+  sx={{ '& .MuiInputBase-root': { fontSize:'0.82rem' } }} />
+  <Button size="small" variant="contained" onClick={() => { setClarifyQuestion(null); handleChatSend(); }}
+  disabled={!chatInput.trim()}
+  sx={{ fontSize:'0.7rem', textTransform:'none', bgcolor:'#1976d2', whiteSpace:'nowrap' }}>
+  Answer
+  </Button>
+  </Box>
+  </Box>
+  )}
+
+  {/* Test Results panel */}
   {testResults && (
   <Box sx={{ px: 2, py: 1.5, borderBottom:'1px solid #c8e6c9' }}>
   <Box

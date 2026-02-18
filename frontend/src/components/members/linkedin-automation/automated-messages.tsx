@@ -10,12 +10,7 @@ import {
     Chip, 
     Divider, 
     Skeleton, 
-    Tooltip, 
-    Dialog, 
-    DialogTitle, 
-    DialogContent, 
-    DialogActions, 
-    Avatar 
+    Tooltip 
 } from '@mui/material';
 import { 
     Message, 
@@ -24,22 +19,14 @@ import {
     AutoAwesome, 
     ArrowUpward, 
     ArrowDownward, 
-    Refresh, 
     Edit, 
     Delete, 
-    AddCircle, 
-    Send 
+    AddCircle 
 } from '@mui/icons-material';
 
 interface AutomatedMessage {
     id: string;
     content: string;
-    successRate: number;
-}
-
-interface AutomatedMessageStats {
-    totalMessages: number;
-    successfulMessages: number;
     successRate: number;
 }
 
@@ -50,10 +37,18 @@ export function MembersAutomatedMessagesPage() {
 
     const fetchMessages = useCallback(async () => {
         const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
-        const response = await fetch(`${API_BASE}/api/automated-messages`);
-        const data = await response.json();
-        setMessages(data);
-        setIsLoading(false);
+        try {
+            const response = await fetch(`${API_BASE}/api/automated-messages`);
+            if (!response.ok) {
+                throw new Error("Failed to fetch messages");
+            }
+            const data: AutomatedMessage[] = await response.json();
+            setMessages(data);
+        } catch (err) {
+            console.error(err instanceof Error ? err.message : String(err));
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
 
     useEffect(() => {
@@ -144,17 +139,20 @@ export function MembersAutomatedMessagesPage() {
                 </Typography>
                 <Typography sx={{ color: 'white' }}>Manage and review your LinkedIn automated message campaigns.</Typography>
             </Box>
+            <Box sx={{ textAlign: 'center', mt: 5 }}>
+                <TrendingUp sx={{ fontSize: '64px', color: 'rgba(0,0,0,0.6)' }} />
+                <Typography variant="h6" sx={{ mt: 2, color: '#1a1a2e' }}>
+                    Integrate LinkedIn Profile Scraper with Apify to gather detailed member insights.
+                </Typography>
+                <Button
+                    variant="contained"
+                    startIcon={<AddCircle />}
+                    sx={{ mt: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+                >
+                    Start Scraping
+                </Button>
+            </Box>
             {isLoading ? renderLoadingState() : (messages.length === 0 ? renderEmptyState() : renderMessages())}
-            <Dialog open={showModal} onClose={handleCloseModal}>
-                <DialogTitle>Create/Edit Automated Message</DialogTitle>
-                <DialogContent>
-                    <Typography>Dialog content goes here...</Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseModal} color="primary">Cancel</Button>
-                    <Button variant="contained" sx={{ color: 'white' }} onClick={handleCloseModal}>Save</Button>
-                </DialogActions>
-            </Dialog>
         </Box>
     );
 }
