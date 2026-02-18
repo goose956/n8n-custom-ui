@@ -6,6 +6,7 @@ import { MembersAnalyticsPage } from'./analytics';
 import { MembersScriptGeneratorPage } from'./script-generator';
 import { MembersVideoAnalysisPage } from'./video-analysis';
 import { MembersBillingPage } from'./billing';
+import { MembersGoldiePage } from './goldie';
 import { MembersRichardGoldiePage } from './richardgoldie';
 import { MembersAdminPage } from'./admin';
 
@@ -20,6 +21,7 @@ export function MembersArea() {
  <Route path="/video-analysis" element={<MembersVideoAnalysisPage />} />
  <Route path="/billing" element={<MembersBillingPage />} />
  <Route path="/admin" element={<MembersAdminPage />} />
+      <Route path="/goldie" element={<MembersGoldiePage />} />
       <Route path="/richardgoldie" element={<MembersRichardGoldiePage />} />
  <Route path="*" element={<Navigate to="/dashboard" />} />
  </Routes>

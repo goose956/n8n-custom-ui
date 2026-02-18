@@ -12,7 +12,7 @@ const routes = [
     { path: '/analytics', label: 'Campaign Analytics', icon: <Analytics /> },
     { path: '/templates', label: 'Message Templates', icon: <Message /> },
     { path: '/contact', label: 'Contact Us', icon: <ContactMail /> },
-    { path: '/richardgoldie', label: 'Richard Goldie', icon: <Code /> },
+    { path: '/goldie', label: 'Goldie', icon: <Code /> },
 ];
 
 export function MembersLayout() {
