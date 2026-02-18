@@ -120,7 +120,7 @@ const MODELS: ModelConfig[] = [
  { id:'claude-3-5-sonnet-20241022', name:'Claude 3.5 Sonnet', provider:'anthropic', tier:'both', costPer1kTokens: 0.015 },
 ];
 
-const DEFAULT_ORCHESTRATOR ='gpt-4o';
+const DEFAULT_ORCHESTRATOR ='claude-sonnet-4-20250514';
 const DEFAULT_SUB_AGENT ='gpt-4o-mini';
 
 // Token limits per model tier -- Opus can output much more
@@ -193,8 +193,15 @@ export class ProgrammerAgentService {
  if (!this.db.exists()) return null;
  const data = this.db.readSync();
  const apiKeys = data.apiKeys || [];
+ // Allow common aliases: "anthropic" matches "claude", "openai" matches "gpt"
+ const aliases: Record<string, string[]> = {
+ anthropic: ['anthropic', 'claude'],
+ claude: ['claude', 'anthropic'],
+ openai: ['openai', 'gpt'],
+ };
+ const namesToCheck = aliases[provider.toLowerCase()] || [provider.toLowerCase()];
  const keyEntry = apiKeys.find(
- (k: any) => k.name.toLowerCase() === provider.toLowerCase(),
+ (k: any) => namesToCheck.includes(k.name.toLowerCase()),
  );
  if (!keyEntry) return null;
  return this.cryptoService.decrypt(keyEntry.value);
@@ -2964,6 +2971,87 @@ ${appTsxContent?.slice(0, 3000) ||'(not found)'}
 - Auto-fix any TypeScript compilation errors
 - Create COMPLETE, fully-functional implementations -- not stubs or placeholders
 
+## APIFY INTEGRATION GUIDE (for web scraping tasks):
+When building scrapers or data-fetching features that use Apify:
+
+### Architecture Pattern (REQUIRED):
+1. **Backend API endpoint** -- Create a NestJS controller+service that calls the Apify API server-side (the API token is stored server-side, NEVER expose it to frontend)
+2. **Frontend UI** -- Create a React component that calls YOUR backend endpoint, NOT Apify directly
+
+### How to call Apify from a NestJS service:
+\`\`\`typescript
+import axios from 'axios';
+import { CryptoService } from '../shared/crypto.service';
+import { DatabaseService } from '../shared/database.service';
+
+// Get the Apify token:
+private getApiKey(provider: string): string | null {
+  const data = this.db.readSync();
+  const apiKeys = data.apiKeys || [];
+  const keyEntry = apiKeys.find((k: any) => k.name.toLowerCase() === provider.toLowerCase());
+  if (!keyEntry) return null;
+  return this.cryptoService.decrypt(keyEntry.value);
+}
+
+// Call an Apify actor:
+async runApifyActor(actorId: string, input: Record<string, any>): Promise<any[]> {
+  const token = this.getApiKey('apify');
+  if (!token) throw new Error('Apify API key not configured. Add it in Settings -> Integration Keys.');
+
+  // Start the actor run and wait for it to finish (up to 120s)
+  const runResponse = await axios.post(
+    \\\`https://api.apify.com/v2/acts/\\\${actorId}/runs\\\`,
+    input,
+    {
+      headers: { 'Authorization': \\\`Bearer \\\${token}\\\` },
+      params: { waitForFinish: 120 },
+      timeout: 130000,
+    },
+  );
+
+  const datasetId = runResponse.data?.data?.defaultDatasetId;
+  if (!datasetId) throw new Error('Apify run completed but no dataset was returned');
+
+  // Fetch the results from the dataset
+  const results = await axios.get(
+    \\\`https://api.apify.com/v2/datasets/\\\${datasetId}/items\\\`,
+    {
+      headers: { 'Authorization': \\\`Bearer \\\${token}\\\` },
+      params: { format: 'json' },
+      timeout: 15000,
+    },
+  );
+
+  return results.data || [];
+}
+\`\`\`
+
+### Common Apify Actor IDs:
+- LinkedIn Profile Scraper: \`curious_coder/linkedin-profile-scraper\` -- Input: { "urls": ["https://www.linkedin.com/in/username/"] }
+- LinkedIn Company Scraper: \`curious_coder/linkedin-company-scraper\` -- Input: { "urls": ["https://www.linkedin.com/company/name/"] }  
+- LinkedIn Search Scraper: \`apify/linkedin-search-scraper\` -- Input: { "searchTerms": ["keyword"], "maxResults": 10 }
+- Reddit Scraper: \`trudax~reddit-scraper-lite\` -- Input: { "startUrls": [{"url": "..."}], "maxItems": 25 }
+- Instagram Scraper: \`apify/instagram-scraper\` -- Input: { "usernames": ["username"] }
+- Twitter/X Scraper: \`apidojo/tweet-scraper\` -- Input: { "startUrls": [{"url": "..."}], "maxItems": 20 }
+- Google Maps Scraper: \`compass/crawler-google-places\` -- Input: { "searchStringsArray": ["query"], "maxCrawledPlacesPerSearch": 10 }
+- Google Search Scraper: \`apify/google-search-scraper\` -- Input: { "queries": "search term", "maxPagesPerQuery": 1 }
+- Website Content Crawler: \`apify/website-content-crawler\` -- Input: { "startUrls": [{"url": "..."}], "maxCrawlPages": 10 }
+
+### Frontend Pattern:
+The frontend should:
+1. Have an input form (e.g., LinkedIn URL input, search query, etc.)
+2. Call YOUR backend API endpoint (e.g., \`fetch(API.linkedinScrape, { method: 'POST', body: JSON.stringify({ url }) })\`)
+3. Show loading state while Apify runs (can take 30-120 seconds)
+4. Display the scraped data in a nice table/card layout
+5. NEVER call Apify directly from the browser -- always go through the backend
+
+### Working Example (social-monitor):
+The project already has a working Apify integration in \`backend/src/social-monitor/social-monitor.service.ts\`. Use search_codebase to read it if you need a reference for how to:
+- Get the Apify token from stored API keys
+- POST to the Apify actor runs endpoint
+- Wait for completion and fetch dataset results
+- Handle errors and timeouts
+
 ## PROJECT KNOWLEDGE (auto-scanned by documentation agent):
 ${this.docAgent.getPromptContext()}
 
@@ -3941,6 +4029,32 @@ private getApiKey(provider: string): string | null {
 \`\`\`
 Available stored API keys: ${configuredKeys.join(',') ||'none'}
 Always check if the key exists and return a clear error message if not configured.
+
+## Apify Integration Pattern (for scraping/data features):
+If this API calls Apify actors for web scraping, use this EXACT pattern:
+\\\`\\\`\\\`typescript
+import axios from 'axios';
+
+async runApifyActor(actorId: string, input: Record<string, any>): Promise<any[]> {
+  const token = this.getApiKey('apify');
+  if (!token) throw new Error('Apify API key not configured');
+  
+  const runResponse = await axios.post(
+    \\\`https://api.apify.com/v2/acts/\\\${actorId}/runs\\\`,
+    input,
+    { headers: { 'Authorization': \\\`Bearer \\\${token}\\\` }, params: { waitForFinish: 120 }, timeout: 130000 },
+  );
+  
+  const datasetId = runResponse.data?.data?.defaultDatasetId;
+  if (!datasetId) throw new Error('No dataset returned from Apify');
+  
+  const results = await axios.get(\\\`https://api.apify.com/v2/datasets/\\\${datasetId}/items\\\`, {
+    headers: { 'Authorization': \\\`Bearer \\\${token}\\\` }, params: { format: 'json' }, timeout: 15000,
+  });
+  return results.data || [];
+}
+\\\`\\\`\\\`
+Common actor IDs: curious_coder/linkedin-profile-scraper, curious_coder/linkedin-company-scraper, trudax~reddit-scraper-lite, apify/instagram-scraper, apify/google-search-scraper
 
 ${webContext ?`## Reference:\n${webContext}` :''}
 
