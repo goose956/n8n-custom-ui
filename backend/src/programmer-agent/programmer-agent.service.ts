@@ -1439,11 +1439,18 @@ OUTPUT FORMAT:
  private installPackages(packages: string[], target:'frontend' |'backend' ='frontend', dev = false): { success: boolean; installed: string[]; error?: string } {
  if (!packages || packages.length === 0) return { success: true, installed: [] };
 
+ // Normalise: if a string was passed instead of array, split it
+ if (typeof packages === 'string') {
+ packages = (packages as string).split(/[\s,]+/).filter(Boolean);
+ }
+
  // Sanitize package names to prevent command injection
  const validPkg = /^@?[a-zA-Z0-9][\w.\-\/]*(@[\w.\-^~>=<*]+)?$/;
  const safe: string[] = [];
  for (const pkg of packages) {
  const trimmed = pkg.trim();
+ // Reject single-character "packages" (symptom of string-as-iterable bug)
+ if (trimmed.length <= 1) continue;
  if (!validPkg.test(trimmed)) {
  return { success: false, installed: [], error: `Invalid package name rejected: "${trimmed}"` };
  }
@@ -3052,6 +3059,9 @@ The project already has a working Apify integration in \`backend/src/social-moni
 - Wait for completion and fetch dataset results
 - Handle errors and timeouts
 
+### IMPORTANT -- Apify scrapers do NOT need extra npm packages:
+The backend already has \`axios\` installed. Apify is called via REST API (axios.post), NOT via an npm SDK. Do NOT install apify-client, stripe, puppeteer, or any other packages for Apify scraping tasks. The only packages that should be installed are ones the frontend/backend code ACTUALLY imports and doesn't already have.
+
 ## PROJECT KNOWLEDGE (auto-scanned by documentation agent):
 ${this.docAgent.getPromptContext()}
 
@@ -3819,7 +3829,9 @@ Include controller, service, AND module files.`;
 
  // -- Install Packages --------------------------------------
  case'install_packages': {
- const packages = step.packages || [];
+ // Normalise: AI sometimes returns a string instead of an array
+ let packages: string[] = Array.isArray(step.packages) ? step.packages : 
+ (typeof step.packages === 'string' ? (step.packages as string).split(/[\s,]+/).filter(Boolean) : []);
  const target = step.target ||'frontend';
 
  if (packages.length === 0) {
