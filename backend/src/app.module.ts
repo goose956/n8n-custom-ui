@@ -1,3 +1,4 @@
+import { LinkedinScraperModule } from'./linkedin-scraper/linkedin-scraper.module';
 import { Module } from'@nestjs/common';
 import { SharedModule } from'./shared/shared.module';
 import { SettingsModule } from'./settings/settings.module';
@@ -21,7 +22,8 @@ import { FunnelsModule } from'./funnels/funnels.module';
 import { MembersModule } from'./members/members.module';
 
 @Module({
- imports: [SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule, MembersModule],
+ imports: [
+ LinkedinScraperModule,SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule, MembersModule],
  controllers: [],
  providers: [],
 })

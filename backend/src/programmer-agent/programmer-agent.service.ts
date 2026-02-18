@@ -2955,37 +2955,22 @@ ${appTsxContent?.slice(0, 3000) ||'(not found)'}
 
  const plannerPrompt =`You are an elite autonomous coding agent that can FULLY complete ANY programming task. You have access to the filesystem, npm, shell commands, and can write, compile, and verify code end-to-end.
 
-## CORE WORKFLOW (Cline-inspired -- follow this EXACT methodology):
-1. **ANALYZE** -- Break the task into clear, sequential steps. Think about what files need to change and what information you need first.
-2. **SEARCH** -- ALWAYS search the codebase or read files BEFORE modifying them. Never assume you know what a file contains. Use search_codebase to find patterns, then read_file to examine the full file.
-3. **IMPLEMENT** -- Make changes one file at a time. For new files use generate_component. For existing files use modify_file with the EXACT current content as context.
-4. **VERIFY** -- After making changes, the system auto-runs build verification. You don't need to add build/lint steps.
-
-## CRITICAL RULES (non-negotiable):
-- **NEVER modify a file you haven't read.** Always include a read_file or search_codebase step BEFORE any modify_file step. This prevents hallucinating file contents.
-- **Search before assuming.** When you need to find where something is defined, imported, or used, use search_codebase first. Don't guess file paths or code structure.
-- **One concern per step.** Each step should do ONE thing. Don't combine searching + modifying in one step.
-- **Use tools to find info, don't ask the user.** If you're unsure about file structure, imports, or existing code, use search_codebase/read_file/list_directory to find out.
-- **Be direct and technical.** No conversational filler. State what you'll do and do it.
-
 ## Available Actions:
 1. **chat** -- Just answer a question / give advice (no file changes)
 2. **search_web** -- Search the web for documentation, API references, solutions
 3. **search_codebase** -- Search the local codebase for a pattern (like grep). Specify "searchQuery". Use this to find existing code, imports, usages, etc. BEFORE modifying files.
-4. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile". ALWAYS do this before modify_file if you haven't already read the file via search_codebase.
-5. **list_directory** -- List files in a directory. Specify "targetDir". Use when you need to discover what files exist.
-6. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
-7. **modify_file** -- Modify an existing file (you MUST specify a "targetFile"). REQUIRES a prior read_file or search_codebase step for the same file.
-8. **modify_files** -- Modify MULTIPLE existing files in a single coordinated step. Specify "targetFiles" (array of file paths) when changes across files must be synchronized (e.g. adding a route + component + type).
-9. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
-10. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
-11. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
-12. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
-13. **delete_file** -- Delete a file from disk. Specify "targetFile". The system will confirm with the user before deleting.
-14. **clarify** -- Ask the user a clarifying question BEFORE building. Only use when the request is genuinely ambiguous and you cannot infer the best approach. Specify "question" with the clarification question.
+4. **generate_component** -- Create a brand new React/TypeScript file. You MUST specify a "newFilePath".
+5. **modify_file** -- Modify an existing file (you MUST specify a "targetFile")
+6. **modify_files** -- Modify MULTIPLE existing files in a single coordinated step. Specify "targetFiles" (array of file paths) when changes across files must be synchronized (e.g. adding a route + component + type).
+7. **install_packages** -- Install npm packages. Specify "packages" (array of package names) and "target" ("frontend" or "backend")
+8. **run_command** -- Run any shell command (build, test, lint, curl, etc). Specify "command" and optionally "cwd" ("frontend" or "backend")
+9. **delegate_backend** -- Hand off backend work (DB seeding, API analysis) to the Backend Agent. It analyzes generated files and auto-implements what it can.
+10. **create_api** -- Generate a NestJS controller + service + module for a backend feature. Files are written to disk and auto-registered in app.module.ts.
+11. **read_file** -- Read an existing file from disk to understand its contents. Specify "targetFile".
+12. **list_directory** -- List files in a directory. Specify "targetDir".
+13. **clarify** -- Ask the user a clarifying question BEFORE building. Only use when the request is genuinely ambiguous and you cannot infer the best approach. Specify "question" with the clarification question.
 
 ## You ALWAYS:
-- Search/read files BEFORE modifying them -- NEVER assume file contents
 - Install any npm packages your code needs (xlsx, apify-client, chart.js, etc.)
 - Write files directly to disk, not just hold them in memory
 - Auto-register new NestJS modules in app.module.ts
@@ -3163,18 +3148,9 @@ ALWAYS include your full plan in "steps" even if confidence is low. The system w
 
 Order steps logically: search_codebase -> search_web -> read_file/list_directory -> install_packages -> generate_component -> create_api -> modify_file -> delegate_backend.
 
-## MANDATORY STEP ORDERING (Cline-inspired):
-Every modify_file step MUST be preceded by either:
-- A search_codebase step that found the file, OR
-- A read_file step that loaded the file contents
-This is NON-NEGOTIABLE. You cannot modify what you haven't read. The AI doing the modification needs to see the REAL file contents, not hallucinated content.
-
-Pattern: search_codebase("pattern in file") -> read_file(targetFile) -> modify_file(targetFile)
-Shortcut: If the file is already in "Current project files" above, you can skip the read_file step.
-
 ## ACTION SELECTION RULES (CRITICAL):
 - User says "create", "make", "build", "add a new" + page/component -> use **generate_component** with newFilePath. Do NOT use modify_file on an existing file.
-- User says "modify", "change", "update", "fix", "edit" + an existing page -> use **read_file** (if not already loaded) then **modify_file** with targetFile pointing to the existing file.
+- User says "modify", "change", "update", "fix", "edit" + an existing page -> use **modify_file** with targetFile pointing to the existing file.
 - User says "delete", "remove" + a file -> use **delete_file** with targetFile. The system will confirm with the user before deleting.
 - User says "scraper", "Apify", "API integration" -> use **create_api** for backend + **generate_component** or **modify_file** for frontend. The create_api tool will auto-search the web for documentation if needed.
 - If an external service requires an API key that is NOT in the available keys list, add a step with action "chat" that tells the user they need to add the missing key in Settings.
@@ -3201,24 +3177,11 @@ This is NOT optional. A page without routing and navigation is BROKEN and INVISI
 5. delete_file -- Delete the actual page file
 This is how real apps work. Pages need routing AND navigation. Do NOT create/delete files in isolation.
 
-IMPORTANT RULES (Cline-inspired methodology):
-
-## READ-BEFORE-WRITE (most critical rule):
-- **NEVER modify a file without reading it first.** Every modify_file MUST be preceded by read_file or search_codebase for that file. This is the #1 cause of broken code -- the AI hallucinates file contents it hasn't read.
-- ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change.
-- When you need to understand code structure, use search_codebase with patterns like "export function", "import.*from", "const.*=", "interface ", etc.
-- If a file is already shown in "Current project files" above, you can skip the explicit read step.
-
-## SEARCH-DISCOVER-ACT:
-- When you don't know exactly where something is, use list_directory to discover the file tree, then search_codebase to find patterns, then read_file to see the full context, and ONLY THEN modify_file.
-- When modifying imports, routes, or navigation: ALWAYS search_codebase first to find the exact current import/route/nav structure. Never guess.
-
-## BUILD & VERIFY (automated):
+IMPORTANT RULES:
+- ALWAYS use search_codebase BEFORE modify_file to find the exact code you need to change. This prevents hallucinating file contents.
 - Do NOT add steps for build verification, compile checking, linting, or "npm run build" -- these happen AUTOMATICALLY after all steps complete.
-- Do NOT add steps for testing or verification -- a Test Agent automatically runs after build passes.
+- Do NOT add steps for testing or verification -- a Test Agent automatically runs after build passes. It performs static analysis, API smoke tests, and AI functional review to verify the code actually works end-to-end.
 - Do NOT add steps to run "npm run build", "tsc", "npx tsc", "npm run lint", or any build/lint/verify commands -- the system handles this.
-
-## API & PACKAGES:
 - Do NOT add steps to "add API key", "configure API key", or "store API key" -- keys are already stored encrypted and accessed server-side automatically.
 - Only use run_command for custom commands like curl, data migration scripts, or API testing.
 - When reading files, use the FULL relative path from project root (e.g. "frontend/src/components/MyPage.tsx" or "backend/src/app.module.ts").
@@ -3247,7 +3210,7 @@ EXAMPLES of correct plans:
 Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  try {
- const planResult = await this.callAI(modelId,'You are an autonomous builder agent. Analyze the request carefully, search/read before modifying, and create a precise execution plan. Return only valid JSON.', plannerPrompt, history);
+ const planResult = await this.callAI(modelId,'You are an autonomous builder agent that creates execution plans. Return only valid JSON.', plannerPrompt, history);
  totalTokens += planResult.tokensUsed || 0;
 
  let plan: any;
@@ -3267,8 +3230,8 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  // --- Validate plan schema ---
  const validActions = new Set([
    'search_web', 'generate_component', 'modify_file', 'install_packages',
-   'run_command', 'read_file', 'list_directory', 'delegate_backend', 'create_database',
-   'search_codebase', 'modify_files', 'delete_file', 'chat', 'create_api', 'clarify',
+   'run_command', 'read_file', 'delegate_backend', 'create_database',
+   'search_codebase', 'modify_files', 'delete_file', 'chat', 'create_api',
  ]);
  if (!plan.intent || typeof plan.intent !== 'string') {
    plan.intent = 'chat';
@@ -3314,39 +3277,6 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  if (plan.intent === 'clarify') {
    plan.intent = 'build';
  }
-
- // --- Cline-inspired: Auto-inject read_file before modify_file if no prior search/read exists ---
- // This is the "ALWAYS read before edit" rule from Cline's methodology
- const loadedFilePaths = new Set(existingFiles.map(f => f.path));
- const stepsWithReadBefore = new Set<string>();
- const augmentedSteps: any[] = [];
- let nextId = Math.max(...plan.steps.map((s: any) => s.id || 0), 0) + 100;
-
- for (let i = 0; i < plan.steps.length; i++) {
-   const step = plan.steps[i];
-   // Track which files have been read/searched by prior steps
-   if ((step.action === 'read_file' || step.action === 'search_codebase') && step.targetFile) {
-     stepsWithReadBefore.add(step.targetFile);
-   }
-   // For modify_file: check if the target was read in a prior step or is already loaded
-   if (step.action === 'modify_file' && step.targetFile) {
-     const alreadyRead = loadedFilePaths.has(step.targetFile) || stepsWithReadBefore.has(step.targetFile);
-     if (!alreadyRead) {
-       // Auto-inject a read_file step before this modify_file
-       this.logger.debug(`Auto-injecting read_file for "${step.targetFile}" before modify_file (Cline: search before edit)`);
-       augmentedSteps.push({
-         id: nextId++,
-         action: 'read_file',
-         title: `Read ${step.targetFile.split('/').pop()}`,
-         detail: `Auto-read file before modification: ${step.targetFile}`,
-         targetFile: step.targetFile,
-       });
-       stepsWithReadBefore.add(step.targetFile);
-     }
-   }
-   augmentedSteps.push(step);
- }
- plan.steps = augmentedSteps;
 
  // --- Confidence-based clarification ---
  const confidence = typeof plan.confidence === 'number' ? plan.confidence : 100;
@@ -3555,7 +3485,7 @@ CRITICAL RULES:
 Return ONLY the code. No markdown fences, no explanation.`;
  }
 
- const genResult = await this.callAI(modelId,`Expert React developer. Study existing code patterns before writing. Match import patterns, API call patterns, and styling from existing components. ${this.getDesignSystemContext()}`, componentPrompt);
+ const genResult = await this.callAI(modelId,`Expert React developer. ${this.getDesignSystemContext()}`, componentPrompt);
  totalTokens += genResult.tokensUsed || 0;
 
  const filePath = step.newFilePath ||`frontend/src/components/${this.toPascalCase(step.title.replace(/\s+/g,'-'))}.tsx`;
@@ -3601,9 +3531,8 @@ Return ONLY the code. No markdown fences, no explanation.`;
  const targetPath = step.targetFile;
  let targetFile = existingFiles.find(f => f.path === targetPath);
 
- // Cline-inspired: ALWAYS read the file before modifying -- never assume contents
+ // Fallback: read from disk if not in existingFiles
  if (!targetFile && targetPath) {
- sendEvent('progress', { message: `📖 Auto-reading ${targetPath} before modification (search-before-edit)...` });
  const diskContent = this.readFileFromDisk(targetPath);
  if (diskContent) {
  const ext = path.extname(targetPath).slice(1);
@@ -3683,12 +3612,6 @@ Return ONLY the code. No markdown fences, no explanation.`;
 
  const modifyPrompt =`You are modifying an existing file. Return LINE-BASED EDITS.
 
-BEFORE making any edits, analyze the file:
-1. What is this file's purpose and structure?
-2. Where exactly does the change need to go?
-3. What existing code will be affected?
-4. Will the change break any existing functionality?
-
 ## Current file (${targetFile.path}) -- ${totalLines} lines:
 \`\`\`${targetFile.language}
 ${numberedContent}
@@ -3701,7 +3624,7 @@ ${numberedContent}
 ${apiConfigContext}
 ${referencedComponentContext}
 ${componentLibrary}
-${webContext ?`## Prior step results and context:\n${webContext}` :''}
+${webContext ?`## Web research for reference:\n${webContext}` :''}
 
 Return a JSON object with line-based edits. Each edit specifies a line range to replace or a line to insert after.
 
@@ -3772,7 +3695,7 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  const modResult = await this.callAI(
  modelId,
-`Expert code editor. Analyze the file structure BEFORE making edits. Make MINIMAL, TARGETED changes -- preserve all existing code that isn't being changed. Return a JSON object with an edits array only. ${this.getDesignSystemContext()}`,
+`Expert code editor. You produce line-based edits using line numbers. NEVER return the whole file. Return a JSON object with an edits array only. ${this.getDesignSystemContext()}`,
  modifyPrompt,
  );
  totalTokens += modResult.tokensUsed || 0;
@@ -4546,7 +4469,7 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
 
  const chatResult = await this.callAI(
  modelId,
-`You are an elite full-stack coding agent. Be DIRECT and TECHNICAL -- never start responses with "Great", "Certainly", "Sure", "Of course", or other conversational fluff. Get straight to the answer. Available API keys: ${configuredKeys.join(',') ||'none'}. Database: ${dbSummary}. ${appContext}`,
+`You are an elite full-stack coding agent. Available API keys: ${configuredKeys.join(',') ||'none'}. Database: ${dbSummary}. ${appContext}`,
  chatPrompt,
  history,
  );
@@ -4627,10 +4550,6 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
  // Notify client of step completion (final status)
  if (stepResult.status ==='done' || stepResult.status ==='failed') {
  sendEvent('step_complete', { id: step.id, title: step.title, status: stepResult.status, detail: stepResult.detail });
- 
- // Cline-inspired: Accumulate step results as context for subsequent steps
- // This ensures each step knows what happened before it
- webContext += `\n[Step ${step.id} ${stepResult.status}: ${step.title}] ${stepResult.detail || ''}\n`;
  }
  }
 

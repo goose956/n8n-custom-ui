@@ -1,106 +1,263 @@
-import React, { useState, useEffect } from'react';
-import { Box, Typography, Grid, Paper, Card, CardContent, IconButton, Chip, Avatar, Badge, LinearProgress, Skeleton } from'@mui/material';
-import { TrendingUp, ArrowUpward, ArrowDownward, BarChart, PieChart, Timeline, Refresh, AnalyticsIcon } from'@mui/icons-material';
+import React, { useState, useEffect } from 'react';
+import { Box, Typography, Grid, Paper, Card, CardContent, IconButton, Chip, Avatar, Badge, LinearProgress, Skeleton } from '@mui/material';
+import { TrendingUp, ArrowUpward, ArrowDownward, BarChart, PieChart, Timeline, Refresh, LinkedIn, Search, Person, Work, School, LocationOn } from '@mui/icons-material';
+import { TextField, Button } from '@mui/material';
 
-interface ScriptPerformance {
- scriptId: string;
- views: number;
- likes: number;
- comments: number;
- shares: number;
- engagementRate: number;
+interface LinkedInProfile {
+  fullName: string;
+  headline: string;
+  location: string;
+  company: string;
+  university: string;
+  profileUrl: string;
+  connectionCount?: number;
+  about?: string;
+  experience?: Array<{
+    title: string;
+    company: string;
+    duration: string;
+  }>;
 }
 
-interface UserScriptHistory {
- historyId: string;
- scriptId: string;
- createdAt: string;
- performance: ScriptPerformance;
+interface ScrapeRequest {
+  profileUrl: string;
 }
 
-export function MembersAnalyticsPage() {
- const [scriptsData, setScriptsData] = useState<UserScriptHistory[]>([]);
- const [loading, setLoading] = useState<boolean>(true);
+export default function Analytics() {
+  const [profileUrl, setProfileUrl] = useState<string>('');
+  const [profileData, setProfileData] = useState<LinkedInProfile | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const API_BASE = window.location.origin.includes('localhost') ? 'http://localhost:3000' : '';
 
- useEffect(() => {
- fetch('/api/scripts/analytics')
- .then(res => res.json())
- .then(data => {
- setScriptsData(data);
- setLoading(false);
- })
- .catch(() => setLoading(false));
- }, []);
+  const handleScrape = async () => {
+    if (!profileUrl.trim()) {
+      setError('Please enter a LinkedIn profile URL');
+      return;
+    }
 
- const renderStatCard = (title: string, value: number, trend: string, isPositive: boolean) => (
- <Grid item xs={12} sm={6} md={3}>
- <Card sx={{ boxShadow:'0 1px 3px rgba(0,0,0,0.08)', borderRadius: 3,'&:hover': { transform:'translateY(-2px)', transition:'0.2s' } }}>
- <CardContent sx={{ background:'linear-gradient(135deg, #1976d2 0%, #5147ad 100%)', color:'#fff' }}>
- <Typography variant="h6">{title}</Typography>
- <Box sx={{ display:'flex', alignItems:'center' }}>
- <Typography variant="h4" sx={{ fontWeight:'bold' }}>{value}</Typography>
- {isPositive ? <ArrowUpward sx={{ color:'green', marginLeft: 1 }} /> : <ArrowDownward sx={{ color:'red', marginLeft: 1 }} />}
- </Box>
- <Typography variant="body2">{trend}</Typography>
- </CardContent>
- </Card>
- </Grid>
- );
+    setLoading(true);
+    setError(null);
+    setProfileData(null);
 
- const renderScriptPerformance = (script: UserScriptHistory) => (
- <Grid item xs={12}>
- <Paper sx={{ padding: 3, boxShadow:'0 1px 3px rgba(0,0,0,0.08)', borderRadius: 3 }}>
- <Box sx={{ display:'flex', alignItems:'center', mb: 2 }}>
- <Avatar sx={{ bgcolor:'#1976d2', marginRight: 2 }}>{script.historyId.substring(0, 2)}</Avatar>
- <Typography variant="h6" sx={{ flexGrow: 1 }}>Script ID: {script.scriptId}</Typography>
- <Chip label={`Engagement Rate: ${script.performance.engagementRate}%`} color={script.performance.engagementRate > 50 ? "success" : "error"} />
- </Box>
- <Typography variant="body1">Views: {script.performance.views}</Typography>
- <Typography variant="body1">Likes: {script.performance.likes}</Typography>
- <Typography variant="body1">Comments: {script.performance.comments}</Typography>
- <Typography variant="body1">Shares: {script.performance.shares}</Typography>
- </Paper>
- </Grid>
- );
+    try {
+      const response = await fetch(`${API_BASE}/api/linkedin-scraper`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ profileUrl: profileUrl.trim() })
+      });
 
- return (
- <Box>
- <Box sx={{ background:'linear-gradient(135deg, #1976d2 0%, #5147ad 100%)', padding: 4, borderRadius: 3, color:'#fff', mb: 4 }}>
- <Typography variant="h4" sx={{ display:'flex', alignItems:'center' }}>
- <AnalyticsIcon sx={{ marginRight: 1 }} /> Tik Tok Script Analytics
- </Typography>
- <Typography variant="body1">Gain insights into your script's performance, audience engagement, and more!</Typography>
- </Box>
- <Grid container spacing={2}>
- {loading ? (
- Array.from(new Array(4)).map((_, index) => (
- <Grid item xs={12} sm={6} md={3} key={index}>
- <Skeleton variant="rectangular" height={140} sx={{ borderRadius: 3 }} />
- </Grid>
- ))
- ) : (
- <>
- {renderStatCard('Scripts Generated', 158,'Last week performance', true)}
- {renderStatCard('Viral Hooks Found', 42,'Last month performance', false)}
- {renderStatCard('Videos Analyzed', 90,'Last year performance', true)}
- {renderStatCard('Audience Engagement', 88,'Compared to previous period', true)}
- </>
- )}
- </Grid>
- <Box mt={4}>
- <Typography variant="h6" sx={{ display:'flex', alignItems:'center', mb: 2 }}>
- <BarChart sx={{ marginRight: 1 }} /> Script Performance History
- </Typography>
- <Grid container spacing={3}>
- {loading ? (
- <Grid item xs={12}>
- <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 3 }} />
- </Grid>
- ) : (
- scriptsData.map(script => renderScriptPerformance(script))
- )}
- </Grid>
- </Box>
- </Box>
- );
+      if (!response.ok) {
+        throw new Error('Failed to scrape profile');
+      }
+
+      const data = await response.json();
+      setProfileData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderProfileCard = () => {
+    if (!profileData) return null;
+
+    return (
+      <Grid item xs={12}>
+        <Paper sx={{ padding: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid rgba(0,0,0,0.06)' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Avatar sx={{ bgcolor: '#0077b5', marginRight: 2, width: 56, height: 56 }}>
+              <Person />
+            </Avatar>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                {profileData.fullName}
+              </Typography>
+              <Typography variant="body1" sx={{ color: '#666', mb: 0.5 }}>
+                {profileData.headline}
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                {profileData.location && (
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <LocationOn sx={{ fontSize: 16, color: '#666', mr: 0.5 }} />
+                    <Typography variant="body2" sx={{ color: '#666' }}>
+                      {profileData.location}
+                    </Typography>
+                  </Box>
+                )}
+                {profileData.connectionCount && (
+                  <Typography variant="body2" sx={{ color: '#666' }}>
+                    {profileData.connectionCount} connections
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          </Box>
+
+          <Grid container spacing={2}>
+            {profileData.company && (
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+                  <Work sx={{ color: '#1976d2', mr: 1 }} />
+                  <Box>
+                    <Typography variant="body2" sx={{ color: '#666' }}>Current Company</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                      {profileData.company}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            )}
+            {profileData.university && (
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+                  <School sx={{ color: '#1976d2', mr: 1 }} />
+                  <Box>
+                    <Typography variant="body2" sx={{ color: '#666' }}>Education</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                      {profileData.university}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            )}
+          </Grid>
+
+          {profileData.about && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="h6" sx={{ mb: 1 }}>About</Typography>
+              <Typography variant="body2" sx={{ lineHeight: 1.6, color: '#555' }}>
+                {profileData.about}
+              </Typography>
+            </Box>
+          )}
+
+          {profileData.experience && profileData.experience.length > 0 && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="h6" sx={{ mb: 2 }}>Experience</Typography>
+              {profileData.experience.map((exp, index) => (
+                <Box key={index} sx={{ mb: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: 2 }}>
+                  <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                    {exp.title}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#666' }}>
+                    {exp.company} • {exp.duration}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Paper>
+      </Grid>
+    );
+  };
+
+  return (
+    <Box sx={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', padding: 4 }}>
+      <Box sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 4, borderRadius: 3, color: '#fff', mb: 4 }}>
+        <Typography variant="h4" sx={{ display: 'flex', alignItems: 'center' }}>
+          <LinkedIn sx={{ marginRight: 1 }} /> LinkedIn Profile Scraper
+        </Typography>
+        <Typography variant="body1">Extract detailed information from LinkedIn profiles using Apify integration</Typography>
+      </Box>
+
+      {/* Scraper Form */}
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Paper sx={{ padding: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid rgba(0,0,0,0.06)' }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+              <Search sx={{ marginRight: 1 }} /> Profile URL Input
+            </Typography>
+            
+            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="body2" sx={{ mb: 1, color: '#666' }}>LinkedIn Profile URL</Typography>
+                <Box
+                  component="input"
+                  value={profileUrl}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfileUrl(e.target.value)}
+                  placeholder="https://www.linkedin.com/in/username/"
+                  disabled={loading}
+                  sx={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    border: '1px solid #ddd',
+                    borderRadius: 2,
+                    fontSize: '14px',
+                    '&:focus': {
+                      outline: 'none',
+                      borderColor: '#667eea'
+                    },
+                    '&:disabled': {
+                      backgroundColor: '#f5f5f5',
+                      cursor: 'not-allowed'
+                    }
+                  }}
+                />
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'end' }}>
+                <Box
+                  component="button"
+                  onClick={handleScrape}
+                  disabled={loading || !profileUrl.trim()}
+                  sx={{
+                    padding: '12px 24px',
+                    background: loading ? '#ccc' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 2,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      transform: loading ? 'none' : 'translateY(-1px)'
+                    }
+                  }}
+                >
+                  {loading ? 'Scraping...' : 'Scrape Profile'}
+                </Box>
+              </Box>
+            </Box>
+
+            {error && (
+              <Box sx={{ p: 2, bgcolor: '#ffebee', borderRadius: 2, mb: 3 }}>
+                <Typography variant="body2" sx={{ color: '#c62828' }}>
+                  {error}
+                </Typography>
+              </Box>
+            )}
+
+            {loading && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+                <Box
+                  sx={{
+                    width: 20,
+                    height: 20,
+                    border: '2px solid #e0e0e0',
+                    borderTop: '2px solid #667eea',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    '@keyframes spin': {
+                      '0%': { transform: 'rotate(0deg)' },
+                      '100%': { transform: 'rotate(360deg)' }
+                    }
+                  }}
+                />
+                <Typography variant="body2" sx={{ color: '#666' }}>
+                  Extracting profile data from LinkedIn...
+                </Typography>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Results */}
+        {renderProfileCard()}
+      </Grid>
+    </Box>
+  );
 }
