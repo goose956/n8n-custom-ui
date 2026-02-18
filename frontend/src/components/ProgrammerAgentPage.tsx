@@ -336,6 +336,7 @@ export function ProgrammerAgentPage() {
 
  const promptRef = useRef<HTMLTextAreaElement>(null);
  const coderChatEndRef = useRef<HTMLDivElement>(null);
+ const coderAbortRef = useRef<AbortController | null>(null);
 
  // --- Load existing members files for editing -------------------------
  const loadMembersFiles = async () => {
@@ -784,9 +785,14 @@ export function ProgrammerAgentPage() {
  } else if (chatMode ==='coder') {
  // Coder Agent: autonomous builder with SSE streaming for live progress
  const activeFile = files[activeFileTab] || null;
+ // Create AbortController for cancel support
+ const abortCtrl = new AbortController();
+ coderAbortRef.current = abortCtrl;
+
  const res = await fetch(`${API.programmerAgent}/coder-chat`, {
  method:'POST',
  headers: {'Content-Type':'application/json' },
+ signal: abortCtrl.signal,
  body: JSON.stringify({
  message: msgText.trim(),
  files,
