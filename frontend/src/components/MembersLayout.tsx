@@ -1,74 +1,5 @@
-===FILE: types.ts===
-
-// User statistics for the overview page
-export interface UserStats {
-    recentMessagesSent: number; // Total LinkedIn messages sent recently
-    openRate: number; // Percentage of messages opened
-    replyRate: number; // Percentage of replies received
-    aiResponseRate: number; // Percentage of AI-generated responses
-}
-
-// Activity feed entry for recent user actions
-export interface ActivityFeedEntry {
-    action: string; // Description of the action taken
-    timestamp: string; // Time when the action occurred
-}
-
-// User profile integration with LinkedIn
-export interface LinkedInProfileIntegration {
-    profilePictureUrl: string; // URL of the user's LinkedIn profile picture
-    linkedInAccountId: string; // Unique identifier for the user's LinkedIn account
-    syncedData: SyncedLinkedInData; // Data synced from LinkedIn
-}
-
-// Synced LinkedIn data structure
-export interface SyncedLinkedInData {
-    connectionsCount: number; // Number of LinkedIn connections
-    profileSummary: string; // Summary of the user's LinkedIn profile
-    endorsements: string[]; // List of skills endorsed by others
-}
-
-// Notification settings for a user
-export interface NotificationSettings {
-    emailNotifications: boolean; // Enable or disable email notifications
-    smsNotifications: boolean; // Enable or disable SMS notifications
-}
-
-// Message templates for LinkedIn outreach
-export interface MessageTemplate {
-    id: string; // Unique identifier
-    title: string; // Title of the message template
-    content: string; // Content of the message template
-    performanceMetrics: TemplatePerformanceMetrics; // Metrics related to the template's usage
-}
-
-// Performance metrics for message templates
-export interface TemplatePerformanceMetrics {
-    usageCount: number; // Number of times the template has been used
-    responseRate: number; // Rate of responses for this template
-}
-
-// Campaign details for outreach efforts
-export interface LinkedInCampaign {
-    id: string; // Unique identifier for the campaign
-    name: string; // Name of the campaign
-    createdDate: string; // Date of campaign creation
-    messagesSent: number; // Total messages sent in the campaign
-    openCount: number; // Count of messages opened
-    replyCount: number; // Count of replies received
-    engagementStats: EngagementStatistics; // Engagement statistics for the campaign
-}
-
-// Engagement statistics for campaigns
-export interface EngagementStatistics {
-    aiInteractionCount: number; // Count of AI interactions in the campaign
-    overallSuccessRate: number; // Overall success rate of the campaign
-}
-
-===FILE: MembersLayout.tsx===
-```typescript
 import { Box, Drawer, List, ListItem, ListItemIcon, ListItemText, Typography } from '@mui/material';
-import { Dashboard, Settings, Person, Campaign, Analytics, Message, ContactMail } from '@mui/icons-material';
+import { Dashboard, Settings, Person, Campaign, Analytics, Message, ContactMail, Code } from '@mui/icons-material';
 import { useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 
@@ -81,6 +12,7 @@ const routes = [
     { path: '/analytics', label: 'Campaign Analytics', icon: <Analytics /> },
     { path: '/templates', label: 'Message Templates', icon: <Message /> },
     { path: '/contact', label: 'Contact Us', icon: <ContactMail /> },
+    { path: '/richardgoldie', label: 'Richard Goldie', icon: <Code /> },
 ];
 
 export function MembersLayout() {
@@ -120,4 +52,3 @@ export function MembersLayout() {
         </Box>
     );
 }
-```
