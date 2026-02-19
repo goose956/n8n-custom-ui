@@ -181,6 +181,7 @@ export class ProgrammerAgentService {
      cleanCodeResponse: this.cleanCodeResponse.bind(this),
      parseFiles: this.parseFiles.bind(this),
      toPascalCase: this.toPascalCase.bind(this),
+     toKebabCase: this.toKebabCase.bind(this),
      getDesignSystemContext: this.getDesignSystemContext.bind(this),
    };
    this.retryEngine = new RetryEngine(ctx);
@@ -1066,6 +1067,10 @@ ${routerRoutes}
  return str.split(/[-_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
  }
 
+ private toKebabCase(str: string): string {
+ return str.replace(/([a-z])([A-Z])/g, '$1-$2').replace(/[\s_]+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
+ }
+
  // --- Single page / component generate (original flow) ---------------------
 
  async generate(request: GenerateRequest): Promise<GenerateResponse> {
@@ -1660,22 +1665,66 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
  const appModulePath = path.resolve(__dirname,'..','app.module.ts');
  try {
  let content = fs.readFileSync(appModulePath,'utf-8');
- // Check if already registered
- if (content.includes(moduleName)) return true;
 
- // Add import
- const importLine =`import { ${moduleName} } from'${modulePath}';\n`;
+ // Check if already registered -- use word-boundary match to avoid substring false positives
+ const moduleRegex = new RegExp(`\\b${moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+ if (moduleRegex.test(content)) return true;
+
+ // Verify the module file actually exists before registering
+ const moduleFilePath = path.resolve(__dirname, '..', modulePath.replace(/^\.\//, '') + '.ts');
+ if (!fs.existsSync(moduleFilePath)) {
+ this.logger.warn(`Module file not found at ${moduleFilePath}, skipping registration`);
+ return false;
+ }
+
+ // Backup the original content for rollback on failure
+ const originalContent = content;
+
+ // Add import after the last existing import line (not at the very top)
+ const importLine = `import { ${moduleName} } from '${modulePath}';\n`;
+ const lastImportIdx = content.lastIndexOf('import ');
+ if (lastImportIdx >= 0) {
+ const lineEnd = content.indexOf('\n', lastImportIdx);
+ if (lineEnd >= 0) {
+ content = content.slice(0, lineEnd + 1) + importLine + content.slice(lineEnd + 1);
+ } else {
+ content = content + '\n' + importLine;
+ }
+ } else {
  content = importLine + content;
+ }
 
- // Add to imports array
- content = content.replace(
- /imports:\s*\[/,
-`imports: [\n ${moduleName},`,
- );
+ // Add to imports array -- handle both multi-line and single-line formats
+ const importsMatch = content.match(/imports:\s*\[/);
+ if (importsMatch && importsMatch.index !== undefined) {
+ const insertPos = importsMatch.index + importsMatch[0].length;
+ // Check if the next char after '[' is a newline or content
+ const afterBracket = content.slice(insertPos).trimStart();
+ if (afterBracket.startsWith('\n') || afterBracket.startsWith('\r')) {
+ content = content.slice(0, insertPos) + `\n    ${moduleName},` + content.slice(insertPos);
+ } else {
+ content = content.slice(0, insertPos) + `\n    ${moduleName},\n    ` + content.slice(insertPos).replace(/^\s*/, '');
+ }
+ } else {
+ this.logger.warn('Could not find imports array in app.module.ts');
+ return false;
+ }
+
+ // Validate the result has no obvious syntax issues (balanced braces, no duplicate module refs)
+ const moduleCount = (content.match(moduleRegex) || []).length;
+ if (moduleCount > 2) {
+ // More than 2 occurrences (import + imports array) suggests duplication
+ this.logger.warn(`Potential duplication detected for ${moduleName}, rolling back`);
+ fs.writeFileSync(appModulePath, originalContent, 'utf-8');
+ return false;
+ }
 
  fs.writeFileSync(appModulePath, content,'utf-8');
  return true;
- } catch (err) { this.logger.debug("Caught (returning false): " + err); return false; }
+ } catch (err) {
+ this.logger.debug("Caught (returning false): " + err);
+ return false;
+ }
  }
 
  // --- Detect required npm packages from code -----------------------------
@@ -2089,7 +2138,7 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  }
 
  /** Implement a single backend task (supports db_seed and create_api) */
- implementTask(task: BackendTask, appId?: number): { success: boolean; taskId: string; message: string } {
+ async implementTask(task: BackendTask, appId?: number, modelId?: string): Promise<{ success: boolean; taskId: string; message: string; files?: GeneratedFile[] }> {
  if (task.status ==='done') {
  return { success: true, taskId: task.id, message:`"${task.title}" is already done.` };
  }
@@ -2102,8 +2151,69 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  return this.executeSeedTask(task, appId);
  }
  if (task.implementation.type ==='create_api') {
- // API creation is async -- mark as pending for async implementation
- return { success: true, taskId: task.id, message:`API task "${task.title}" queued for auto-implementation` };
+ // Actually generate the NestJS API code
+ const aiModel = modelId || DEFAULT_ORCHESTRATOR;
+ const apiSpec = task.implementation.payload || {};
+ const apiGenPrompt = `Generate a COMPLETE NestJS backend implementation for:
+
+${task.title}: ${task.description}
+Route: ${apiSpec.route || '/api/' + task.id}
+Methods: ${(apiSpec.methods || ['GET', 'POST']).join(', ')}
+
+## Requirements:
+- NestJS controller with proper decorators
+- NestJS service with business logic
+- NestJS module that exports the controller and service
+- Use JSON file database pattern: constructor(private readonly db: DatabaseService) with this.db.readSync() / this.db.writeSync(data)
+- Import DatabaseService from '../shared/database.service'
+- Controller routes MUST be prefixed with 'api/' (e.g. @Controller('api/${task.id}'))
+- If calling external services, import CryptoService from '../shared/crypto.service' and use the getApiKey pattern
+- Make it FULLY FUNCTIONAL -- not stubs
+
+Return the code using ===FILE: path=== / ===END_FILE=== format.
+Include controller, service, AND module files.`;
+
+ const apiResult = await this.callAI(
+ aiModel,
+ 'Expert NestJS backend developer. Generate clean, complete API code. Include module file.',
+ apiGenPrompt,
+ );
+
+ let apiFiles = this.parseFiles(apiResult.content);
+ if (apiFiles.length <= 1) {
+ // Fallback: try to split by class boundaries
+ const cleanApi = this.cleanCodeResponse(apiResult.content);
+ const controllerMatch = cleanApi.match(/@Controller\(['"](?:api\/)?([\\w-]+)['"]\)/);
+ const slug = controllerMatch ? controllerMatch[1] : task.id.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+ const controllerCode = cleanApi.match(/(import[\s\S]*?@Controller[\s\S]*?export\s+class\s+\w+Controller[\s\S]*?^})/m);
+ const serviceCode = cleanApi.match(/(import[\s\S]*?@Injectable[\s\S]*?export\s+class\s+\w+Service[\s\S]*?^})/m);
+ const moduleCode = cleanApi.match(/(import[\s\S]*?@Module[\s\S]*?export\s+class\s+\w+Module[\s\S]*?^})/m);
+
+ apiFiles = [];
+ if (controllerCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.controller.ts`, content: controllerCode[1], language: 'typescript', description: `Controller for ${slug}` });
+ if (serviceCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: serviceCode[1], language: 'typescript', description: `Service for ${slug}` });
+ if (moduleCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.module.ts`, content: moduleCode[1], language: 'typescript', description: `Module for ${slug}` });
+
+ if (apiFiles.length === 0) {
+ apiFiles.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: cleanApi, language: 'typescript', description: task.description });
+ }
+ }
+
+ if (apiFiles.length > 0) {
+ this.writeGeneratedFilesToDisk(apiFiles);
+ const moduleFile = apiFiles.find(f => f.path.includes('.module.'));
+ if (moduleFile) {
+ const moduleNameMatch = moduleFile.content.match(/export\s+class\s+(\w+Module)/);
+ if (moduleNameMatch) {
+ const moduleName = moduleNameMatch[1];
+ const relativePath = './' + moduleFile.path.replace('backend/src/', '').replace('.ts', '');
+ this.registerNestModule(moduleName, relativePath);
+ }
+ }
+ return { success: true, taskId: task.id, message: `Generated ${apiFiles.length} API file(s) for "${task.title}"`, files: apiFiles };
+ }
+ return { success: false, taskId: task.id, message: `API generation produced no files for "${task.title}"` };
  }
  return { success: false, taskId: task.id, message:`Implementation type "${task.implementation.type}" not supported yet.` };
  } catch (err) {
@@ -2113,15 +2223,16 @@ Return ONLY the JSON array. No markdown fences, no explanation.`;
  }
 
  /** Execute all auto-implementable tasks */
- implementAllTasks(
+ async implementAllTasks(
  tasks: BackendTask[],
  appId?: number,
- ): { results: { success: boolean; taskId: string; message: string }[]; tasks: BackendTask[] } {
- const results: { success: boolean; taskId: string; message: string }[] = [];
+ modelId?: string,
+ ): Promise<{ results: { success: boolean; taskId: string; message: string; files?: GeneratedFile[] }[]; tasks: BackendTask[] }> {
+ const results: { success: boolean; taskId: string; message: string; files?: GeneratedFile[] }[] = [];
 
  for (const task of tasks) {
  if (task.status ==='pending' && task.implementation) {
- const result = this.implementTask(task, appId);
+ const result = await this.implementTask(task, appId, modelId);
  results.push(result);
  if (result.success) {
  task.status ='done';
@@ -2365,6 +2476,14 @@ Use this when you need to wire up an admin panel, dashboard, or any existing pag
 You MUST return the ENTIRE file content (not just a diff). Keep all existing functionality intact and add the new section/component.
 The file should be valid TSX/React code using Material UI (MUI) components.
 
+5. CREATE API ENDPOINT: Generate a NestJS backend API
+{
+  "action": "create_api",
+  "route": "/api/endpoint-name",
+  "methods": ["GET", "POST"]
+}
+Use this when the frontend needs a new backend API that doesn't exist yet.
+
 Rules:
 - Return ONLY valid JSON, no markdown fences
 - Provide realistic, domain-appropriate data
@@ -2460,6 +2579,21 @@ Rules:
  }
  // Return the file edit so the caller can send it to the frontend
  return { success: true, message: `Updated ${filePath}`, fileEdit: { path: filePath, content: newContent } };
+ }
+
+ if (action.action === 'create_api') {
+ // Delegate to the real implementTask create_api handler
+ const apiTask: BackendTask = {
+ ...task,
+ implementation: {
+ type: 'create_api',
+ payload: {
+ route: action.route || `/api/${task.id}`,
+ methods: action.methods || ['GET', 'POST'],
+ },
+ },
+ };
+ return this.implementTask(apiTask, appId, model);
  }
 
  return { success: false, message: `Unknown action type: ${action.action}` };
@@ -3191,6 +3325,15 @@ IMPORTANT RULES:
 - When creating a new backend API, ALWAYS also add a step to modify_file "frontend/src/config/api.ts" to add the new endpoint URL to the API config object.
 - When frontend code calls backend APIs, use the API config object: \`API.endpointName\` (e.g. \`API.generateImage\`), NOT string concatenation like \`\${API}/path\`.
 
+## BACKEND COMPLETION CHECKLIST (CRITICAL):
+When a feature requires backend APIs, you MUST plan ALL of these steps in order:
+1. **create_api** -- Generate the NestJS controller + service + module
+2. **modify_file** on "frontend/src/config/api.ts" -- Add the new endpoint URL to the API config
+3. **delegate_backend** -- Seed any required database tables with realistic sample data
+Do NOT generate frontend pages that call APIs without first creating those APIs. Plan backend steps BEFORE frontend steps that depend on them.
+If a frontend page fetches from \`API.someEndpoint\`, there MUST be a create_api step that creates that endpoint.
+NEVER leave a frontend page calling a non-existent backend endpoint.
+
 CRITICAL: Be PROPORTIONAL to the request.
 - For simple UI changes (add a form, edit text, change styling, add a section), use 1-3 steps max (generate_component and/or modify_file). Do NOT create backend APIs or tables unless the user explicitly asks for backend functionality.
 - For creating/deleting a page in a members area, use 4-6 steps (create/delete file + update router + update navigation). This is necessary architecture -- not over-engineering.
@@ -3871,7 +4014,7 @@ Return ONLY the complete updated file. No markdown fences, no explanations.`;
 
  // Auto-implement seed tasks
  if (autoSeedTasks.length > 0) {
- const implResult = this.implementAllTasks(autoSeedTasks, appId);
+ const implResult = await this.implementAllTasks(autoSeedTasks, appId, modelId);
  implementedCount = implResult.results.filter(r => r.success).length;
 
  // Record DB changes from backend agent
@@ -3891,24 +4034,61 @@ Return ONLY the complete updated file. No markdown fences, no explanations.`;
  for (const apiTask of autoApiTasks) {
  try {
  const apiSpec = apiTask.implementation!.payload;
+
+ // Read an existing backend module as a template (same as create_api handler)
+ let backendExamples = '';
+ const existingModuleDirs = this.listDirectory('backend/src').filter(f => !f.includes('.') && !f.includes('node_modules'));
+ for (const dir of ['chat', 'apps', 'health', 'pages', 'settings']) {
+ if (existingModuleDirs.includes(dir)) {
+ const ctrlContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.controller.ts`);
+ const svcContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.service.ts`);
+ const modContent = this.readFileFromDisk(`backend/src/${dir}/${dir}.module.ts`);
+ if (ctrlContent && svcContent && modContent) {
+ backendExamples = `\n## EXISTING BACKEND MODULE TO USE AS TEMPLATE -- follow this exact pattern:\n### Controller (backend/src/${dir}/${dir}.controller.ts):\n\`\`\`typescript\n${ctrlContent.slice(0, 3000)}\n\`\`\`\n### Service (backend/src/${dir}/${dir}.service.ts):\n\`\`\`typescript\n${svcContent.slice(0, 3000)}\n\`\`\`\n### Module (backend/src/${dir}/${dir}.module.ts):\n\`\`\`typescript\n${modContent}\n\`\`\`\nStudy the template above carefully. Match its import patterns, decorator usage, DatabaseService usage, error handling, and code structure exactly.\n`;
+ break;
+ }
+ }
+ }
+
  const apiGenPrompt =`Generate a COMPLETE NestJS backend implementation for:
 
 ${apiTask.title}: ${apiTask.description}
 Route: ${apiSpec.route ||'/api/' + apiTask.id}
 Methods: ${(apiSpec.methods || ['GET','POST']).join(',')}
-
+${backendExamples}
 ## Requirements:
-- NestJS controller with proper decorators
+- NestJS controller with proper decorators (@Controller, @Get, @Post, @Put, @Delete)
 - NestJS service with business logic
 - NestJS module that exports the controller and service
 - Use JSON file database pattern: constructor(private readonly db: DatabaseService) with this.db.readSync() / this.db.writeSync(data)
 - Import DatabaseService from'../shared/database.service'
+- Include proper TypeScript types/interfaces
+- Add error handling and validation
+- Follow RESTful conventions
 - Controller routes MUST be prefixed with'api/' (e.g. @Controller('api/${apiTask.id}'))
 - If calling external services, import CryptoService from'../shared/crypto.service' and use the getApiKey pattern
 - Make it FULLY FUNCTIONAL -- not stubs
 
 Return the code using ===FILE: path=== / ===END_FILE=== format.
-Include controller, service, AND module files.`;
+You MUST return EXACTLY 3 files using this delimiter format. Do NOT return a single code block.
+
+Example output format:
+===FILE: backend/src/example/example.controller.ts===
+import { Controller } from'@nestjs/common';
+// ... controller code
+===END_FILE===
+
+===FILE: backend/src/example/example.service.ts===
+import { Injectable } from'@nestjs/common';
+// ... service code
+===END_FILE===
+
+===FILE: backend/src/example/example.module.ts===
+import { Module } from'@nestjs/common';
+// ... module code
+===END_FILE===
+
+Return ALL 3 files (controller, service, module) using ===FILE: path=== and ===END_FILE=== delimiters. No other text.`;
 
  const apiResult = await this.callAI(
  modelId,
@@ -3917,7 +4097,29 @@ Include controller, service, AND module files.`;
  );
  totalTokens += apiResult.tokensUsed || 0;
 
- const apiFiles = this.parseFiles(apiResult.content);
+ let apiFiles = this.parseFiles(apiResult.content);
+
+ // Fallback: if parseFiles returned <=1 file, try splitting by class boundaries
+ if (apiFiles.length <= 1) {
+ const cleanApi = this.cleanCodeResponse(apiResult.content);
+ const controllerMatch = cleanApi.match(/@Controller\(['"](?:api\/)?([\\w-]+)['"]\)/);
+ const slug = controllerMatch ? controllerMatch[1] : apiTask.id.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+ const controllerCode = cleanApi.match(/(import[\s\S]*?@Controller[\s\S]*?export\s+class\s+\w+Controller[\s\S]*?^})/m);
+ const serviceCode = cleanApi.match(/(import[\s\S]*?@Injectable[\s\S]*?export\s+class\s+\w+Service[\s\S]*?^})/m);
+ const moduleCode = cleanApi.match(/(import[\s\S]*?@Module[\s\S]*?export\s+class\s+\w+Module[\s\S]*?^})/m);
+
+ apiFiles = [];
+ if (controllerCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.controller.ts`, content: controllerCode[1], language: 'typescript', description: `Controller for ${slug}` });
+ if (serviceCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: serviceCode[1], language: 'typescript', description: `Service for ${slug}` });
+ if (moduleCode) apiFiles.push({ path: `backend/src/${slug}/${slug}.module.ts`, content: moduleCode[1], language: 'typescript', description: `Module for ${slug}` });
+
+ // Last resort: save as service file
+ if (apiFiles.length === 0 && cleanApi.length > 50) {
+ apiFiles.push({ path: `backend/src/${slug}/${slug}.service.ts`, content: cleanApi, language: 'typescript', description: apiTask.description });
+ }
+ }
+
  if (apiFiles.length > 0) {
  generatedFiles.push(...apiFiles);
  // Write to disk immediately
@@ -4698,8 +4900,15 @@ Generate the complete code. No explanation, no markdown fences.`;
  if (analysis.success && analysis.tasks.length > 0) {
  const autoTasks = analysis.tasks.filter(t => t.status ==='pending' && t.implementation);
  if (autoTasks.length > 0) {
- const implResult = this.implementAllTasks(autoTasks, appId);
+ const implResult = await this.implementAllTasks(autoTasks, appId, modelId);
  const implementedCount = implResult.results.filter(r => r.success).length;
+
+ // Collect any generated API files
+ for (const result of implResult.results) {
+ if (result.files && result.files.length > 0) {
+ generatedFiles.push(...result.files);
+ }
+ }
 
  for (const task of autoTasks) {
  if (task.status ==='done' && task.implementation?.payload) {

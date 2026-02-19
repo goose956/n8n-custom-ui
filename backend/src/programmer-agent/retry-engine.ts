@@ -12,6 +12,7 @@ export interface RetryEngineContext {
   cleanCodeResponse(content: string): string;
   parseFiles(content: string): GeneratedFile[];
   toPascalCase(str: string): string;
+  toKebabCase(str: string): string;
   getDesignSystemContext(): string;
 }
 
@@ -28,6 +29,21 @@ export class RetryEngine {
   private readonly logger = new Logger('RetryEngine');
 
   constructor(private readonly ctx: RetryEngineContext) {}
+
+  /**
+   * Determine the correct fallback file path based on the step's action.
+   * Backend actions (create_api, delegate_backend, create_database) get
+   * backend paths; everything else defaults to frontend.
+   */
+  private inferFallbackPath(step: any): string {
+    const BACKEND_ACTIONS = ['create_api', 'delegate_backend', 'create_database'];
+    const isBackend = BACKEND_ACTIONS.includes(step.action);
+    const slug = this.ctx.toKebabCase(step.title || 'unknown');
+    if (isBackend) {
+      return `backend/src/${slug}/${slug}.service.ts`;
+    }
+    return `frontend/src/components/${this.ctx.toPascalCase(step.title)}.tsx`;
+  }
 
   /**
    * Orchestrates up to 3 retry strategies when a step fails.
@@ -153,7 +169,7 @@ Return ONLY the complete code. No explanation, no markdown fences.`;
       return {
         success: true,
         files: [{
-          path: targetPath || `frontend/src/components/${this.ctx.toPascalCase(step.title)}.tsx`,
+          path: targetPath || this.inferFallbackPath(step),
           content: clean,
           language: 'typescript',
           description: `Retry fix: ${step.detail}`,
@@ -292,7 +308,7 @@ Return the complete corrected code. No explanation.`;
       return {
         success: true,
         files: [{
-          path: targetPath || `frontend/src/components/${this.ctx.toPascalCase(step.title)}.tsx`,
+          path: targetPath || this.inferFallbackPath(step),
           content: clean,
           language: 'typescript',
           description: `Diagnostic fix: ${step.detail}`,
@@ -399,7 +415,7 @@ Return ONLY the code. No explanation, no markdown fences.`;
             allFiles.push(...files);
           } else {
             allFiles.push({
-              path: sub.filePath || `frontend/src/components/${this.ctx.toPascalCase(sub.title)}.tsx`,
+              path: sub.filePath || this.inferFallbackPath({ ...step, title: sub.title }),
               content: clean,
               language: 'typescript',
               description: `Sub-task: ${sub.title}`,

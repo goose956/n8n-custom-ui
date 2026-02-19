@@ -56,6 +56,12 @@ import {
  AttachMoney as CostIcon,
  VerticalSplit as SplitIcon,
  Web as FullSiteIcon,
+ FlashOn as QuickIcon,
+ TravelExplore as ScraperIcon,
+ AccountTree as FeatureIcon,
+ TableView as CrudIcon,
+ ImportExport as IntegrationQuickIcon,
+ Palette as UIIcon,
 } from'@mui/icons-material';
 
 /* "€"€"€ Types "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
@@ -149,6 +155,105 @@ interface QaIssue {
 }
 
 type Phase ='setup' |'planning' |'pages' |'generating' |'results' |'finalizing' |'finalized' |'qa-running' |'qa-results' |'documenting' |'documented';
+
+/* "€"€"€ Quick Key Templates "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+
+interface QuickKeyTemplate {
+  id: string;
+  label: string;
+  description?: string;
+  icon: string;
+  color: string;
+  dialogTitle: string;
+  dialogPlaceholder: string;
+  dialogHelperText: string;
+  extraFields?: { key: string; label: string; placeholder: string; multiline?: boolean }[];
+  buildPrompt: (input: string, extras: Record<string, string>) => string;
+}
+
+const QUICK_KEY_TEMPLATES: QuickKeyTemplate[] = [
+  {
+    id: 'apify-scraper',
+    label: 'Apify Scraper',
+    description: 'Build a full Apify scraper integration with API & results page',
+    icon: 'scraper',
+    color: '#00b894',
+    dialogTitle: 'Which Apify scraper do you want?',
+    dialogPlaceholder: 'e.g. Instagram Profile Scraper, Google Maps Scraper...',
+    dialogHelperText: 'Enter the exact Apify actor name or describe what you want to scrape',
+    extraFields: [
+      { key: 'resultsFields', label: 'Key data fields', placeholder: 'e.g. name, email, followers, website' },
+    ],
+    buildPrompt: (input, extras) => {
+      const fields = extras.resultsFields || 'all available fields';
+      return `## APIFY SCRAPER INTEGRATION: ${input}\n\nPlease build a COMPLETE Apify scraper integration for "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API (MUST DO FIRST)\nCreate a full NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Controller with POST /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/run (accepts scraper input params)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/results (returns stored results)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/status (returns run status)\n- Service that calls Apify API: const client = new ApifyClient({ token: process.env.APIFY_TOKEN || apiKey }); const run = await client.actor("ACTOR_ID").call(inputParams); const { items } = await client.dataset(run.defaultDatasetId).listItems();\n- Store results in db.json under a new collection\n- Register the module in app.module.ts\n\n### Step 2 — Update API Config\nAdd the new endpoints to frontend/src/config/api.ts so the frontend can reach them.\n\n### Step 3 — Database Seeding\nAdd 5-10 realistic sample records to the db.json collection so the results page looks populated immediately.\n\n### Step 4 — Results Page\nCreate a beautiful results page at frontend/src/components/ with:\n- MUI DataGrid or styled table showing: ${fields}\n- Search/filter bar\n- Export to CSV button\n- Run new scrape button that opens a dialog for input parameters\n- Status indicator showing if a scrape is running\n- Auto-refresh results\n- Responsive design with proper loading states\n\n### Step 5 — Router & Navigation\nAdd the page to the router and sidebar/navigation so users can find it.\n\nIMPORTANT: Each step depends on the previous one. Do NOT skip the backend.`;
+    },
+  },
+  {
+    id: 'crud-feature',
+    label: 'CRUD Feature',
+    description: 'Create, read, update & delete with backend API + management page',
+    icon: 'crud',
+    color: '#6c5ce7',
+    dialogTitle: 'What resource do you want to manage?',
+    dialogPlaceholder: 'e.g. Products, Contacts, Projects, Invoices...',
+    dialogHelperText: 'Name the entity this CRUD feature will manage',
+    extraFields: [
+      { key: 'fields', label: 'Fields / columns', placeholder: 'e.g. name, email, status, created_at' },
+    ],
+    buildPrompt: (input, extras) => {
+      const fields = extras.fields || 'id, name, description, status, createdAt, updatedAt';
+      return `## FULL CRUD FEATURE: ${input}\n\nBuild a COMPLETE CRUD management feature for "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Full REST endpoints: GET (list + single), POST (create), PUT (update), DELETE\n- Validation and error handling\n- Fields: ${fields}\n- Store in db.json\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 — Seed Data\nAdd 8-10 realistic sample records to db.json.\n\n### Step 4 — Management Page\nCreate a management page with:\n- Data table with sorting, search, pagination\n- Create/Edit dialog with form validation\n- Delete confirmation\n- Status badges and proper formatting\n- Toast notifications for actions\n- Loading and empty states\n\n### Step 5 — Router & Navigation\nAdd to router and sidebar navigation.\n\nIMPORTANT: Backend first, then frontend. Do NOT skip steps.`;
+    },
+  },
+  {
+    id: 'api-integration',
+    label: 'API Integration',
+    description: 'Integrate an external API with backend proxy & frontend UI',
+    icon: 'integration',
+    color: '#e17055',
+    dialogTitle: 'Which external API do you want to integrate?',
+    dialogPlaceholder: 'e.g. Stripe Payments, OpenAI Chat, SendGrid Email...',
+    dialogHelperText: 'Describe the API or service to integrate',
+    buildPrompt: (input) => {
+      return `## API INTEGRATION: ${input}\n\nBuild a COMPLETE integration with "${input}". Follow this EXACT order:\n\n### Step 1 — Backend Proxy API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Proxy endpoints that call the external ${input} API\n- Secure API key storage (use environment variables / settings)\n- Response transformation to normalize the data\n- Error handling with meaningful messages\n- Rate limiting awareness\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 — Frontend Interface\nCreate a UI page with:\n- Configuration section for API keys/settings\n- Interactive interface to use the integration\n- Results display\n- Error states and loading indicators\n- Usage/status dashboard\n\n### Step 4 — Router & Navigation\nAdd to router and sidebar.\n\nIMPORTANT: Backend proxy first — never expose API keys to the frontend.`;
+    },
+  },
+  {
+    id: 'new-feature',
+    label: 'Full Feature',
+    description: 'Build a complete end-to-end feature with backend + frontend',
+    icon: 'feature',
+    color: '#0984e3',
+    dialogTitle: 'Describe the feature you want to build',
+    dialogPlaceholder: 'e.g. A blog system with posts, categories, and comments...',
+    dialogHelperText: 'Be specific about what the feature should do',
+    buildPrompt: (input) => {
+      return `## NEW FEATURE: ${input}\n\nBuild this feature end-to-end: "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API\nCreate a NestJS module with all necessary endpoints.\n- Full REST API with proper validation\n- Database storage in db.json\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd all new endpoints to frontend/src/config/api.ts\n\n### Step 3 — Seed Database\nAdd realistic sample data to db.json so the feature works immediately.\n\n### Step 4 — Frontend Pages\nCreate beautiful, responsive React pages with MUI components:\n- Proper loading, empty, and error states\n- Forms with validation\n- Data display with sorting/filtering where appropriate\n- Toast notifications for user actions\n\n### Step 5 — Router & Navigation\nAdd all pages to the router and navigation.\n\nIMPORTANT: Build backend first, then frontend. Each step must complete before the next.`;
+    },
+  },
+  {
+    id: 'ui-page',
+    label: 'UI Page Only',
+    description: 'Create a beautiful frontend page with mock data',
+    icon: 'ui',
+    color: '#fd79a8',
+    dialogTitle: 'What page do you want to create?',
+    dialogPlaceholder: 'e.g. Analytics Dashboard, User Settings, Landing Page...',
+    dialogHelperText: 'This creates a frontend-only page with mock data',
+    buildPrompt: (input) => {
+      return `## UI PAGE: ${input}\n\nCreate a beautiful frontend page for: "${input}"\n\n### Requirements\n- Create at frontend/src/components/\n- Use MUI components with a polished, professional design\n- Include realistic mock/sample data directly in the component\n- Responsive layout that works on all screen sizes\n- Proper loading skeleton and empty states\n- Add to the router and navigation\n\nMake it look production-ready with attention to spacing, typography, and visual hierarchy.`;
+    },
+  },
+];
+
+const QUICK_KEY_ICON_MAP: Record<string, typeof CodeIcon> = {
+  scraper: ScraperIcon,
+  crud: CrudIcon,
+  integration: IntegrationQuickIcon,
+  feature: FeatureIcon,
+  ui: UIIcon,
+};
 
 /* "€"€"€ Simple syntax highlighter "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
 
@@ -337,6 +442,9 @@ export function ProgrammerAgentPage() {
  const promptRef = useRef<HTMLTextAreaElement>(null);
  const coderChatEndRef = useRef<HTMLDivElement>(null);
  const coderAbortRef = useRef<AbortController | null>(null);
+ const [quickKeyDialog, setQuickKeyDialog] = useState<QuickKeyTemplate | null>(null);
+ const [quickKeyInput, setQuickKeyInput] = useState('');
+ const [quickKeyExtras, setQuickKeyExtras] = useState<Record<string, string>>({});
 
  // --- Load existing members files for editing -------------------------
  const loadMembersFiles = async () => {
@@ -2847,11 +2955,31 @@ export function ProgrammerAgentPage() {
 '&::-webkit-scrollbar': { width: 6 },'&::-webkit-scrollbar-thumb': { bgcolor:'#ccc', borderRadius: 3 },
  }}>
  {chatMessages.length === 0 ? (
- <Box sx={{ m:'auto', textAlign:'center', py: 4 }}>
- <CodeIcon sx={{ fontSize: 36, color:'#b2dfdb', mb: 1 }} />
- <Typography variant="body2" sx={{ color:'#888', fontSize:'0.82rem' }}>
- Ask me anything - build features, debug code, create pages, set up databases.
+ <Box sx={{ m:'auto', textAlign:'center', py: 3, px: 1, maxWidth: 340 }}>
+ <QuickIcon sx={{ fontSize: 28, color:'#b2dfdb', mb: 1 }} />
+ <Typography variant="body2" sx={{ color:'#888', fontSize:'0.8rem', mb: 2.5 }}>
+ Quick-start a build or ask me anything.
  </Typography>
+ <Box sx={{ display:'flex', flexDirection:'column', gap: 1 }}>
+ {QUICK_KEY_TEMPLATES.map((tpl) => {
+ const Icon = QUICK_KEY_ICON_MAP[tpl.icon] || CodeIcon;
+ return (
+ <Button key={tpl.id} variant="outlined" size="small"
+ startIcon={<Icon sx={{ fontSize: 16 }} />}
+ onClick={() => { setQuickKeyInput(''); setQuickKeyExtras({}); setQuickKeyDialog(tpl); }}
+ sx={{
+ textTransform:'none', justifyContent:'flex-start', borderColor:'#e0e0e0',
+ color:'#555', fontSize:'0.78rem', py: 1, px: 2, borderRadius: 2,
+ '&:hover': { borderColor:'#00897b', color:'#00897b', bgcolor:'#e0f2f1' },
+ }}>
+ <Box sx={{ textAlign:'left' }}>
+ <Typography variant="body2" sx={{ fontWeight: 600, fontSize:'0.78rem', lineHeight: 1.3 }}>{tpl.label}</Typography>
+ <Typography variant="caption" sx={{ color:'#999', fontSize:'0.68rem', lineHeight: 1.2 }}>{tpl.description}</Typography>
+ </Box>
+ </Button>
+ );
+ })}
+ </Box>
  </Box>
  ) : (
  chatMessages.map((msg) => (
@@ -2891,6 +3019,22 @@ export function ProgrammerAgentPage() {
  </Button>
  </Box>
  <Box sx={{ p: 2, borderTop:'1px solid #eee', bgcolor:'#fff' }}>
+ {/* Quick key chips above input */}
+ {chatMessages.length > 0 && chatMode === 'coder' && !chatLoading && (
+ <Box sx={{ display:'flex', gap: 0.5, flexWrap:'wrap', mb: 1 }}>
+ {QUICK_KEY_TEMPLATES.map((tpl) => (
+ <Chip key={tpl.id} label={tpl.label} size="small" variant="outlined"
+ icon={(() => { const Icon = QUICK_KEY_ICON_MAP[tpl.icon] || CodeIcon; return <Icon sx={{ fontSize:'14px !important' }} />; })()}
+ onClick={() => { setQuickKeyInput(''); setQuickKeyExtras({}); setQuickKeyDialog(tpl); }}
+ sx={{
+ fontSize:'0.68rem', height: 26, borderColor:'#e0e0e0', color:'#666',
+ '& .MuiChip-icon': { color:'#999' },
+ '&:hover': { borderColor:'#00897b', color:'#00897b', bgcolor:'#e0f2f1', '& .MuiChip-icon': { color:'#00897b' } },
+ }}
+ />
+ ))}
+ </Box>
+ )}
  <Box sx={{ display:'flex', gap: 1, alignItems:'flex-end' }}>
  <TextField fullWidth size="small" placeholder="Ask me anything..."
  value={chatInput} onChange={(e: any) => setChatInput(e.target.value)}
@@ -3541,6 +3685,94 @@ export function ProgrammerAgentPage() {
  {snack.msg}
  </Alert>
  </Snackbar>
+
+ {/* Quick Key Dialog */}
+ <Dialog open={!!quickKeyDialog} onClose={() => setQuickKeyDialog(null)} maxWidth="sm" fullWidth
+   PaperProps={{ sx: { borderRadius: 3, overflow: 'visible' } }}>
+   {quickKeyDialog && (() => {
+     const Icon = QUICK_KEY_ICON_MAP[quickKeyDialog.icon] || CodeIcon;
+     return (
+       <>
+         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1 }}>
+           <Box sx={{
+             width: 40, height: 40, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+             background: 'linear-gradient(135deg, #00897b 0%, #004d40 100%)',
+           }}>
+             <Icon sx={{ color: '#fff', fontSize: 22 }} />
+           </Box>
+           <Box>
+             <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 700, lineHeight: 1.2 }}>
+               {quickKeyDialog.dialogTitle}
+             </Typography>
+             <Typography variant="caption" sx={{ color: '#888' }}>
+               Quick Key &bull; Sends a detailed prompt to the builder agent
+             </Typography>
+           </Box>
+         </DialogTitle>
+         <DialogContent sx={{ pt: '8px !important' }}>
+           <TextField
+             autoFocus fullWidth size="small" label={quickKeyDialog.dialogTitle}
+             placeholder={quickKeyDialog.dialogPlaceholder}
+             helperText={quickKeyDialog.dialogHelperText}
+             value={quickKeyInput}
+             onChange={(e) => setQuickKeyInput(e.target.value)}
+             onKeyPress={(e) => {
+               if (e.key === 'Enter' && !e.shiftKey && quickKeyInput.trim()) {
+                 e.preventDefault();
+                 const prompt = quickKeyDialog.buildPrompt(quickKeyInput.trim(), quickKeyExtras);
+                 setQuickKeyDialog(null);
+                 setChatMode('coder');
+                 handleChatSend(prompt);
+               }
+             }}
+             sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+           />
+           {quickKeyDialog.extraFields?.map((field) => (
+             <TextField
+               key={field.key} fullWidth size="small" label={field.label}
+               placeholder={field.placeholder} multiline={field.multiline} minRows={field.multiline ? 2 : 1} maxRows={4}
+               value={quickKeyExtras[field.key] || ''}
+               onChange={(e) => setQuickKeyExtras(prev => ({ ...prev, [field.key]: e.target.value }))}
+               sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+             />
+           ))}
+           <Box sx={{ bgcolor: '#f5f5f5', borderRadius: 2, p: 2, border: '1px solid #e8e8e8' }}>
+             <Typography variant="caption" sx={{ fontWeight: 700, color: '#666', display: 'block', mb: 0.5 }}>
+               What this will do:
+             </Typography>
+             <Typography variant="caption" sx={{ color: '#888', lineHeight: 1.6, display: 'block' }}>
+               {quickKeyDialog.id === 'apify-scraper' && '1. Create backend API for the Apify scraper  2. Update API config  3. Build results page with data table  4. Seed sample data  5. Add to router & navigation'}
+               {quickKeyDialog.id === 'crud-feature' && '1. Create full CRUD backend API  2. Update API config  3. Build management page with create/edit/delete  4. Seed sample records  5. Add to router & navigation'}
+               {quickKeyDialog.id === 'api-integration' && '1. Create backend proxy API  2. Update API config  3. Build frontend interface  4. Add to router & navigation'}
+               {quickKeyDialog.id === 'new-feature' && '1. Create backend API  2. Update API config  3. Seed database  4. Build frontend page(s)  5. Add to router & navigation'}
+               {quickKeyDialog.id === 'ui-page' && '1. Create a beautiful frontend page with mock data  2. Add to router & navigation'}
+             </Typography>
+           </Box>
+         </DialogContent>
+         <DialogActions sx={{ px: 3, pb: 2.5 }}>
+           <Button onClick={() => setQuickKeyDialog(null)} sx={{ textTransform: 'none', color: '#999' }}>
+             Cancel
+           </Button>
+           <Button variant="contained" disabled={!quickKeyInput.trim()}
+             onClick={() => {
+               const prompt = quickKeyDialog.buildPrompt(quickKeyInput.trim(), quickKeyExtras);
+               setQuickKeyDialog(null);
+               setChatMode('coder');
+               handleChatSend(prompt);
+             }}
+             sx={{
+               textTransform: 'none', borderRadius: 2, px: 3,
+               background: 'linear-gradient(135deg, #00897b 0%, #004d40 100%)',
+               '&:hover': { background: 'linear-gradient(135deg, #00695c 0%, #003d33 100%)' },
+             }}
+             startIcon={<SendIcon sx={{ fontSize: 16 }} />}>
+             Build it
+           </Button>
+         </DialogActions>
+       </>
+     );
+   })()}
+ </Dialog>
  </Box>
  );
 }

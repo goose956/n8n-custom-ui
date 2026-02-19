@@ -155,7 +155,7 @@ export class ProgrammerAgentController {
  * Implement a single backend task (e.g. DB seed)
  */
  @Post('implement-task')
- implementTask(
+ async implementTask(
  @Body()
  body: {
  task: {
@@ -170,7 +170,7 @@ export class ProgrammerAgentController {
  appId?: number;
  },
  ) {
- const result = this.agentService.implementTask(body.task, body.appId);
+ const result = await this.agentService.implementTask(body.task, body.appId);
  return { ...result, timestamp: new Date().toISOString() };
  }
 
@@ -178,7 +178,7 @@ export class ProgrammerAgentController {
  * Auto-implement all pending tasks that support it
  */
  @Post('implement-all')
- implementAll(
+ async implementAll(
  @Body()
  body: {
  tasks: {
@@ -193,7 +193,7 @@ export class ProgrammerAgentController {
  appId?: number;
  },
  ) {
- const result = this.agentService.implementAllTasks(body.tasks, body.appId);
+ const result = await this.agentService.implementAllTasks(body.tasks, body.appId);
  return { success: true, ...result, timestamp: new Date().toISOString() };
  }
 
