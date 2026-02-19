@@ -3521,26 +3521,41 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
  const userMsg = (body.message || '').toLowerCase();
  const isBlankPage = /\b(blank|empty|placeholder|skeleton|stub|bare|minimal|shell)\b/.test(userMsg);
 
- // Duplicate file detection -- check if file already exists
- if (step.newFilePath) {
-   const existingContent = this.readFileFromDisk(step.newFilePath);
+ // Resolve the target path (AI-supplied or default)
+ const resolvedFilePath = step.newFilePath || `frontend/src/components/${this.toPascalCase((step.title || 'NewComponent').replace(/\s+/g, '-'))}.tsx`;
+ const baseName = path.basename(resolvedFilePath);
+
+ // Duplicate file detection -- check multiple common locations for same filename
+ const pathsToCheck = [
+   resolvedFilePath,
+   `frontend/src/${baseName}`,
+   `frontend/src/components/${baseName}`,
+   `frontend/src/components/members/${baseName}`,
+   `backend/src/${baseName}`,
+ ];
+ // Deduplicate
+ const uniquePaths = [...new Set(pathsToCheck)];
+ for (const checkPath of uniquePaths) {
+   const existingContent = this.readFileFromDisk(checkPath);
    if (existingContent) {
-     this.logger.warn(`File already exists: ${step.newFilePath} -- skipping generate to avoid duplicate`);
+     this.logger.warn(`File already exists at ${checkPath} (planned: ${resolvedFilePath}) -- loading instead of overwriting`);
      stepResult.status = 'done';
-     stepResult.detail = `File already exists: ${step.newFilePath} -- skipped to avoid overwriting`;
-     // Add to existingFiles so later steps can reference it
-     const ext = path.extname(step.newFilePath).slice(1);
-     existingFiles.push({ path: step.newFilePath, content: existingContent, language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext, description: 'Already exists on disk' });
+     stepResult.detail = `File already exists: ${checkPath} -- loaded for context (use modify_file to change it)`;
+     const ext = path.extname(checkPath).slice(1);
+     if (!existingFiles.find(f => f.path === checkPath)) {
+       existingFiles.push({ path: checkPath, content: existingContent, language: ext === 'tsx' || ext === 'ts' ? 'typescript' : ext, description: `Already exists on disk at ${checkPath}` });
+     }
      break;
    }
  }
+ if (stepResult.status === 'done') break;  // Already handled above
 
  // Read api.ts config so generated components use correct API patterns
  const genApiConfig = this.getApiConfigContext();
 
  // Read an existing component as an example template (like Copilot reads existing patterns)
  let exampleComponent ='';
- const targetDir = step.newFilePath?.includes('members/') ? membersDir :'frontend/src/components';
+ const targetDir = resolvedFilePath.includes('members/') ? membersDir :'frontend/src/components';
  const existingComponents = this.listDirectory(targetDir).filter(f => f.endsWith('.tsx') && !f.includes('ProgrammerAgent'));
  if (!isBlankPage && existingComponents.length > 0) {
  // Pick a component to use as example pattern
@@ -3553,13 +3568,13 @@ Return ONLY the JSON object. No markdown fences, no explanation.`;
 
  // Build different prompts for blank vs full components
  let componentPrompt: string;
- const componentName = this.toPascalCase((step.newFilePath || 'NewComponent').split('/').pop()?.replace(/\.tsx$/, '') || 'NewComponent');
+ const componentName = this.toPascalCase((resolvedFilePath).split('/').pop()?.replace(/\.tsx$/, '') || 'NewComponent');
 
  if (isBlankPage) {
    // User explicitly asked for a blank/empty page - generate MINIMAL component
    componentPrompt = `Generate a BLANK, MINIMAL React component page. The user explicitly asked for a BLANK page.
 
-## File path: ${step.newFilePath || 'frontend/src/components/NewComponent.tsx'}
+## File path: ${resolvedFilePath}
 ## Component name: ${componentName}
 
 The component must be EXTREMELY SIMPLE -- under 30 lines total. It should contain:
@@ -3579,7 +3594,7 @@ ${this.getDesignSystemContext()}
 ${appContext}
 
 ## Task: ${step.detail}
-## File path: ${step.newFilePath ||'frontend/src/components/NewComponent.tsx'}
+## File path: ${resolvedFilePath}
 ${genApiConfig}
 ${exampleComponent}
 ${componentLibrary}
@@ -3631,7 +3646,7 @@ Return ONLY the code. No markdown fences, no explanation.`;
  const genResult = await this.callAI(modelId,`Expert React developer. ${this.getDesignSystemContext()}`, componentPrompt);
  totalTokens += genResult.tokensUsed || 0;
 
- const filePath = step.newFilePath ||`frontend/src/components/${this.toPascalCase(step.title.replace(/\s+/g,'-'))}.tsx`;
+ const filePath = resolvedFilePath;
  const cleanContent = genResult.content
  .replace(/^```(?:tsx?|typescript|javascript)?\n?/m,'')
  .replace(/\n?```$/m,'')
@@ -4168,18 +4183,31 @@ Return ALL 3 files (controller, service, module) using ===FILE: path=== and ===E
  // Normalise: AI sometimes returns a string instead of an array
  let packages: string[] = Array.isArray(step.packages) ? step.packages : 
  (typeof step.packages === 'string' ? (step.packages as string).split(/[\s,]+/).filter(Boolean) : []);
+
+ // Safety: if all items are single characters, the AI likely returned a string that got iterated
+ // Re-join and re-split to recover the original package name(s)
+ if (packages.length > 1 && packages.every(p => p.length <= 2)) {
+ const recovered = packages.join('');
+ this.logger.warn(`install_packages: detected char-split packages [${packages.join(',')}], recovering as "${recovered}"`);
+ packages = recovered.split(/[\s,]+/).filter(Boolean);
+ }
+
+ // Filter out any remaining single-char entries (not valid package names)
+ packages = packages.filter(p => p.trim().length > 1);
+
  const target = step.target ||'frontend';
 
  if (packages.length === 0) {
  stepResult.status ='done';
- stepResult.detail ='No packages to install';
+ stepResult.detail ='No packages to install (invalid package names filtered out)';
  break;
  }
 
+ sendEvent('progress', { message: `📦 Installing ${packages.join(', ')} in ${target}...` });
  const installResult = this.installPackages(packages, target as'frontend' |'backend');
  if (installResult.success) {
  stepResult.status ='done';
- stepResult.detail =`Installed ${packages.join(',')} in ${target}`;
+ stepResult.detail =`Installed ${installResult.installed.join(', ')} in ${target}`;
  } else {
  stepResult.status ='failed';
  stepResult.detail =`Install failed: ${installResult.error?.slice(0, 200)}`;
@@ -4508,8 +4536,35 @@ Return ALL 3 files (controller, service, module) using ===FILE: path=== and ===E
  if (step.targetFile) searchOpts.includePattern = step.targetFile;
 
  sendEvent('progress', { message: `🔍 Searching codebase for "${query}"...` });
- const searchResult = this.searchCodebase(query, searchOpts);
- const matches = searchResult.matches;
+
+ // Smart multi-word search: if the query has multiple words and fixed-string search
+ // fails, retry with each word individually to avoid missing "Routes, Route" when
+ // the AI searches for "Routes Route".
+ let searchResult = this.searchCodebase(query, searchOpts);
+ let matches = searchResult.matches;
+
+ if (matches.length === 0 && query.includes(' ')) {
+ // Try regex mode: replace spaces with .* to allow flexible matching
+ const regexQuery = query.split(/\s+/).map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+ searchResult = this.searchCodebase(regexQuery, { ...searchOpts, isRegex: true });
+ matches = searchResult.matches;
+
+ // If still nothing, try individual words — find files that match ANY term
+ if (matches.length === 0) {
+ const words = query.split(/\s+/).filter((w: string) => w.length > 2);
+ const seenFiles = new Set<string>();
+ for (const word of words) {
+ const wordResult = this.searchCodebase(word, searchOpts);
+ for (const m of wordResult.matches) {
+ if (!seenFiles.has(`${m.file}:${m.line}`)) {
+ seenFiles.add(`${m.file}:${m.line}`);
+ matches.push(m);
+ }
+ }
+ if (matches.length >= 50) break;
+ }
+ }
+ }
  if (matches.length > 0) {
  const formatted = matches.slice(0, 30).map(r => `${r.file}:${r.line}: ${r.text}`).join('\n');
  webContext += `\nCodebase search results for "${query}":\n${formatted}\n`;
@@ -4701,8 +4756,13 @@ ${fileContext ?`\nProject files:\n${fileContext}` :''}`;
  // Notify client of initial failure
  sendEvent('step_complete', { id: step.id, title: step.title, status:'failed', detail: stepResult.detail });
 
- // -- Diagnostic Retry System (3 escalating strategies) ---------
- if (step.action !=='chat' && step.action !=='search_web' && step.action !=='clarify') {
+ // --- 429 Rate Limit: do NOT retry, just wait and skip ---
+ const is429 = errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('Rate limit') || errorMsg.includes('Too Many Requests');
+ if (is429) {
+   sendEvent('progress', { message: `⏳ Rate limited by AI provider. Waiting 30 seconds before continuing...` });
+   await new Promise(r => setTimeout(r, 30_000));
+   // Don't engage retry system for rate limits — it would just compound the problem
+ } else if (step.action !=='chat' && step.action !=='search_web' && step.action !=='clarify') {
  sendEvent('progress', { message: `🧠 Engaging diagnostic retry system for "${step.title}"...` });
 
  const retryResult = await this.diagnosticRetry(
