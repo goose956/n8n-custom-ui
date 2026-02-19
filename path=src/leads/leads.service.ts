@@ -5,296 +5,370 @@ import { CreateLeadDto, UpdateLeadDto, LeadQueryDto } from './dto/leads.dto';
 
 export interface Lead {
   id: string;
-  linkedInId?: string;
+  linkedinId?: string;
   firstName: string;
   lastName: string;
-  fullName: string;
   email?: string;
+  phone?: string;
   company?: string;
-  jobTitle?: string;
+  position?: string;
+  linkedinUrl?: string;
+  profilePicture?: string;
   location?: string;
-  profileUrl?: string;
-  connectionDegree?: string;
-  engagementStatus: 'new' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
-  lastContactDate?: string;
+  industry?: string;
+  connections?: number;
+  status: 'new' | 'contacted' | 'interested' | 'qualified' | 'converted' | 'rejected';
+  source: 'linkedin' | 'manual' | 'imported';
+  tags?: string[];
   notes?: string;
-  tags: string[];
-  leadSource: 'manual' | 'linkedin_search' | 'linkedin_import' | 'referral' | 'other';
-  leadScore?: number;
-  createdAt: string;
-  updatedAt: string;
+  lastContactDate?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  linkedinData?: {
+    headline?: string;
+    summary?: string;
+    experience?: any[];
+    education?: any[];
+    skills?: string[];
+    lastUpdated?: Date;
+  };
+}
+
+export interface LeadsDatabase {
+  leads: Lead[];
+  lastId: number;
 }
 
 @Injectable()
 export class LeadsService {
-  private readonly collectionName = 'leads';
-
   constructor(
     private readonly db: DatabaseService,
     private readonly cryptoService: CryptoService,
   ) {}
 
-  async getLeads(query: LeadQueryDto): Promise<{ leads: Lead[]; total: number }> {
+  private getDatabase(): LeadsDatabase {
     const data = this.db.readSync();
-    let leads: Lead[] = data[this.collectionName] || [];
+    if (!data.leads) {
+      data.leads = [];
+      data.lastId = 0;
+      this.db.writeSync(data);
+    }
+    return data;
+  }
 
-    // Apply filters
-    if (query.engagementStatus) {
-      leads = leads.filter(lead => lead.engagementStatus === query.engagementStatus);
+  private generateId(): string {
+    const data = this.getDatabase();
+    data.lastId += 1;
+    this.db.writeSync(data);
+    return `lead_${data.lastId}`;
+  }
+
+  async getAllLeads(query: LeadQueryDto): Promise<{
+    leads: Lead[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const data = this.getDatabase();
+    let leads = [...data.leads];
+
+    // Filter by status
+    if (query.status) {
+      leads = leads.filter(lead => lead.status === query.status);
     }
 
-    if (query.company) {
-      leads = leads.filter(lead => 
-        lead.company?.toLowerCase().includes(query.company.toLowerCase())
-      );
+    // Filter by source
+    if (query.source) {
+      leads = leads.filter(lead => lead.source === query.source);
     }
 
-    if (query.jobTitle) {
-      leads = leads.filter(lead => 
-        lead.jobTitle?.toLowerCase().includes(query.jobTitle.toLowerCase())
-      );
-    }
-
-    if (query.location) {
-      leads = leads.filter(lead => 
-        lead.location?.toLowerCase().includes(query.location.toLowerCase())
-      );
-    }
-
-    if (query.leadSource) {
-      leads = leads.filter(lead => lead.leadSource === query.leadSource);
-    }
-
-    if (query.tags) {
-      const searchTags = query.tags.split(',').map(tag => tag.trim().toLowerCase());
-      leads = leads.filter(lead => 
-        searchTags.some(tag => 
-          lead.tags.some(leadTag => leadTag.toLowerCase().includes(tag))
-        )
-      );
-    }
-
+    // Search functionality
     if (query.search) {
       const searchTerm = query.search.toLowerCase();
-      leads = leads.filter(lead => 
-        lead.fullName.toLowerCase().includes(searchTerm) ||
+      leads = leads.filter(lead =>
+        lead.firstName.toLowerCase().includes(searchTerm) ||
+        lead.lastName.toLowerCase().includes(searchTerm) ||
         lead.email?.toLowerCase().includes(searchTerm) ||
         lead.company?.toLowerCase().includes(searchTerm) ||
-        lead.jobTitle?.toLowerCase().includes(searchTerm)
+        lead.position?.toLowerCase().includes(searchTerm)
       );
     }
 
-    // Apply sorting
-    const sortField = query.sortBy || 'createdAt';
+    // Filter by tags
+    if (query.tags && query.tags.length > 0) {
+      leads = leads.filter(lead =>
+        lead.tags && lead.tags.some(tag => query.tags.includes(tag))
+      );
+    }
+
+    // Sort leads
+    const sortBy = query.sortBy || 'createdAt';
     const sortOrder = query.sortOrder || 'desc';
     
     leads.sort((a, b) => {
-      let aValue = a[sortField as keyof Lead];
-      let bValue = b[sortField as keyof Lead];
+      let aValue = a[sortBy];
+      let bValue = b[sortBy];
       
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        aValue = aValue.toLowerCase();
-        bValue = bValue.toLowerCase();
-      }
+      if (aValue instanceof Date) aValue = aValue.getTime();
+      if (bValue instanceof Date) bValue = bValue.getTime();
       
-      if (sortOrder === 'asc') {
-        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-      } else {
-        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+      if (sortOrder === 'desc') {
+        return bValue > aValue ? 1 : -1;
       }
+      return aValue > bValue ? 1 : -1;
     });
 
-    const total = leads.length;
-
-    // Apply pagination
-    const page = parseInt(query.page || '1');
-    const limit = parseInt(query.limit || '10');
+    // Pagination
+    const page = query.page || 1;
+    const limit = query.limit || 20;
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
+    
+    const paginatedLeads = leads.slice(startIndex, endIndex);
 
-    leads = leads.slice(startIndex, endIndex);
-
-    return { leads, total };
+    return {
+      leads: paginatedLeads,
+      total: leads.length,
+      page,
+      limit,
+    };
   }
 
   async getLeadById(id: string): Promise<Lead | null> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    return leads.find(lead => lead.id === id) || null;
+    const data = this.getDatabase();
+    return data.leads.find(lead => lead.id === id) || null;
   }
 
   async createLead(createLeadDto: CreateLeadDto): Promise<Lead> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-
-    // Check for duplicate LinkedIn profile or email
-    if (createLeadDto.linkedInId) {
-      const existingLead = leads.find(lead => lead.linkedInId === createLeadDto.linkedInId);
-      if (existingLead) {
-        throw new Error('Lead with this LinkedIn profile already exists');
-      }
-    }
-
+    const data = this.getDatabase();
+    
+    // Check for duplicate email or LinkedIn URL
     if (createLeadDto.email) {
-      const existingLead = leads.find(lead => lead.email === createLeadDto.email);
+      const existingLead = data.leads.find(lead => lead.email === createLeadDto.email);
       if (existingLead) {
         throw new Error('Lead with this email already exists');
       }
     }
 
+    if (createLeadDto.linkedinUrl) {
+      const existingLead = data.leads.find(lead => lead.linkedinUrl === createLeadDto.linkedinUrl);
+      if (existingLead) {
+        throw new Error('Lead with this LinkedIn URL already exists');
+      }
+    }
+
+    const now = new Date();
     const newLead: Lead = {
       id: this.generateId(),
-      linkedInId: createLeadDto.linkedInId,
-      firstName: createLeadDto.firstName,
-      lastName: createLeadDto.lastName,
-      fullName: `${createLeadDto.firstName} ${createLeadDto.lastName}`,
-      email: createLeadDto.email,
-      company: createLeadDto.company,
-      jobTitle: createLeadDto.jobTitle,
-      location: createLeadDto.location,
-      profileUrl: createLeadDto.profileUrl,
-      connectionDegree: createLeadDto.connectionDegree,
-      engagementStatus: createLeadDto.engagementStatus || 'new',
-      lastContactDate: createLeadDto.lastContactDate,
-      notes: createLeadDto.notes,
+      ...createLeadDto,
+      status: createLeadDto.status || 'new',
+      source: createLeadDto.source || 'manual',
       tags: createLeadDto.tags || [],
-      leadSource: createLeadDto.leadSource || 'manual',
-      leadScore: createLeadDto.leadScore,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
-    leads.push(newLead);
-    data[this.collectionName] = leads;
+    data.leads.push(newLead);
     this.db.writeSync(data);
 
     return newLead;
   }
 
   async updateLead(id: string, updateLeadDto: UpdateLeadDto): Promise<Lead | null> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    const leadIndex = leads.findIndex(lead => lead.id === id);
-
+    const data = this.getDatabase();
+    const leadIndex = data.leads.findIndex(lead => lead.id === id);
+    
     if (leadIndex === -1) {
       return null;
     }
 
-    // Check for duplicate LinkedIn profile or email (excluding current lead)
-    if (updateLeadDto.linkedInId) {
-      const existingLead = leads.find(lead => 
-        lead.linkedInId === updateLeadDto.linkedInId && lead.id !== id
-      );
-      if (existingLead) {
-        throw new Error('Lead with this LinkedIn profile already exists');
-      }
-    }
-
+    // Check for duplicate email or LinkedIn URL (excluding current lead)
     if (updateLeadDto.email) {
-      const existingLead = leads.find(lead => 
+      const existingLead = data.leads.find(lead => 
         lead.email === updateLeadDto.email && lead.id !== id
       );
       if (existingLead) {
-        throw new Error('Lead with this email already exists');
+        throw new Error('Another lead with this email already exists');
       }
     }
 
-    const updatedLead: Lead = {
-      ...leads[leadIndex],
+    if (updateLeadDto.linkedinUrl) {
+      const existingLead = data.leads.find(lead => 
+        lead.linkedinUrl === updateLeadDto.linkedinUrl && lead.id !== id
+      );
+      if (existingLead) {
+        throw new Error('Another lead with this LinkedIn URL already exists');
+      }
+    }
+
+    const updatedLead = {
+      ...data.leads[leadIndex],
       ...updateLeadDto,
-      fullName: updateLeadDto.firstName && updateLeadDto.lastName 
-        ? `${updateLeadDto.firstName} ${updateLeadDto.lastName}`
-        : leads[leadIndex].fullName,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(),
     };
 
-    leads[leadIndex] = updatedLead;
-    data[this.collectionName] = leads;
+    data.leads[leadIndex] = updatedLead;
     this.db.writeSync(data);
 
     return updatedLead;
   }
 
-  async updateEngagementStatus(
-    id: string,
-    engagementStatus: string,
-    notes?: string,
-  ): Promise<Lead | null> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    const leadIndex = leads.findIndex(lead => lead.id === id);
-
+  async updateLeadStatus(id: string, status: string, notes?: string): Promise<Lead | null> {
+    const data = this.getDatabase();
+    const leadIndex = data.leads.findIndex(lead => lead.id === id);
+    
     if (leadIndex === -1) {
       return null;
     }
 
-    const updatedLead: Lead = {
-      ...leads[leadIndex],
-      engagementStatus: engagementStatus as Lead['engagementStatus'],
-      lastContactDate: new Date().toISOString(),
-      notes: notes || leads[leadIndex].notes,
-      updatedAt: new Date().toISOString(),
+    const updatedLead = {
+      ...data.leads[leadIndex],
+      status: status as Lead['status'],
+      notes: notes || data.leads[leadIndex].notes,
+      updatedAt: new Date(),
+      lastContactDate: ['contacted', 'interested', 'qualified'].includes(status) 
+        ? new Date() 
+        : data.leads[leadIndex].lastContactDate,
     };
 
-    leads[leadIndex] = updatedLead;
-    data[this.collectionName] = leads;
+    data.leads[leadIndex] = updatedLead;
     this.db.writeSync(data);
 
     return updatedLead;
   }
 
-  async getLeadsByEngagementStatus(status: Lead['engagementStatus']): Promise<Lead[]> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    return leads.filter(lead => lead.engagementStatus === status);
+  async syncWithLinkedIn(id: string): Promise<Lead | null> {
+    const lead = await this.getLeadById(id);
+    if (!lead || !lead.linkedinUrl) {
+      return null;
+    }
+
+    try {
+      // Get LinkedIn API key
+      const apiKey = await this.cryptoService.getApiKey('LINKEDIN_API_KEY');
+      if (!apiKey) {
+        throw new Error('LinkedIn API key not found');
+      }
+
+      // Simulate LinkedIn API call (replace with actual LinkedIn API integration)
+      const linkedinData = await this.fetchLinkedInProfile(lead.linkedinUrl, apiKey);
+      
+      const updateData: Partial<Lead> = {
+        linkedinData: {
+          ...linkedinData,
+          lastUpdated: new Date(),
+        },
+        updatedAt: new Date(),
+      };
+
+      // Update profile data from LinkedIn if available
+      if (linkedinData.firstName) updateData.firstName = linkedinData.firstName;
+      if (linkedinData.lastName) updateData.lastName = linkedinData.lastName;
+      if (linkedinData.company) updateData.company = linkedinData.company;
+      if (linkedinData.position) updateData.position = linkedinData.position;
+      if (linkedinData.location) updateData.location = linkedinData.location;
+      if (linkedinData.industry) updateData.industry = linkedinData.industry;
+      if (linkedinData.profilePicture) updateData.profilePicture = linkedinData.profilePicture;
+
+      return await this.updateLead(id, updateData);
+    } catch (error) {
+      console.error('Failed to sync with LinkedIn:', error);
+      throw new Error('Failed to sync with LinkedIn API');
+    }
+  }
+
+  private async fetchLinkedInProfile(linkedinUrl: string, apiKey: string): Promise<any> {
+    // This is a mock implementation. In a real application, you would:
+    // 1. Extract the LinkedIn profile ID from the URL
+    // 2. Make API calls to LinkedIn's API endpoints
+    // 3. Handle authentication and rate limiting
+    
+    // Mock data for demonstration
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          firstName: 'John',
+          lastName: 'Doe',
+          headline: 'Senior Software Engineer at Tech Corp',
+          summary: 'Experienced software engineer with 10+ years in full-stack development.',
+          company: 'Tech Corp',
+          position: 'Senior Software Engineer',
+          location: 'San Francisco, CA',
+          industry: 'Technology',
+          connections: 500,
+          profilePicture: 'https://example.com/profile.jpg',
+          experience: [
+            {
+              title: 'Senior Software Engineer',
+              company: 'Tech Corp',
+              duration: '2020 - Present',
+              location: 'San Francisco, CA',
+            },
+          ],
+          education: [
+            {
+              school: 'University of California',
+              degree: 'Bachelor of Science in Computer Science',
+              years: '2008 - 2012',
+            },
+          ],
+          skills: ['JavaScript', 'React', 'Node.js', 'Python', 'AWS'],
+        });
+      }, 1000);
+    });
   }
 
   async getLeadsByCompany(company: string): Promise<Lead[]> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    return leads.filter(lead => 
-      lead.company?.toLowerCase().includes(company.toLowerCase())
+    const data = this.getDatabase();
+    return data.leads.filter(lead => 
+      lead.company && lead.company.toLowerCase().includes(company.toLowerCase())
     );
   }
 
-  async searchLeads(searchTerm: string): Promise<Lead[]> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
-    const lowerSearchTerm = searchTerm.toLowerCase();
+  async getLeadsByStatus(status: Lead['status']): Promise<Lead[]> {
+    const data = this.getDatabase();
+    return data.leads.filter(lead => lead.status === status);
+  }
+
+  async addTagsToLead(id: string, tags: string[]): Promise<Lead | null> {
+    const data = this.getDatabase();
+    const leadIndex = data.leads.findIndex(lead => lead.id === id);
     
-    return leads.filter(lead => 
-      lead.fullName.toLowerCase().includes(lowerSearchTerm) ||
-      lead.email?.toLowerCase().includes(lowerSearchTerm) ||
-      lead.company?.toLowerCase().includes(lowerSearchTerm) ||
-      lead.jobTitle?.toLowerCase().includes(lowerSearchTerm) ||
-      lead.tags.some(tag => tag.toLowerCase().includes(lowerSearchTerm))
-    );
-  }
+    if (leadIndex === -1) {
+      return null;
+    }
 
-  async getEngagementStats(): Promise<{
-    totalLeads: number;
-    byStatus: Record<string, number>;
-    bySource: Record<string, number>;
-  }> {
-    const data = this.db.readSync();
-    const leads: Lead[] = data[this.collectionName] || [];
+    const existingTags = data.leads[leadIndex].tags || [];
+    const newTags = [...new Set([...existingTags, ...tags])];
 
-    const byStatus: Record<string, number> = {};
-    const bySource: Record<string, number> = {};
-
-    leads.forEach(lead => {
-      byStatus[lead.engagementStatus] = (byStatus[lead.engagementStatus] || 0) + 1;
-      bySource[lead.leadSource] = (bySource[lead.leadSource] || 0) + 1;
-    });
-
-    return {
-      totalLeads: leads.length,
-      byStatus,
-      bySource,
+    data.leads[leadIndex] = {
+      ...data.leads[leadIndex],
+      tags: newTags,
+      updatedAt: new Date(),
     };
+
+    this.db.writeSync(data);
+    return data.leads[leadIndex];
   }
 
-  private generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  async removeTagsFromLead(id: string, tags: string[]): Promise<Lead | null> {
+    const data = this.getDatabase();
+    const leadIndex = data.leads.findIndex(lead => lead.id === id);
+    
+    if (leadIndex === -1) {
+      return null;
+    }
+
+    const existingTags = data.leads[leadIndex].tags || [];
+    const filteredTags = existingTags.filter(tag => !tags.includes(tag));
+
+    data.leads[leadIndex] = {
+      ...data.leads[leadIndex],
+      tags: filteredTags,
+      updatedAt: new Date(),
+    };
+
+    this.db.writeSync(data);
+    return data.leads[leadIndex];
   }
 }

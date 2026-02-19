@@ -1,156 +1,191 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../shared/database.service';
-import { CreateResourceDto, UpdateResourceDto, ResourceFilterDto } from './dto/resources.dto';
+import { CryptoService } from '../shared/crypto.service';
+import { CreateResourceDto, UpdateResourceDto, ResourceQueryDto } from './dto/resources.dto';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface LearningResource {
   id: string;
   title: string;
   description: string;
+  type: 'article' | 'video' | 'course' | 'book' | 'tutorial' | 'documentation' | 'tool';
   category: string;
-  type: 'article' | 'video' | 'course' | 'tutorial' | 'template' | 'guide';
-  url?: string;
-  content?: string;
-  tags: string[];
+  url: string;
+  thumbnailUrl?: string;
+  author?: string;
+  duration?: string;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
-  estimatedTime: number; // in minutes
-  author: string;
-  rating: number;
-  viewCount: number;
-  downloadCount: number;
-  isActive: boolean;
-  isFeatured: boolean;
+  tags: string[];
+  rating?: number;
+  reviews?: number;
+  isFree: boolean;
+  price?: number;
+  language: string;
+  lastUpdated: Date;
   createdAt: Date;
-  updatedAt: Date;
+  isActive: boolean;
+  completionRate?: number;
   prerequisites?: string[];
-  relatedResources?: string[];
+  learningObjectives?: string[];
+  externalMetadata?: any;
 }
 
 interface ResourcesDatabase {
   resources: LearningResource[];
-  categories: string[];
-  lastUpdated: Date;
+  metadata: {
+    totalResources: number;
+    lastUpdated: Date;
+    categories: string[];
+    tags: string[];
+  };
 }
 
 @Injectable()
 export class ResourcesService {
-  private readonly logger = new Logger(ResourcesService.name);
   private readonly dbFile = 'learning-resources.json';
 
-  constructor(private readonly db: DatabaseService) {}
-
-  private getDefaultDatabase(): ResourcesDatabase {
-    return {
-      resources: [],
-      categories: [
-        'LinkedIn Automation',
-        'Lead Generation',
-        'Sales Strategy',
-        'Content Creation',
-        'Profile Optimization',
-        'Networking',
-        'Analytics & Reporting',
-        'API Integration',
-        'Best Practices',
-        'Compliance & Safety'
-      ],
-      lastUpdated: new Date(),
-    };
-  }
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly crypto: CryptoService,
+  ) {}
 
   private async getDatabase(): Promise<ResourcesDatabase> {
     try {
       const data = await this.db.readSync(this.dbFile);
-      return data || this.getDefaultDatabase();
+      return data || {
+        resources: [],
+        metadata: {
+          totalResources: 0,
+          lastUpdated: new Date(),
+          categories: [],
+          tags: [],
+        },
+      };
     } catch (error) {
-      this.logger.warn(`Failed to read database, using default: ${error.message}`);
-      return this.getDefaultDatabase();
+      return {
+        resources: [],
+        metadata: {
+          totalResources: 0,
+          lastUpdated: new Date(),
+          categories: [],
+          tags: [],
+        },
+      };
     }
   }
 
   private async saveDatabase(data: ResourcesDatabase): Promise<void> {
-    try {
-      data.lastUpdated = new Date();
-      await this.db.writeSync(this.dbFile, data);
-    } catch (error) {
-      this.logger.error(`Failed to save database: ${error.message}`);
-      throw error;
-    }
+    data.metadata.lastUpdated = new Date();
+    data.metadata.totalResources = data.resources.length;
+    
+    // Update categories and tags
+    const categories = new Set<string>();
+    const tags = new Set<string>();
+    
+    data.resources.forEach(resource => {
+      categories.add(resource.category);
+      resource.tags.forEach(tag => tags.add(tag));
+    });
+    
+    data.metadata.categories = Array.from(categories);
+    data.metadata.tags = Array.from(tags);
+    
+    await this.db.writeSync(this.dbFile, data);
   }
 
-  async getAllResources(filterDto: ResourceFilterDto = {}): Promise<{
+  async getAllResources(query: ResourceQueryDto): Promise<{
     resources: LearningResource[];
     total: number;
     page: number;
     limit: number;
     categories: string[];
+    tags: string[];
   }> {
     const database = await this.getDatabase();
     let resources = database.resources.filter(resource => resource.isActive);
 
     // Apply filters
-    if (filterDto.category) {
-      resources = resources.filter(r => 
-        r.category.toLowerCase() === filterDto.category.toLowerCase()
+    if (query.category) {
+      resources = resources.filter(resource => 
+        resource.category.toLowerCase() === query.category.toLowerCase()
       );
     }
 
-    if (filterDto.type) {
-      resources = resources.filter(r => r.type === filterDto.type);
+    if (query.type) {
+      resources = resources.filter(resource => resource.type === query.type);
     }
 
-    if (filterDto.difficulty) {
-      resources = resources.filter(r => r.difficulty === filterDto.difficulty);
+    if (query.difficulty) {
+      resources = resources.filter(resource => resource.difficulty === query.difficulty);
     }
 
-    if (filterDto.tags) {
-      const searchTags = Array.isArray(filterDto.tags) ? filterDto.tags : [filterDto.tags];
-      resources = resources.filter(r => 
-        searchTags.some(tag => r.tags.includes(tag))
+    if (query.isFree !== undefined) {
+      resources = resources.filter(resource => resource.isFree === query.isFree);
+    }
+
+    if (query.language) {
+      resources = resources.filter(resource => 
+        resource.language.toLowerCase() === query.language.toLowerCase()
       );
     }
 
-    if (filterDto.featured !== undefined) {
-      resources = resources.filter(r => r.isFeatured === filterDto.featured);
+    if (query.tags) {
+      const searchTags = Array.isArray(query.tags) ? query.tags : [query.tags];
+      resources = resources.filter(resource =>
+        searchTags.some(tag => 
+          resource.tags.some(resourceTag => 
+            resourceTag.toLowerCase().includes(tag.toLowerCase())
+          )
+        )
+      );
     }
 
-    if (filterDto.minRating) {
-      resources = resources.filter(r => r.rating >= filterDto.minRating);
+    if (query.search) {
+      const searchTerm = query.search.toLowerCase();
+      resources = resources.filter(resource =>
+        resource.title.toLowerCase().includes(searchTerm) ||
+        resource.description.toLowerCase().includes(searchTerm) ||
+        resource.author?.toLowerCase().includes(searchTerm) ||
+        resource.tags.some(tag => tag.toLowerCase().includes(searchTerm))
+      );
     }
 
     // Apply sorting
-    if (filterDto.sortBy) {
+    if (query.sortBy) {
       resources.sort((a, b) => {
-        const order = filterDto.sortOrder === 'desc' ? -1 : 1;
+        let aValue, bValue;
         
-        switch (filterDto.sortBy) {
+        switch (query.sortBy) {
           case 'title':
-            return order * a.title.localeCompare(b.title);
-          case 'createdAt':
-            return order * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            aValue = a.title.toLowerCase();
+            bValue = b.title.toLowerCase();
+            break;
           case 'rating':
-            return order * (a.rating - b.rating);
-          case 'viewCount':
-            return order * (a.viewCount - b.viewCount);
-          case 'difficulty':
-            const difficultyOrder = { beginner: 1, intermediate: 2, advanced: 3 };
-            return order * (difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty]);
+            aValue = a.rating || 0;
+            bValue = b.rating || 0;
+            break;
+          case 'createdAt':
+            aValue = new Date(a.createdAt).getTime();
+            bValue = new Date(b.createdAt).getTime();
+            break;
+          case 'lastUpdated':
+            aValue = new Date(a.lastUpdated).getTime();
+            bValue = new Date(b.lastUpdated).getTime();
+            break;
           default:
             return 0;
         }
-      });
-    } else {
-      // Default sort by featured first, then by rating
-      resources.sort((a, b) => {
-        if (a.isFeatured && !b.isFeatured) return -1;
-        if (!a.isFeatured && b.isFeatured) return 1;
-        return b.rating - a.rating;
+
+        if (query.sortOrder === 'desc') {
+          return bValue > aValue ? 1 : bValue < aValue ? -1 : 0;
+        }
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
       });
     }
 
     // Apply pagination
-    const page = Math.max(1, filterDto.page || 1);
-    const limit = Math.min(100, Math.max(1, filterDto.limit || 20));
+    const page = query.page || 1;
+    const limit = query.limit || 10;
     const startIndex = (page - 1) * limit;
     const paginatedResources = resources.slice(startIndex, startIndex + limit);
 
@@ -159,212 +194,247 @@ export class ResourcesService {
       total: resources.length,
       page,
       limit,
-      categories: database.categories,
+      categories: database.metadata.categories,
+      tags: database.metadata.tags,
     };
   }
 
   async getResourceById(id: string): Promise<LearningResource | null> {
     const database = await this.getDatabase();
-    const resource = database.resources.find(r => r.id === id && r.isActive);
-    
-    if (resource) {
-      // Increment view count
-      resource.viewCount += 1;
-      await this.saveDatabase(database);
-    }
-    
-    return resource || null;
+    return database.resources.find(resource => resource.id === id && resource.isActive) || null;
   }
 
   async createResource(createResourceDto: CreateResourceDto): Promise<LearningResource> {
     const database = await this.getDatabase();
     
+    // Check for duplicate URLs
+    const existingResource = database.resources.find(
+      resource => resource.url === createResourceDto.url && resource.isActive
+    );
+    
+    if (existingResource) {
+      throw new Error('Resource with this URL already exists');
+    }
+
     const newResource: LearningResource = {
       id: uuidv4(),
-      title: createResourceDto.title,
-      description: createResourceDto.description,
-      category: createResourceDto.category,
-      type: createResourceDto.type,
-      url: createResourceDto.url,
-      content: createResourceDto.content,
-      tags: createResourceDto.tags || [],
-      difficulty: createResourceDto.difficulty,
-      estimatedTime: createResourceDto.estimatedTime,
-      author: createResourceDto.author,
-      rating: 0,
-      viewCount: 0,
-      downloadCount: 0,
-      isActive: true,
-      isFeatured: createResourceDto.isFeatured || false,
+      ...createResourceDto,
       createdAt: new Date(),
-      updatedAt: new Date(),
-      prerequisites: createResourceDto.prerequisites || [],
-      relatedResources: createResourceDto.relatedResources || [],
+      lastUpdated: new Date(),
+      isActive: true,
+      tags: createResourceDto.tags || [],
+      rating: createResourceDto.rating || 0,
+      reviews: createResourceDto.reviews || 0,
+      language: createResourceDto.language || 'en',
     };
 
-    database.resources.push(newResource);
-    
-    // Add new category if it doesn't exist
-    if (!database.categories.includes(createResourceDto.category)) {
-      database.categories.push(createResourceDto.category);
+    // Fetch external metadata if URL is provided
+    if (newResource.url && !newResource.thumbnailUrl) {
+      try {
+        const metadata = await this.fetchResourceMetadata(newResource.url);
+        newResource.externalMetadata = metadata;
+        if (metadata.thumbnail) {
+          newResource.thumbnailUrl = metadata.thumbnail;
+        }
+      } catch (error) {
+        // Continue without external metadata if fetch fails
+        console.warn('Failed to fetch external metadata:', error.message);
+      }
     }
-    
+
+    database.resources.push(newResource);
     await this.saveDatabase(database);
     
-    this.logger.log(`Created new resource: ${newResource.title} (${newResource.id})`);
     return newResource;
   }
 
   async updateResource(id: string, updateResourceDto: UpdateResourceDto): Promise<LearningResource | null> {
     const database = await this.getDatabase();
-    const resourceIndex = database.resources.findIndex(r => r.id === id);
-    
+    const resourceIndex = database.resources.findIndex(
+      resource => resource.id === id && resource.isActive
+    );
+
     if (resourceIndex === -1) {
       return null;
     }
 
     const existingResource = database.resources[resourceIndex];
+    
+    // Check for duplicate URLs if URL is being updated
+    if (updateResourceDto.url && updateResourceDto.url !== existingResource.url) {
+      const duplicateResource = database.resources.find(
+        resource => resource.url === updateResourceDto.url && resource.isActive && resource.id !== id
+      );
+      
+      if (duplicateResource) {
+        throw new Error('Resource with this URL already exists');
+      }
+    }
+
     const updatedResource: LearningResource = {
       ...existingResource,
       ...updateResourceDto,
-      id: existingResource.id, // Ensure ID cannot be changed
-      createdAt: existingResource.createdAt, // Preserve creation date
-      updatedAt: new Date(),
+      id,
+      lastUpdated: new Date(),
+      tags: updateResourceDto.tags || existingResource.tags,
     };
 
     database.resources[resourceIndex] = updatedResource;
-    
-    // Add new category if it doesn't exist
-    if (updateResourceDto.category && !database.categories.includes(updateResourceDto.category)) {
-      database.categories.push(updateResourceDto.category);
-    }
-    
     await this.saveDatabase(database);
     
-    this.logger.log(`Updated resource: ${updatedResource.title} (${updatedResource.id})`);
     return updatedResource;
+  }
+
+  async deleteResource(id: string): Promise<boolean> {
+    const database = await this.getDatabase();
+    const resourceIndex = database.resources.findIndex(
+      resource => resource.id === id && resource.isActive
+    );
+
+    if (resourceIndex === -1) {
+      return false;
+    }
+
+    // Soft delete - mark as inactive
+    database.resources[resourceIndex].isActive = false;
+    database.resources[resourceIndex].lastUpdated = new Date();
+    
+    await this.saveDatabase(database);
+    return true;
+  }
+
+  async createBulkResources(resources: CreateResourceDto[]): Promise<LearningResource[]> {
+    const database = await this.getDatabase();
+    const createdResources: LearningResource[] = [];
+    const existingUrls = new Set(
+      database.resources
+        .filter(r => r.isActive)
+        .map(r => r.url)
+    );
+
+    for (const resourceDto of resources) {
+      if (existingUrls.has(resourceDto.url)) {
+        continue; // Skip duplicates
+      }
+
+      const newResource: LearningResource = {
+        id: uuidv4(),
+        ...resourceDto,
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        isActive: true,
+        tags: resourceDto.tags || [],
+        rating: resourceDto.rating || 0,
+        reviews: resourceDto.reviews || 0,
+        language: resourceDto.language || 'en',
+      };
+
+      database.resources.push(newResource);
+      createdResources.push(newResource);
+      existingUrls.add(newResource.url);
+    }
+
+    await this.saveDatabase(database);
+    return createdResources;
   }
 
   async getResourcesByCategory(category: string): Promise<LearningResource[]> {
     const database = await this.getDatabase();
-    return database.resources
-      .filter(r => r.isActive && r.category.toLowerCase() === category.toLowerCase())
-      .sort((a, b) => {
-        if (a.isFeatured && !b.isFeatured) return -1;
-        if (!a.isFeatured && b.isFeatured) return 1;
-        return b.rating - a.rating;
-      });
+    return database.resources.filter(
+      resource => 
+        resource.isActive && 
+        resource.category.toLowerCase() === category.toLowerCase()
+    );
   }
 
   async searchResources(searchTerm: string): Promise<LearningResource[]> {
     const database = await this.getDatabase();
     const term = searchTerm.toLowerCase();
     
-    return database.resources
-      .filter(r => r.isActive && (
-        r.title.toLowerCase().includes(term) ||
-        r.description.toLowerCase().includes(term) ||
-        r.tags.some(tag => tag.toLowerCase().includes(term)) ||
-        r.category.toLowerCase().includes(term) ||
-        r.author.toLowerCase().includes(term)
-      ))
-      .sort((a, b) => {
-        // Prioritize title matches
-        const aTitle = a.title.toLowerCase().includes(term);
-        const bTitle = b.title.toLowerCase().includes(term);
-        
-        if (aTitle && !bTitle) return -1;
-        if (!aTitle && bTitle) return 1;
-        
-        // Then by featured status
-        if (a.isFeatured && !b.isFeatured) return -1;
-        if (!a.isFeatured && b.isFeatured) return 1;
-        
-        // Finally by rating
-        return b.rating - a.rating;
-      });
+    return database.resources.filter(resource =>
+      resource.isActive && (
+        resource.title.toLowerCase().includes(term) ||
+        resource.description.toLowerCase().includes(term) ||
+        resource.author?.toLowerCase().includes(term) ||
+        resource.category.toLowerCase().includes(term) ||
+        resource.tags.some(tag => tag.toLowerCase().includes(term))
+      )
+    );
   }
 
-  async incrementDownloadCount(id: string): Promise<boolean> {
-    const database = await this.getDatabase();
-    const resource = database.resources.find(r => r.id === id && r.isActive);
-    
-    if (resource) {
-      resource.downloadCount += 1;
-      await this.saveDatabase(database);
-      return true;
+  private async fetchResourceMetadata(url: string): Promise<any> {
+    try {
+      // Use crypto service to get API key for external services if needed
+      const apiKey = await this.crypto.getApiKey('METADATA_SERVICE');
+      
+      // This would typically call an external metadata service
+      // For now, return a placeholder structure
+      return {
+        title: null,
+        description: null,
+        thumbnail: null,
+        domain: new URL(url).hostname,
+        fetchedAt: new Date(),
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch metadata: ${error.message}`);
     }
-    
-    return false;
-  }
-
-  async updateRating(id: string, rating: number): Promise<boolean> {
-    if (rating < 0 || rating > 5) {
-      return false;
-    }
-    
-    const database = await this.getDatabase();
-    const resource = database.resources.find(r => r.id === id && r.isActive);
-    
-    if (resource) {
-      resource.rating = rating;
-      await this.saveDatabase(database);
-      return true;
-    }
-    
-    return false;
-  }
-
-  async getPopularResources(limit: number = 10): Promise<LearningResource[]> {
-    const database = await this.getDatabase();
-    
-    return database.resources
-      .filter(r => r.isActive)
-      .sort((a, b) => b.viewCount - a.viewCount)
-      .slice(0, limit);
-  }
-
-  async getFeaturedResources(): Promise<LearningResource[]> {
-    const database = await this.getDatabase();
-    
-    return database.resources
-      .filter(r => r.isActive && r.isFeatured)
-      .sort((a, b) => b.rating - a.rating);
   }
 
   async getResourceStats(): Promise<{
     totalResources: number;
-    totalViews: number;
-    totalDownloads: number;
-    averageRating: number;
     resourcesByCategory: Record<string, number>;
     resourcesByType: Record<string, number>;
+    resourcesByDifficulty: Record<string, number>;
+    freeResources: number;
+    paidResources: number;
+    averageRating: number;
   }> {
     const database = await this.getDatabase();
     const activeResources = database.resources.filter(r => r.isActive);
-    
-    const totalViews = activeResources.reduce((sum, r) => sum + r.viewCount, 0);
-    const totalDownloads = activeResources.reduce((sum, r) => sum + r.downloadCount, 0);
-    const totalRating = activeResources.reduce((sum, r) => sum + r.rating, 0);
-    const averageRating = activeResources.length > 0 ? totalRating / activeResources.length : 0;
-    
-    const resourcesByCategory = activeResources.reduce((acc, r) => {
-      acc[r.category] = (acc[r.category] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const resourcesByType = activeResources.reduce((acc, r) => {
-      acc[r.type] = (acc[r.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    return {
+
+    const stats = {
       totalResources: activeResources.length,
-      totalViews,
-      totalDownloads,
-      averageRating: Math.round(averageRating * 100) / 100,
-      resourcesByCategory,
-      resourcesByType,
+      resourcesByCategory: {} as Record<string, number>,
+      resourcesByType: {} as Record<string, number>,
+      resourcesByDifficulty: {} as Record<string, number>,
+      freeResources: 0,
+      paidResources: 0,
+      averageRating: 0,
     };
+
+    let totalRating = 0;
+    let ratedResourcesCount = 0;
+
+    activeResources.forEach(resource => {
+      // Count by category
+      stats.resourcesByCategory[resource.category] = 
+        (stats.resourcesByCategory[resource.category] || 0) + 1;
+
+      // Count by type
+      stats.resourcesByType[resource.type] = 
+        (stats.resourcesByType[resource.type] || 0) + 1;
+
+      // Count by difficulty
+      stats.resourcesByDifficulty[resource.difficulty] = 
+        (stats.resourcesByDifficulty[resource.difficulty] || 0) + 1;
+
+      // Count free vs paid
+      if (resource.isFree) {
+        stats.freeResources++;
+      } else {
+        stats.paidResources++;
+      }
+
+      // Calculate average rating
+      if (resource.rating && resource.rating > 0) {
+        totalRating += resource.rating;
+        ratedResourcesCount++;
+      }
+    });
+
+    stats.averageRating = ratedResourcesCount > 0 ? totalRating / ratedResourcesCount : 0;
+
+    return stats;
   }
 }

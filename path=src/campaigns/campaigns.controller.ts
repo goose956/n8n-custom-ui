@@ -6,34 +6,51 @@ import {
   Delete,
   Body,
   Param,
-  Query,
-  HttpException,
   HttpStatus,
-  ValidationPipe,
-  UsePipes,
+  HttpException,
+  Query,
 } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, UpdateCampaignDto, CampaignQueryDto } from './dto/campaigns.dto';
+import {
+  CreateCampaignDto,
+  UpdateCampaignDto,
+  CampaignResponseDto,
+} from './dto/campaigns.dto';
 
 @Controller('api/campaigns')
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
   @Get()
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async getAllCampaigns(@Query() query: CampaignQueryDto) {
+  async getAllCampaigns(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<{
+    campaigns: CampaignResponseDto[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
     try {
-      return await this.campaignsService.getAllCampaigns(query);
+      const limitNum = limit ? parseInt(limit) : 50;
+      const offsetNum = offset ? parseInt(offset) : 0;
+      
+      return await this.campaignsService.getAllCampaigns({
+        status,
+        limit: limitNum,
+        offset: offsetNum,
+      });
     } catch (error) {
       throw new HttpException(
-        error.message || 'Failed to retrieve campaigns',
+        `Failed to fetch campaigns: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
   @Get(':id')
-  async getCampaignById(@Param('id') id: string) {
+  async getCampaignById(@Param('id') id: string): Promise<CampaignResponseDto> {
     try {
       const campaign = await this.campaignsService.getCampaignById(id);
       if (!campaign) {
@@ -45,50 +62,31 @@ export class CampaignsController {
         throw error;
       }
       throw new HttpException(
-        'Failed to retrieve campaign',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Get(':id/metrics')
-  async getCampaignMetrics(@Param('id') id: string) {
-    try {
-      const metrics = await this.campaignsService.getCampaignMetrics(id);
-      if (!metrics) {
-        throw new HttpException('Campaign not found', HttpStatus.NOT_FOUND);
-      }
-      return metrics;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to retrieve campaign metrics',
+        `Failed to fetch campaign: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
   @Post()
-  @UsePipes(new ValidationPipe())
-  async createCampaign(@Body() createCampaignDto: CreateCampaignDto) {
+  async createCampaign(
+    @Body() createCampaignDto: CreateCampaignDto,
+  ): Promise<CampaignResponseDto> {
     try {
       return await this.campaignsService.createCampaign(createCampaignDto);
     } catch (error) {
       throw new HttpException(
-        error.message || 'Failed to create campaign',
+        `Failed to create campaign: ${error.message}`,
         HttpStatus.BAD_REQUEST,
       );
     }
   }
 
   @Put(':id')
-  @UsePipes(new ValidationPipe())
   async updateCampaign(
     @Param('id') id: string,
     @Body() updateCampaignDto: UpdateCampaignDto,
-  ) {
+  ): Promise<CampaignResponseDto> {
     try {
       const updatedCampaign = await this.campaignsService.updateCampaign(
         id,
@@ -103,17 +101,17 @@ export class CampaignsController {
         throw error;
       }
       throw new HttpException(
-        'Failed to update campaign',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        `Failed to update campaign: ${error.message}`,
+        HttpStatus.BAD_REQUEST,
       );
     }
   }
 
   @Delete(':id')
-  async deleteCampaign(@Param('id') id: string) {
+  async deleteCampaign(@Param('id') id: string): Promise<{ message: string }> {
     try {
-      const result = await this.campaignsService.deleteCampaign(id);
-      if (!result) {
+      const success = await this.campaignsService.deleteCampaign(id);
+      if (!success) {
         throw new HttpException('Campaign not found', HttpStatus.NOT_FOUND);
       }
       return { message: 'Campaign deleted successfully' };
@@ -122,27 +120,65 @@ export class CampaignsController {
         throw error;
       }
       throw new HttpException(
-        'Failed to delete campaign',
+        `Failed to delete campaign: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
-  @Post(':id/sync')
-  async syncCampaignMetrics(@Param('id') id: string) {
+  @Post(':id/start')
+  async startCampaign(@Param('id') id: string): Promise<CampaignResponseDto> {
     try {
-      const metrics = await this.campaignsService.syncCampaignWithLinkedIn(id);
-      if (!metrics) {
+      const campaign = await this.campaignsService.startCampaign(id);
+      if (!campaign) {
         throw new HttpException('Campaign not found', HttpStatus.NOT_FOUND);
       }
-      return metrics;
+      return campaign;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
       throw new HttpException(
-        'Failed to sync campaign metrics',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        `Failed to start campaign: ${error.message}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post(':id/pause')
+  async pauseCampaign(@Param('id') id: string): Promise<CampaignResponseDto> {
+    try {
+      const campaign = await this.campaignsService.pauseCampaign(id);
+      if (!campaign) {
+        throw new HttpException('Campaign not found', HttpStatus.NOT_FOUND);
+      }
+      return campaign;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        `Failed to pause campaign: ${error.message}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post(':id/stop')
+  async stopCampaign(@Param('id') id: string): Promise<CampaignResponseDto> {
+    try {
+      const campaign = await this.campaignsService.stopCampaign(id);
+      if (!campaign) {
+        throw new HttpException('Campaign not found', HttpStatus.NOT_FOUND);
+      }
+      return campaign;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        `Failed to stop campaign: ${error.message}`,
+        HttpStatus.BAD_REQUEST,
       );
     }
   }

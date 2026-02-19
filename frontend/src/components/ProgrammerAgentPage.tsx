@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from'react';
 import { API_BASE_URL, API } from'../config/api';
 import {
  Box, Typography, TextField, Button, Paper, Select, MenuItem,
@@ -64,7 +64,7 @@ import {
  Palette as UIIcon,
 } from'@mui/icons-material';
 
-/* "€"€"€ Types "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Types "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 interface GeneratedFile {
  path: string;
@@ -156,7 +156,7 @@ interface QaIssue {
 
 type Phase ='setup' |'planning' |'pages' |'generating' |'results' |'finalizing' |'finalized' |'qa-running' |'qa-results' |'documenting' |'documented';
 
-/* "€"€"€ Quick Key Templates "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Quick Key Templates "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 interface QuickKeyTemplate {
   id: string;
@@ -186,7 +186,7 @@ const QUICK_KEY_TEMPLATES: QuickKeyTemplate[] = [
     ],
     buildPrompt: (input, extras) => {
       const fields = extras.resultsFields || 'all available fields';
-      return `## APIFY SCRAPER INTEGRATION: ${input}\n\nPlease build a COMPLETE Apify scraper integration for "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API (MUST DO FIRST)\nCreate a full NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Controller with POST /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/run (accepts scraper input params)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/results (returns stored results)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/status (returns run status)\n- Service that calls Apify API: const client = new ApifyClient({ token: process.env.APIFY_TOKEN || apiKey }); const run = await client.actor("ACTOR_ID").call(inputParams); const { items } = await client.dataset(run.defaultDatasetId).listItems();\n- Store results in db.json under a new collection\n- Register the module in app.module.ts\n\n### Step 2 — Update API Config\nAdd the new endpoints to frontend/src/config/api.ts so the frontend can reach them.\n\n### Step 3 — Database Seeding\nAdd 5-10 realistic sample records to the db.json collection so the results page looks populated immediately.\n\n### Step 4 — Results Page\nCreate a beautiful results page at frontend/src/components/ with:\n- MUI DataGrid or styled table showing: ${fields}\n- Search/filter bar\n- Export to CSV button\n- Run new scrape button that opens a dialog for input parameters\n- Status indicator showing if a scrape is running\n- Auto-refresh results\n- Responsive design with proper loading states\n\n### Step 5 — Router & Navigation\nAdd the page to the router and sidebar/navigation so users can find it.\n\nIMPORTANT: Each step depends on the previous one. Do NOT skip the backend.`;
+      return `## APIFY SCRAPER INTEGRATION: ${input}\n\nPlease build a COMPLETE Apify scraper integration for "${input}". Follow this EXACT order:\n\n### Step 1 â€” Backend API (MUST DO FIRST)\nCreate a full NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Controller with POST /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/run (accepts scraper input params)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/results (returns stored results)\n- Controller with GET /api/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/status (returns run status)\n- Service that calls Apify API: const client = new ApifyClient({ token: process.env.APIFY_TOKEN || apiKey }); const run = await client.actor("ACTOR_ID").call(inputParams); const { items } = await client.dataset(run.defaultDatasetId).listItems();\n- Store results in db.json under a new collection\n- Register the module in app.module.ts\n\n### Step 2 â€” Update API Config\nAdd the new endpoints to frontend/src/config/api.ts so the frontend can reach them.\n\n### Step 3 â€” Database Seeding\nAdd 5-10 realistic sample records to the db.json collection so the results page looks populated immediately.\n\n### Step 4 â€” Results Page\nCreate a beautiful results page at frontend/src/components/ with:\n- MUI DataGrid or styled table showing: ${fields}\n- Search/filter bar\n- Export to CSV button\n- Run new scrape button that opens a dialog for input parameters\n- Status indicator showing if a scrape is running\n- Auto-refresh results\n- Responsive design with proper loading states\n\n### Step 5 â€” Router & Navigation\nAdd the page to the router and sidebar/navigation so users can find it.\n\nIMPORTANT: Each step depends on the previous one. Do NOT skip the backend.`;
     },
   },
   {
@@ -203,7 +203,7 @@ const QUICK_KEY_TEMPLATES: QuickKeyTemplate[] = [
     ],
     buildPrompt: (input, extras) => {
       const fields = extras.fields || 'id, name, description, status, createdAt, updatedAt';
-      return `## FULL CRUD FEATURE: ${input}\n\nBuild a COMPLETE CRUD management feature for "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Full REST endpoints: GET (list + single), POST (create), PUT (update), DELETE\n- Validation and error handling\n- Fields: ${fields}\n- Store in db.json\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 — Seed Data\nAdd 8-10 realistic sample records to db.json.\n\n### Step 4 — Management Page\nCreate a management page with:\n- Data table with sorting, search, pagination\n- Create/Edit dialog with form validation\n- Delete confirmation\n- Status badges and proper formatting\n- Toast notifications for actions\n- Loading and empty states\n\n### Step 5 — Router & Navigation\nAdd to router and sidebar navigation.\n\nIMPORTANT: Backend first, then frontend. Do NOT skip steps.`;
+      return `## FULL CRUD FEATURE: ${input}\n\nBuild a COMPLETE CRUD management feature for "${input}". Follow this EXACT order:\n\n### Step 1 â€” Backend API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Full REST endpoints: GET (list + single), POST (create), PUT (update), DELETE\n- Validation and error handling\n- Fields: ${fields}\n- Store in db.json\n- Register in app.module.ts\n\n### Step 2 â€” Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 â€” Seed Data\nAdd 8-10 realistic sample records to db.json.\n\n### Step 4 â€” Management Page\nCreate a management page with:\n- Data table with sorting, search, pagination\n- Create/Edit dialog with form validation\n- Delete confirmation\n- Status badges and proper formatting\n- Toast notifications for actions\n- Loading and empty states\n\n### Step 5 â€” Router & Navigation\nAdd to router and sidebar navigation.\n\nIMPORTANT: Backend first, then frontend. Do NOT skip steps.`;
     },
   },
   {
@@ -216,7 +216,7 @@ const QUICK_KEY_TEMPLATES: QuickKeyTemplate[] = [
     dialogPlaceholder: 'e.g. Stripe Payments, OpenAI Chat, SendGrid Email...',
     dialogHelperText: 'Describe the API or service to integrate',
     buildPrompt: (input) => {
-      return `## API INTEGRATION: ${input}\n\nBuild a COMPLETE integration with "${input}". Follow this EXACT order:\n\n### Step 1 — Backend Proxy API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Proxy endpoints that call the external ${input} API\n- Secure API key storage (use environment variables / settings)\n- Response transformation to normalize the data\n- Error handling with meaningful messages\n- Rate limiting awareness\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 — Frontend Interface\nCreate a UI page with:\n- Configuration section for API keys/settings\n- Interactive interface to use the integration\n- Results display\n- Error states and loading indicators\n- Usage/status dashboard\n\n### Step 4 — Router & Navigation\nAdd to router and sidebar.\n\nIMPORTANT: Backend proxy first — never expose API keys to the frontend.`;
+      return `## API INTEGRATION: ${input}\n\nBuild a COMPLETE integration with "${input}". Follow this EXACT order:\n\n### Step 1 â€” Backend Proxy API\nCreate a NestJS module at backend/src/${input.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/\n- Proxy endpoints that call the external ${input} API\n- Secure API key storage (use environment variables / settings)\n- Response transformation to normalize the data\n- Error handling with meaningful messages\n- Rate limiting awareness\n- Register in app.module.ts\n\n### Step 2 â€” Update API Config\nAdd endpoints to frontend/src/config/api.ts\n\n### Step 3 â€” Frontend Interface\nCreate a UI page with:\n- Configuration section for API keys/settings\n- Interactive interface to use the integration\n- Results display\n- Error states and loading indicators\n- Usage/status dashboard\n\n### Step 4 â€” Router & Navigation\nAdd to router and sidebar.\n\nIMPORTANT: Backend proxy first â€” never expose API keys to the frontend.`;
     },
   },
   {
@@ -229,7 +229,7 @@ const QUICK_KEY_TEMPLATES: QuickKeyTemplate[] = [
     dialogPlaceholder: 'e.g. A blog system with posts, categories, and comments...',
     dialogHelperText: 'Be specific about what the feature should do',
     buildPrompt: (input) => {
-      return `## NEW FEATURE: ${input}\n\nBuild this feature end-to-end: "${input}". Follow this EXACT order:\n\n### Step 1 — Backend API\nCreate a NestJS module with all necessary endpoints.\n- Full REST API with proper validation\n- Database storage in db.json\n- Register in app.module.ts\n\n### Step 2 — Update API Config\nAdd all new endpoints to frontend/src/config/api.ts\n\n### Step 3 — Seed Database\nAdd realistic sample data to db.json so the feature works immediately.\n\n### Step 4 — Frontend Pages\nCreate beautiful, responsive React pages with MUI components:\n- Proper loading, empty, and error states\n- Forms with validation\n- Data display with sorting/filtering where appropriate\n- Toast notifications for user actions\n\n### Step 5 — Router & Navigation\nAdd all pages to the router and navigation.\n\nIMPORTANT: Build backend first, then frontend. Each step must complete before the next.`;
+      return `## NEW FEATURE: ${input}\n\nBuild this feature end-to-end: "${input}". Follow this EXACT order:\n\n### Step 1 â€” Backend API\nCreate a NestJS module with all necessary endpoints.\n- Full REST API with proper validation\n- Database storage in db.json\n- Register in app.module.ts\n\n### Step 2 â€” Update API Config\nAdd all new endpoints to frontend/src/config/api.ts\n\n### Step 3 â€” Seed Database\nAdd realistic sample data to db.json so the feature works immediately.\n\n### Step 4 â€” Frontend Pages\nCreate beautiful, responsive React pages with MUI components:\n- Proper loading, empty, and error states\n- Forms with validation\n- Data display with sorting/filtering where appropriate\n- Toast notifications for user actions\n\n### Step 5 â€” Router & Navigation\nAdd all pages to the router and navigation.\n\nIMPORTANT: Build backend first, then frontend. Each step must complete before the next.`;
     },
   },
   {
@@ -255,7 +255,7 @@ const QUICK_KEY_ICON_MAP: Record<string, typeof CodeIcon> = {
   ui: UIIcon,
 };
 
-/* "€"€"€ Simple syntax highlighter "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Simple syntax highlighter "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 function SyntaxHighlight({ code, language }: { code: string; language: string }) {
  const highlighted = useMemo(() => {
@@ -295,7 +295,7 @@ function SyntaxHighlight({ code, language }: { code: string; language: string })
  );
 }
 
-/* "€"€"€ Phase stepper config "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Phase stepper config "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 const PHASE_STEPS = [
  { key:'setup', label:'Setup' },
@@ -317,7 +317,7 @@ function getStepIndex(phase: Phase): number {
  return map[phase] ?? 0;
 }
 
-/* "€"€"€ Page type icon helper "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Page type icon helper "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 function PageTypeIcon({ type }: { type: string }) {
  switch (type) {
@@ -328,7 +328,7 @@ function PageTypeIcon({ type }: { type: string }) {
  }
 }
 
-/* "€"€"€ Main component "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+/* "â‚¬"â‚¬"â‚¬ Main component "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
 export function ProgrammerAgentPage() {
  // Phase state
@@ -576,7 +576,7 @@ export function ProgrammerAgentPage() {
  const activeStepIndex = getStepIndex(phase);
  const failedSteps = Array.isArray(plan) ? plan.filter((s: any) => s.status ==='failed') : [];
 
- /* "€"€"€ Plan Members Area "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Plan Members Area "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handlePlan = async () => {
  if (!prompt.trim() || !selectedAppId) return;
@@ -618,7 +618,7 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ Generate Members Area "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Generate Members Area "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleGenerate = useCallback(async () => {
  if (generating) return;
@@ -675,7 +675,7 @@ export function ProgrammerAgentPage() {
  }
  }, [prompt, selectedAppId, orchestratorModel, subAgentModel, pages, generating]);
 
- /* "€"€"€ Refine "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Refine "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleRefine = async () => {
  if (!refineInstruction.trim() || refining) return;
@@ -717,22 +717,25 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ Chat Panel: Design & Backend (same as Pages tab) "€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Chat Panel: Design & Backend (same as Pages tab) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
- const handleChatSend = async (directMessage?: string) => {
+ const handleChatSend = async (directMessage?: string, forceMode?: 'design' | 'backend' | 'coder') => {
  const msgText = directMessage || chatInput;
  if (!msgText.trim()) return;
 
+ const effectiveMode = forceMode || chatMode;
+ const effectiveSetMessages = effectiveMode === 'design' ? setDesignMessages : effectiveMode === 'backend' ? setBackendMessages : setCoderMessages;
+
  const userMsg = { id: Date.now().toString(), role:'user' as const, content: msgText };
- setChatMessages(prev => [...prev, userMsg]);
+ effectiveSetMessages(prev => [...prev, userMsg]);
  setChatInput('');
  setChatLoading(true);
 
  try {
- if (chatMode ==='design') {
+ if (effectiveMode ==='design') {
  // Design mode: refine the active file via the refine endpoint
  if (!files.length) {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:'No files loaded. Please load or generate pages first before using the design chat.',
@@ -752,7 +755,7 @@ export function ProgrammerAgentPage() {
  });
  if (!res.ok) {
  const errText = await res.text().catch(() => `Server error (${res.status})`);
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`Error: ${errText}`,
@@ -763,7 +766,7 @@ export function ProgrammerAgentPage() {
  const data = await res.json();
  if (data.success && data.question) {
  // AI is asking a clarifying question
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role: 'assistant',
  content: `\u2753 ${data.question}`,
@@ -773,19 +776,19 @@ export function ProgrammerAgentPage() {
  updated[activeFileTab] = data.file;
  setFiles(updated);
  setRefineHistory(prev => [...prev, { instruction: msgText.trim(), fileIndex: activeFileTab, timestamp: new Date().toISOString() }]);
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`\u2705 Updated ${files[activeFileTab]?.path.split('/').pop()}. The preview has been refreshed with your changes.`,
  }]);
  } else {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`\u26a0\ufe0f ${data.error ||'Could not apply the change. Try rephrasing your request.'}`,
  }]);
  }
- } else if (chatMode ==='backend') {
+ } else if (effectiveMode ==='backend') {
  // Backend mode: analyze or implement backend tasks for the ACTIVE page
  const lc = msgText.toLowerCase();
  const isAnalyze = !backendTasks.length || lc.includes('analyze') || lc.includes('scan') || lc.includes('what') || lc.includes('check');
@@ -809,13 +812,13 @@ export function ProgrammerAgentPage() {
  setBackendTasks(data.tasks || []);
  const pageName = activeFile?.path.split('/').pop() ||'current page';
  const taskList = (data.tasks || []).map((t: any) =>`${t.status ==='done' ?'\u2705' : t.implementation ?'\u26a1' :'\u23f3'} ${t.title} (${t.category} / ${t.priority})`).join('\n');
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`Found ${data.tasks?.length || 0} backend tasks for **${pageName}**:\n\n${taskList}\n\nSay "implement all" to auto-implement tasks marked \u26a1, or click individual tasks.`,
  }]);
  } else {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`\u26a0\ufe0f ${data.error ||'Could not analyze backend tasks.'}`,
@@ -850,14 +853,14 @@ export function ProgrammerAgentPage() {
  const successCount = (implData.results || []).filter((r: any) => r.success).length;
  const failCount = (implData.results || []).filter((r: any) => !r.success).length;
  const messages = (implData.results || []).map((r: any) =>`${r.success ?'\u2705' :'\u274c'} ${r.message}`).join('\n');
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`\u2705 Implemented ${successCount} task(s)${failCount > 0 ?`, ${failCount} failed` :''}.\n\n${messages}`,
  }]);
  }
  } else {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:'\u2705 No backend tasks needed for this page.',
@@ -876,7 +879,7 @@ export function ProgrammerAgentPage() {
  const successCount = (data.results || []).filter((r: any) => r.success).length;
  const failCount = (data.results || []).filter((r: any) => !r.success).length;
  const messages = (data.results || []).map((r: any) =>`${r.success ?'\u2705' :'\u274c'} ${r.message}`).join('\n');
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`\u2705 Implemented ${successCount} task(s)${failCount > 0 ?`, ${failCount} failed` :''}.\n\n${messages}`,
@@ -884,13 +887,13 @@ export function ProgrammerAgentPage() {
  }
  }
  } else {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:'Try asking:\n\u2022 "What backend tasks does this page need?"\n\u2022 "Fix backend tasks" or "Implement all"\n\u2022 Or click individual tasks in the task list above.',
  }]);
  }
- } else if (chatMode ==='coder') {
+ } else if (effectiveMode ==='coder') {
  // Coder Agent: autonomous builder with SSE streaming for live progress
  const activeFile = files[activeFileTab] || null;
  // Create AbortController for cancel support
@@ -952,8 +955,8 @@ export function ProgrammerAgentPage() {
  if (inactivityTimer) clearTimeout(inactivityTimer);
  inactivityTimer = setTimeout(() => {
  abortCtrl.abort();
- appendWorkingLine('\nConnection timed out (no response for 90s). Try again.');
- }, 90_000);
+ appendWorkingLine('\nConnection timed out (no response for 5 minutes). Try again.');
+ }, 300_000);
  };
  resetInactivityTimer();
 
@@ -986,7 +989,7 @@ export function ProgrammerAgentPage() {
  : eventData.activeFile?.split('/').pop() || null;
  const targetLine = targets ?`\n **Working on:** ${targets}` :'';
  const planLines = (eventData.steps || []).map((s: any) =>` ${s.id}. ${s.title}`);
- appendWorkingLine(` ï¸ **Plan:** ${eventData.summary}${targetLine}\n${planLines.join('\n')}`);
+ appendWorkingLine(` Ã¯Â¸Â **Plan:** ${eventData.summary}${targetLine}\n${planLines.join('\n')}`);
  break;
  }
  case'step_start': {
@@ -995,7 +998,7 @@ export function ProgrammerAgentPage() {
  }
  case'step_complete': {
  // Replace the last "- title..." line with the completed version
- const icon = eventData.status ==='done' ?'...' :'Œ';
+ const icon = eventData.status ==='done' ?'...' :'ÂÅ’';
  let lastPendingIdx = -1;
  for (let i = workingLines.length - 1; i >= 0; i--) {
  if (workingLines[i].includes(`- ${eventData.title}`)) { lastPendingIdx = i; break; }
@@ -1041,7 +1044,7 @@ export function ProgrammerAgentPage() {
   break;
   }
   case'error': {
- appendWorkingLine(`\nŒ ${eventData.message}`);
+ appendWorkingLine(`\nÂÅ’ ${eventData.message}`);
  break;
  }
  case'done': {
@@ -1112,12 +1115,12 @@ export function ProgrammerAgentPage() {
  // Add final summary as a separate message
    if (finalData.response) {
      const tokenFooter = finalData.tokensUsed
-       ? `\n\n---\n*${finalData.tokensUsed.toLocaleString()} tokens${finalData.estimatedCost ? ` · ~$${finalData.estimatedCost.toFixed(4)}` : ''}${finalData.durationMs ? ` · ${(finalData.durationMs / 1000).toFixed(1)}s` : ''}*`
+       ? `\n\n---\n*${finalData.tokensUsed.toLocaleString()} tokens${finalData.estimatedCost ? ` Â· ~$${finalData.estimatedCost.toFixed(4)}` : ''}${finalData.durationMs ? ` Â· ${(finalData.durationMs / 1000).toFixed(1)}s` : ''}*`
        : '';
      setCoderMessages(prev => [...prev, {
        id:`summary-${Date.now()}`,
        role:'assistant',
-       content: (finalData.success ? finalData.response : ` ï¸ ${finalData.response}`) + tokenFooter,
+       content: (finalData.success ? finalData.response : ` Ã¯Â¸Â ${finalData.response}`) + tokenFooter,
      }]);
    }
  }
@@ -1125,7 +1128,7 @@ export function ProgrammerAgentPage() {
  } catch (err) {
  console.error('Chat send error:', err);
  if (err instanceof DOMException && err.name === 'AbortError') {
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:'Cancelled by user.',
@@ -1133,7 +1136,7 @@ export function ProgrammerAgentPage() {
  coderAbortRef.current = null;
  return;
  }
- setChatMessages(prev => [...prev, {
+ effectiveSetMessages(prev => [...prev, {
  id: (Date.now() + 1).toString(),
  role:'assistant',
  content:`Error: ${err instanceof Error ? err.message : 'Network error'}`,
@@ -1177,7 +1180,7 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ Retry Failed "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Retry Failed "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleRetryFailed = async () => {
  if (failedSteps.length === 0) return;
@@ -1217,7 +1220,7 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ Save "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Save "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleSave = async () => {
     if (files.length === 0) return;
@@ -1400,7 +1403,7 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ QA Agent handlers "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ QA Agent handlers "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleQaReview = async () => {
  if (files.length === 0) return;
@@ -1559,7 +1562,7 @@ export function ProgrammerAgentPage() {
  }
  };
 
- /* "€"€"€ Add custom page "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Add custom page "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const handleAddPage = () => {
  if (!newPageName.trim()) return;
@@ -1577,7 +1580,7 @@ export function ProgrammerAgentPage() {
  setAddPageDialog(false);
  };
 
- /* "€"€"€ Preview (Vite dev server) "€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Preview (Vite dev server) "â‚¬"â‚¬"â‚¬"â‚¬ */
 
  const canPreview = !!(files[activeFileTab]?.path?.match(/\.(tsx|jsx)$/));
 
@@ -1673,7 +1676,7 @@ export function ProgrammerAgentPage() {
  };
  }, []);
 
- /* "€"€"€ Render "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */
+ /* "â‚¬"â‚¬"â‚¬ Render "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
  return (
  <Box sx={{ maxWidth: 1400, mx:'auto', p: 4 }}>
@@ -1780,7 +1783,7 @@ export function ProgrammerAgentPage() {
  </Paper>
  </Collapse>
 
- {/* "€"€"€ PHASE: SETUP "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: SETUP "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {(phase ==='setup' || phase ==='planning') && (
  <Box sx={{ display:'grid', gridTemplateColumns:'1fr 340px', gap: 3 }}>
  {/* Left: prompt + project */}
@@ -2009,7 +2012,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ PHASE: PAGES (review & edit AI-suggested pages) "€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: PAGES (review & edit AI-suggested pages) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='pages' && (
  <Box sx={{ display:'grid', gridTemplateColumns:'1fr 340px', gap: 3 }}>
  <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
@@ -2148,7 +2151,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ PHASE: GENERATING "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: GENERATING "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='generating' && (
  <Paper sx={{ p: 4, borderRadius: 3, border:`1px solid ${primaryColor}25` }} elevation={0}>
  <Box sx={{ display:'flex', alignItems:'center', gap: 2, mb: 3 }}>
@@ -2197,7 +2200,7 @@ export function ProgrammerAgentPage() {
  </Paper>
  )}
 
- {/* "€"€"€ PHASE: RESULTS "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: RESULTS "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='results' && files.length > 0 && (
  <Box sx={{ display:'grid', gridTemplateColumns: chatPanelOpen ?'280px 1fr 380px' :'280px 1fr', gap: 2, transition:'grid-template-columns 0.3s' }}>
  {/* Left: file list + plan */}
@@ -2349,7 +2352,7 @@ export function ProgrammerAgentPage() {
  {/* Right: code/preview viewer with browser chrome (same pattern as Pages tab) */}
  <Paper sx={{ borderRadius: 3, border:'1px solid rgba(0,0,0,0.08)', overflow:'hidden', display:'flex', flexDirection:'column', bgcolor:'#f5f5f7' }} elevation={0}>
 
- {/* "€"€"€ Browser Chrome (same as Pages tab) "€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Browser Chrome (same as Pages tab) "â‚¬"â‚¬"â‚¬ */}
  <Box sx={{ display:'flex', alignItems:'center', gap: 1, px: 2, py: 1, bgcolor:'#e8e8ec', borderBottom:'1px solid rgba(0,0,0,0.08)' }}>
  {/* Traffic lights */}
  <Box sx={{ display:'flex', gap: 0.6, mr: 1 }}>
@@ -2429,7 +2432,7 @@ export function ProgrammerAgentPage() {
  </Box>
  </Box>
 
- {/* "€"€"€ Toolbar "€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Toolbar "â‚¬"â‚¬"â‚¬ */}
  <Box sx={{ display:'flex', alignItems:'center', justifyContent:'space-between', px: 2, py: 0.8, bgcolor:'#f0f0f3', borderBottom:'1px solid rgba(0,0,0,0.06)' }}>
  <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
  <FileIcon sx={{ fontSize: 14, color: primaryColor }} />
@@ -2454,7 +2457,7 @@ export function ProgrammerAgentPage() {
  </Box>
  </Box>
 
- {/* "€"€"€ Content: Preview / Code / Split (iframe renders actual TSX) "€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Content: Preview / Code / Split (iframe renders actual TSX) "â‚¬"â‚¬"â‚¬ */}
  {splitView && canPreview ? (
  /* Split view: preview left, code right */
  <Box sx={{ flex: 1, display:'grid', gridTemplateColumns:'1fr 1fr', minHeight: 580 }}>
@@ -2502,7 +2505,7 @@ export function ProgrammerAgentPage() {
  )}
  </Paper>
 
- {/* "€"€"€ Chat Panel (Design + Backend) "€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Chat Panel (Design + Backend) "â‚¬"â‚¬"â‚¬ */}
  {chatPanelOpen && (
  <Paper sx={{
  borderRadius: 3, border:'1px solid rgba(0,0,0,0.08)', overflow:'hidden',
@@ -2546,7 +2549,7 @@ export function ProgrammerAgentPage() {
  </IconButton>
  </Box>
 
- {/* *** DESIGN CHAT *** */}
+ {/* *Â*Â*Â DESIGN CHAT *Â*Â*Â */}
  {chatMode ==='design' && (
  <>
  {/* Undo & Diff toolbar */}
@@ -2765,7 +2768,7 @@ export function ProgrammerAgentPage() {
  </>
  )}
 
- {/* *** BACKEND AGENT *** */}
+ {/* *Â*Â*Â BACKEND AGENT *Â*Â*Â */}
  {chatMode ==='backend' && (
  <>
  {backendTasks.length > 0 && (
@@ -2892,7 +2895,7 @@ export function ProgrammerAgentPage() {
  </>
  )}
 
- {/* *** CODER AGENT (Autonomous Builder) *** */}
+ {/* *Â*Â*Â CODER AGENT (Autonomous Builder) *Â*Â*Â */}
  {chatMode ==='coder' && (
  <>
  {/* Pending files banner */}
@@ -3078,7 +3081,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ PHASE: FINALIZING "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: FINALIZING "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='finalizing' && (
  <Paper sx={{ p: 4, borderRadius: 3, border:`1px solid ${primaryColor}25` }} elevation={0}>
  <Box sx={{ display:'flex', alignItems:'center', gap: 2, mb: 3 }}>
@@ -3098,7 +3101,7 @@ export function ProgrammerAgentPage() {
  </Paper>
  )}
 
- {/* "€"€"€ PHASE: FINALIZED (backend tasks view) "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: FINALIZED (backend tasks view) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {(phase ==='finalized' || phase ==='finalizing') && (
  <Box sx={{ display:'grid', gridTemplateColumns:'1fr 340px', gap: 3 }}>
  {/* Left: task list */}
@@ -3337,7 +3340,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ PHASE: QA-RUNNING (loading) "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: QA-RUNNING (loading) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='qa-running' && (
  <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
  <BugIcon sx={{ fontSize: 48, color:'#ff9800', mb: 2 }} />
@@ -3352,7 +3355,7 @@ export function ProgrammerAgentPage() {
  </Paper>
  )}
 
- {/* "€"€"€ PHASE: QA-RESULTS "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: QA-RESULTS "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='qa-results' && (
  <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
  {/* Summary header */}
@@ -3489,7 +3492,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ PHASE: DOCUMENTING (loading) "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: DOCUMENTING (loading) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='documenting' && (
  <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
  <DocsIcon sx={{ fontSize: 48, color: primaryColor, mb: 2 }} />
@@ -3504,7 +3507,7 @@ export function ProgrammerAgentPage() {
  </Paper>
  )}
 
- {/* "€"€"€ PHASE: DOCUMENTED (show docs) "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ PHASE: DOCUMENTED (show docs) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='documented' && (
  <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
  {/* Header */}
@@ -3610,7 +3613,7 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "€"€"€ Add Page Dialog "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Add Page Dialog "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  <Dialog open={addPageDialog} onClose={() => setAddPageDialog(false)} maxWidth="xs" fullWidth
  PaperProps={{ sx: { borderRadius: 3 } }}>
  <DialogTitle sx={{ fontWeight: 700 }}>Add Custom Page</DialogTitle>
@@ -3635,7 +3638,7 @@ export function ProgrammerAgentPage() {
  </DialogActions>
  </Dialog>
 
- {/* "€"€"€ Refine Dialog "€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€"€ */}
+ {/* "â‚¬"â‚¬"â‚¬ Refine Dialog "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  <Dialog open={refineDialog} onClose={() => setRefineDialog(false)} maxWidth="sm" fullWidth
  PaperProps={{ sx: { borderRadius: 3 } }}>
  <DialogTitle sx={{ fontWeight: 700 }}>
@@ -3722,7 +3725,7 @@ export function ProgrammerAgentPage() {
                  const prompt = quickKeyDialog.buildPrompt(quickKeyInput.trim(), quickKeyExtras);
                  setQuickKeyDialog(null);
                  setChatMode('coder');
-                 handleChatSend(prompt);
+                 handleChatSend(prompt, 'coder');
                }
              }}
              sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
@@ -3758,7 +3761,7 @@ export function ProgrammerAgentPage() {
                const prompt = quickKeyDialog.buildPrompt(quickKeyInput.trim(), quickKeyExtras);
                setQuickKeyDialog(null);
                setChatMode('coder');
-               handleChatSend(prompt);
+               handleChatSend(prompt, 'coder');
              }}
              sx={{
                textTransform: 'none', borderRadius: 2, px: 3,

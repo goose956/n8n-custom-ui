@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  HttpException,
+  HttpStatus,
+  ValidationPipe,
+} from '@nestjs/common';
 import { LeadsService } from './leads.service';
 import { CreateLeadDto, UpdateLeadDto, LeadQueryDto } from './dto/leads.dto';
 
@@ -7,9 +18,9 @@ export class LeadsController {
   constructor(private readonly leadsService: LeadsService) {}
 
   @Get()
-  async getLeads(@Query() query: LeadQueryDto) {
+  async getAllLeads(@Query() query: LeadQueryDto) {
     try {
-      return await this.leadsService.getLeads(query);
+      return await this.leadsService.getAllLeads(query);
     } catch (error) {
       throw new HttpException(
         'Failed to fetch leads',
@@ -38,13 +49,13 @@ export class LeadsController {
   }
 
   @Post()
-  async createLead(@Body() createLeadDto: CreateLeadDto) {
+  async createLead(@Body(ValidationPipe) createLeadDto: CreateLeadDto) {
     try {
       return await this.leadsService.createLead(createLeadDto);
     } catch (error) {
       throw new HttpException(
         'Failed to create lead',
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -52,7 +63,7 @@ export class LeadsController {
   @Put(':id')
   async updateLead(
     @Param('id') id: string,
-    @Body() updateLeadDto: UpdateLeadDto,
+    @Body(ValidationPipe) updateLeadDto: UpdateLeadDto,
   ) {
     try {
       const updatedLead = await this.leadsService.updateLead(id, updateLeadDto);
@@ -66,21 +77,33 @@ export class LeadsController {
       }
       throw new HttpException(
         'Failed to update lead',
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
-  @Put(':id/engagement')
-  async updateEngagementStatus(
+  @Post(':id/sync-linkedin')
+  async syncWithLinkedIn(@Param('id') id: string) {
+    try {
+      return await this.leadsService.syncWithLinkedIn(id);
+    } catch (error) {
+      throw new HttpException(
+        'Failed to sync with LinkedIn',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Put(':id/status')
+  async updateLeadStatus(
     @Param('id') id: string,
-    @Body() body: { engagementStatus: string; notes?: string },
+    @Body() statusDto: { status: string; notes?: string },
   ) {
     try {
-      const updatedLead = await this.leadsService.updateEngagementStatus(
+      const updatedLead = await this.leadsService.updateLeadStatus(
         id,
-        body.engagementStatus,
-        body.notes,
+        statusDto.status,
+        statusDto.notes,
       );
       if (!updatedLead) {
         throw new HttpException('Lead not found', HttpStatus.NOT_FOUND);
@@ -91,8 +114,8 @@ export class LeadsController {
         throw error;
       }
       throw new HttpException(
-        'Failed to update engagement status',
-        HttpStatus.BAD_REQUEST,
+        'Failed to update lead status',
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

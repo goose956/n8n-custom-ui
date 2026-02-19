@@ -7,24 +7,26 @@ import {
   Body,
   Param,
   Query,
-  HttpStatus,
   HttpException,
+  HttpStatus,
   ValidationPipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AutorespondersService } from './autoresponders.service';
-import { CreateAutoresponderDto, UpdateAutoresponderDto } from './dto/autoresponder.dto';
+import {
+  CreateAutoresponderDto,
+  UpdateAutoresponderDto,
+  AutoresponderQueryDto,
+} from './dto/autoresponder.dto';
 
 @Controller('api/autoresponders')
 export class AutorespondersController {
   constructor(private readonly autorespondersService: AutorespondersService) {}
 
   @Get()
-  async findAll(@Query('userId') userId?: string) {
+  async findAll(@Query() query: AutoresponderQueryDto) {
     try {
-      if (userId) {
-        return await this.autorespondersService.findByUserId(userId);
-      }
-      return await this.autorespondersService.findAll();
+      return await this.autorespondersService.findAll(query);
     } catch (error) {
       throw new HttpException(
         error.message || 'Failed to fetch autoresponders',
@@ -34,7 +36,7 @@ export class AutorespondersController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseIntPipe) id: number) {
     try {
       const autoresponder = await this.autorespondersService.findOne(id);
       if (!autoresponder) {
@@ -66,11 +68,14 @@ export class AutorespondersController {
 
   @Put(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body(ValidationPipe) updateAutoresponderDto: UpdateAutoresponderDto,
   ) {
     try {
-      const updatedAutoresponder = await this.autorespondersService.update(id, updateAutoresponderDto);
+      const updatedAutoresponder = await this.autorespondersService.update(
+        id,
+        updateAutoresponderDto,
+      );
       if (!updatedAutoresponder) {
         throw new HttpException('Autoresponder not found', HttpStatus.NOT_FOUND);
       }
@@ -87,13 +92,13 @@ export class AutorespondersController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id', ParseIntPipe) id: number) {
     try {
-      const deleted = await this.autorespondersService.remove(id);
-      if (!deleted) {
+      const result = await this.autorespondersService.remove(id);
+      if (!result) {
         throw new HttpException('Autoresponder not found', HttpStatus.NOT_FOUND);
       }
-      return { message: 'Autoresponder deleted successfully', id };
+      return { message: 'Autoresponder deleted successfully' };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -105,36 +110,39 @@ export class AutorespondersController {
     }
   }
 
-  @Post(':id/test')
-  async testAutoresponder(
-    @Param('id') id: string,
-    @Body() testData: { message: string; senderProfile?: any },
-  ) {
+  @Post(':id/activate')
+  async activate(@Param('id', ParseIntPipe) id: number) {
     try {
-      const result = await this.autorespondersService.testAutoresponder(id, testData);
-      return result;
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to test autoresponder',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @Put(':id/toggle')
-  async toggleAutoresponder(@Param('id') id: string) {
-    try {
-      const toggled = await this.autorespondersService.toggleActive(id);
-      if (!toggled) {
+      const autoresponder = await this.autorespondersService.toggleStatus(id, true);
+      if (!autoresponder) {
         throw new HttpException('Autoresponder not found', HttpStatus.NOT_FOUND);
       }
-      return toggled;
+      return autoresponder;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
       throw new HttpException(
-        'Failed to toggle autoresponder',
+        'Failed to activate autoresponder',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post(':id/deactivate')
+  async deactivate(@Param('id', ParseIntPipe) id: number) {
+    try {
+      const autoresponder = await this.autorespondersService.toggleStatus(id, false);
+      if (!autoresponder) {
+        throw new HttpException('Autoresponder not found', HttpStatus.NOT_FOUND);
+      }
+      return autoresponder;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to deactivate autoresponder',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

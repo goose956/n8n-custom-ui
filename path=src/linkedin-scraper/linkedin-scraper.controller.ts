@@ -1,87 +1,60 @@
-```typescript
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  HttpStatus,
-  HttpException,
-  ValidationPipe,
-  UsePipes,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { LinkedinScraperService } from './linkedin-scraper.service';
-import { CreateScrapingJobDto, SearchQueryDto } from './dto/linkedin-scraper.dto';
+
+export interface CreateScrapingJobDto {
+  profileUrl: string;
+  jobName?: string;
+  extractFields?: string[];
+  priority?: 'low' | 'medium' | 'high';
+}
+
+export interface ScrapingJobQuery {
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  limit?: number;
+  offset?: number;
+}
 
 @Controller('api/linkedin-scraper')
 export class LinkedinScraperController {
   constructor(private readonly linkedinScraperService: LinkedinScraperService) {}
 
-  @Post('jobs')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async createScrapingJob(@Body() createJobDto: CreateScrapingJobDto) {
+  @Get()
+  async getScrapingJobs(@Query() query: ScrapingJobQuery) {
     try {
-      const job = await this.linkedinScraperService.createScrapingJob(createJobDto);
+      const jobs = await this.linkedinScraperService.getScrapingJobs(query);
       return {
-        status: 'success',
-        message: 'Scraping job created successfully',
-        data: job,
-      };
-    } catch (error) {
-      throw new HttpException(
-        {
-          status: 'error',
-          message: error.message || 'Failed to create scraping job',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @Get('jobs')
-  async getScrapingJobs(
-    @Query('status') status?: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-  ) {
-    try {
-      const jobs = await this.linkedinScraperService.getScrapingJobs({
-        status,
-        page: Number(page),
-        limit: Number(limit),
-      });
-      return {
-        status: 'success',
+        success: true,
         data: jobs,
+        total: jobs.length
       };
     } catch (error) {
       throw new HttpException(
         {
-          status: 'error',
-          message: error.message || 'Failed to fetch scraping jobs',
+          success: false,
+          message: 'Failed to retrieve scraping jobs',
+          error: error.message
         },
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
 
-  @Get('jobs/:jobId')
-  async getScrapingJob(@Param('jobId') jobId: string) {
+  @Get('job/:id')
+  async getScrapingJobById(@Query('id') id: string) {
     try {
-      const job = await this.linkedinScraperService.getScrapingJobById(jobId);
+      const job = await this.linkedinScraperService.getScrapingJobById(id);
       if (!job) {
         throw new HttpException(
           {
-            status: 'error',
-            message: 'Scraping job not found',
+            success: false,
+            message: 'Scraping job not found'
           },
-          HttpStatus.NOT_FOUND,
+          HttpStatus.NOT_FOUND
         );
       }
       return {
-        status: 'success',
-        data: job,
+        success: true,
+        data: job
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -89,98 +62,70 @@ export class LinkedinScraperController {
       }
       throw new HttpException(
         {
-          status: 'error',
-          message: error.message || 'Failed to fetch scraping job',
+          success: false,
+          message: 'Failed to retrieve scraping job',
+          error: error.message
         },
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
 
-  @Post('jobs/:jobId/start')
-  async startScrapingJob(@Param('jobId') jobId: string) {
+  @Post()
+  async createScrapingJob(@Body() createJobDto: CreateScrapingJobDto) {
     try {
-      const job = await this.linkedinScraperService.startScrapingJob(jobId);
+      // Validate LinkedIn URL
+      if (!createJobDto.profileUrl || !this.isValidLinkedInUrl(createJobDto.profileUrl)) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'Valid LinkedIn profile URL is required'
+          },
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      const job = await this.linkedinScraperService.createScrapingJob(createJobDto);
       return {
-        status: 'success',
-        message: 'Scraping job started',
-        data: job,
+        success: true,
+        message: 'Scraping job created successfully',
+        data: job
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         {
-          status: 'error',
-          message: error.message || 'Failed to start scraping job',
+          success: false,
+          message: 'Failed to create scraping job',
+          error: error.message
         },
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
 
-  @Post('jobs/:jobId/cancel')
-  async cancelScrapingJob(@Param('jobId') jobId: string) {
+  @Post('process/:id')
+  async processScrapingJob(@Query('id') id: string) {
     try {
-      const job = await this.linkedinScraperService.cancelScrapingJob(jobId);
+      const result = await this.linkedinScraperService.processScrapingJob(id);
       return {
-        status: 'success',
-        message: 'Scraping job cancelled',
-        data: job,
+        success: true,
+        message: 'Scraping job processed successfully',
+        data: result
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         {
-          status: 'error',
-          message: error.message || 'Failed to cancel scraping job',
+          success: false,
+          message: 'Failed to process scraping job',
+          error: error.message
         },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @Post('search')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async searchProfiles(@Body() searchQuery: SearchQueryDto) {
-    try {
-      const profiles = await this.linkedinScraperService.searchProfiles(searchQuery);
-      return {
-        status: 'success',
-        message: 'Profile search completed',
-        data: profiles,
-      };
-    } catch (error) {
-      throw new HttpException(
-        {
-          status: 'error',
-          message: error.message || 'Failed to search profiles',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @Get('profiles')
-  async getScrapedProfiles(
-    @Query('jobId') jobId?: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-  ) {
-    try {
-      const profiles = await this.linkedinScraperService.getScrapedProfiles({
-        jobId,
-        page: Number(page),
-        limit: Number(limit),
-      });
-      return {
-        status: 'success',
-        data: profiles,
-      };
-    } catch (error) {
-      throw new HttpException(
-        {
-          status: 'error',
-          message: error.message || 'Failed to fetch scraped profiles',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
@@ -190,18 +135,23 @@ export class LinkedinScraperController {
     try {
       const stats = await this.linkedinScraperService.getScrapingStats();
       return {
-        status: 'success',
-        data: stats,
+        success: true,
+        data: stats
       };
     } catch (error) {
       throw new HttpException(
         {
-          status: 'error',
-          message: error.message || 'Failed to fetch scraping statistics',
+          success: false,
+          message: 'Failed to retrieve scraping statistics',
+          error: error.message
         },
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
+
+  private isValidLinkedInUrl(url: string): boolean {
+    const linkedinUrlPattern = /^https:\/\/(www\.)?linkedin\.com\/in\/[a-zA-Z0-9-]+\/?$/;
+    return linkedinUrlPattern.test(url);
+  }
 }
-```

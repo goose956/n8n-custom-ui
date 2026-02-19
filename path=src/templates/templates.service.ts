@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../shared/database.service';
-import { CreateTemplateDto, UpdateTemplateDto, TemplateQueryDto } from './dto/template.dto';
+import { CreateTemplateDto, UpdateTemplateDto } from './dto/templates.dto';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MessageTemplate {
@@ -8,161 +8,99 @@ export interface MessageTemplate {
   name: string;
   subject: string;
   content: string;
-  category: string;
-  tags: string[];
+  type: 'email' | 'sms' | 'push';
   variables: string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  performance: {
-    totalSent: number;
-    totalResponses: number;
-    responseRate: number;
-    totalConnections: number;
-    connectionRate: number;
-    avgResponseTime: number; // in hours
-    lastUsed: string;
-  };
+  createdBy?: string;
+  tags?: string[];
+  category?: string;
 }
 
-export interface TemplateUsageTracking {
-  templateId: string;
-  timestamp: string;
-  action: 'sent' | 'response_received' | 'connection_accepted';
-  responseTime?: number; // in hours for response tracking
+interface TemplatesDatabase {
+  templates: MessageTemplate[];
 }
 
 @Injectable()
 export class TemplatesService {
-  private readonly dataFile = 'message-templates.json';
+  private readonly fileName = 'templates.json';
 
   constructor(private readonly db: DatabaseService) {}
 
-  async findAll(query: TemplateQueryDto): Promise<MessageTemplate[]> {
-    const data = this.db.readSync(this.dataFile);
-    let templates: MessageTemplate[] = data.templates || [];
+  private getDatabase(): TemplatesDatabase {
+    const data = this.db.readSync(this.fileName);
+    return data || { templates: [] };
+  }
 
-    // Apply filters
-    if (query.category) {
-      templates = templates.filter(
-        template => template.category.toLowerCase() === query.category.toLowerCase(),
-      );
-    }
+  private saveDatabase(data: TemplatesDatabase): void {
+    this.db.writeSync(this.fileName, data);
+  }
 
-    if (query.isActive !== undefined) {
-      templates = templates.filter(template => template.isActive === query.isActive);
-    }
-
-    if (query.search) {
-      const searchLower = query.search.toLowerCase();
-      templates = templates.filter(
-        template =>
-          template.name.toLowerCase().includes(searchLower) ||
-          template.subject.toLowerCase().includes(searchLower) ||
-          template.content.toLowerCase().includes(searchLower) ||
-          template.tags.some(tag => tag.toLowerCase().includes(searchLower)),
-      );
-    }
-
-    // Apply sorting
-    if (query.sortBy) {
-      templates.sort((a, b) => {
-        let aVal, bVal;
-        
-        switch (query.sortBy) {
-          case 'name':
-            aVal = a.name.toLowerCase();
-            bVal = b.name.toLowerCase();
-            break;
-          case 'createdAt':
-            aVal = new Date(a.createdAt).getTime();
-            bVal = new Date(b.createdAt).getTime();
-            break;
-          case 'responseRate':
-            aVal = a.performance.responseRate;
-            bVal = b.performance.responseRate;
-            break;
-          case 'totalSent':
-            aVal = a.performance.totalSent;
-            bVal = b.performance.totalSent;
-            break;
-          default:
-            return 0;
-        }
-
-        if (query.sortOrder === 'desc') {
-          return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-        }
-        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-      });
-    }
-
-    // Apply pagination
-    const page = query.page || 1;
-    const limit = query.limit || 10;
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-
-    return templates.slice(startIndex, endIndex);
+  async findAll(): Promise<MessageTemplate[]> {
+    const database = this.getDatabase();
+    return database.templates.sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
   }
 
   async findById(id: string): Promise<MessageTemplate | null> {
-    const data = this.db.readSync(this.dataFile);
-    const templates: MessageTemplate[] = data.templates || [];
-    return templates.find(template => template.id === id) || null;
+    const database = this.getDatabase();
+    const template = database.templates.find(t => t.id === id);
+    return template || null;
+  }
+
+  async findByType(type: string): Promise<MessageTemplate[]> {
+    const database = this.getDatabase();
+    return database.templates.filter(t => t.type === type && t.isActive);
+  }
+
+  async findByCategory(category: string): Promise<MessageTemplate[]> {
+    const database = this.getDatabase();
+    return database.templates.filter(t => t.category === category && t.isActive);
   }
 
   async create(createTemplateDto: CreateTemplateDto): Promise<MessageTemplate> {
-    const data = this.db.readSync(this.dataFile);
-    const templates: MessageTemplate[] = data.templates || [];
-
-    // Extract variables from content
+    const database = this.getDatabase();
+    
+    // Extract variables from content using {{variable}} pattern
     const variables = this.extractVariables(createTemplateDto.content);
-
+    
     const newTemplate: MessageTemplate = {
       id: uuidv4(),
       name: createTemplateDto.name,
-      subject: createTemplateDto.subject,
+      subject: createTemplateDto.subject || '',
       content: createTemplateDto.content,
-      category: createTemplateDto.category,
-      tags: createTemplateDto.tags || [],
+      type: createTemplateDto.type,
       variables,
-      isActive: createTemplateDto.isActive !== undefined ? createTemplateDto.isActive : true,
+      isActive: createTemplateDto.isActive ?? true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      performance: {
-        totalSent: 0,
-        totalResponses: 0,
-        responseRate: 0,
-        totalConnections: 0,
-        connectionRate: 0,
-        avgResponseTime: 0,
-        lastUsed: '',
-      },
+      createdBy: createTemplateDto.createdBy,
+      tags: createTemplateDto.tags || [],
+      category: createTemplateDto.category,
     };
 
-    templates.push(newTemplate);
-    this.db.writeSync(this.dataFile, { ...data, templates });
-
+    database.templates.push(newTemplate);
+    this.saveDatabase(database);
+    
     return newTemplate;
   }
 
   async update(id: string, updateTemplateDto: UpdateTemplateDto): Promise<MessageTemplate | null> {
-    const data = this.db.readSync(this.dataFile);
-    const templates: MessageTemplate[] = data.templates || [];
-    const templateIndex = templates.findIndex(template => template.id === id);
-
+    const database = this.getDatabase();
+    const templateIndex = database.templates.findIndex(t => t.id === id);
+    
     if (templateIndex === -1) {
       return null;
     }
 
-    const existingTemplate = templates[templateIndex];
+    const existingTemplate = database.templates[templateIndex];
     
-    // Update variables if content changed
-    let variables = existingTemplate.variables;
-    if (updateTemplateDto.content && updateTemplateDto.content !== existingTemplate.content) {
-      variables = this.extractVariables(updateTemplateDto.content);
-    }
+    // Extract variables from updated content if content is being updated
+    const variables = updateTemplateDto.content 
+      ? this.extractVariables(updateTemplateDto.content)
+      : existingTemplate.variables;
 
     const updatedTemplate: MessageTemplate = {
       ...existingTemplate,
@@ -171,151 +109,113 @@ export class TemplatesService {
       updatedAt: new Date().toISOString(),
     };
 
-    templates[templateIndex] = updatedTemplate;
-    this.db.writeSync(this.dataFile, { ...data, templates });
-
+    database.templates[templateIndex] = updatedTemplate;
+    this.saveDatabase(database);
+    
     return updatedTemplate;
   }
 
   async delete(id: string): Promise<boolean> {
-    const data = this.db.readSync(this.dataFile);
-    const templates: MessageTemplate[] = data.templates || [];
-    const templateIndex = templates.findIndex(template => template.id === id);
-
+    const database = this.getDatabase();
+    const templateIndex = database.templates.findIndex(t => t.id === id);
+    
     if (templateIndex === -1) {
       return false;
     }
 
-    templates.splice(templateIndex, 1);
-    this.db.writeSync(this.dataFile, { ...data, templates });
-
+    database.templates.splice(templateIndex, 1);
+    this.saveDatabase(database);
+    
     return true;
   }
 
-  async getPerformanceMetrics(id: string): Promise<any | null> {
+  async duplicate(id: string): Promise<MessageTemplate | null> {
     const template = await this.findById(id);
     if (!template) {
       return null;
     }
 
-    const data = this.db.readSync(this.dataFile);
-    const usage: TemplateUsageTracking[] = data.templateUsage || [];
-    
-    // Get usage data for this template
-    const templateUsage = usage.filter(u => u.templateId === id);
-    
-    // Calculate additional metrics
-    const last30Days = templateUsage.filter(u => {
-      const usageDate = new Date(u.timestamp);
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return usageDate >= thirtyDaysAgo;
-    });
-
-    const last7Days = templateUsage.filter(u => {
-      const usageDate = new Date(u.timestamp);
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      return usageDate >= sevenDaysAgo;
-    });
-
-    return {
-      ...template.performance,
-      usage30Days: last30Days.length,
-      usage7Days: last7Days.length,
-      usageByAction: {
-        sent: templateUsage.filter(u => u.action === 'sent').length,
-        responses: templateUsage.filter(u => u.action === 'response_received').length,
-        connections: templateUsage.filter(u => u.action === 'connection_accepted').length,
-      },
-      dailyUsage: this.calculateDailyUsage(templateUsage),
+    const duplicatedTemplate: CreateTemplateDto = {
+      name: `${template.name} (Copy)`,
+      subject: template.subject,
+      content: template.content,
+      type: template.type,
+      isActive: false, // Set as inactive by default
+      createdBy: template.createdBy,
+      tags: template.tags,
+      category: template.category,
     };
+
+    return this.create(duplicatedTemplate);
   }
 
-  async trackUsage(id: string, trackingData: any): Promise<MessageTemplate | null> {
-    const data = this.db.readSync(this.dataFile);
-    const templates: MessageTemplate[] = data.templates || [];
-    const usage: TemplateUsageTracking[] = data.templateUsage || [];
+  async toggleActive(id: string): Promise<MessageTemplate | null> {
+    const database = this.getDatabase();
+    const template = database.templates.find(t => t.id === id);
     
-    const templateIndex = templates.findIndex(template => template.id === id);
-    if (templateIndex === -1) {
+    if (!template) {
       return null;
     }
 
-    const template = templates[templateIndex];
-    const now = new Date().toISOString();
-
-    // Add usage tracking record
-    const usageRecord: TemplateUsageTracking = {
-      templateId: id,
-      timestamp: now,
-      action: trackingData.action || 'sent',
-      responseTime: trackingData.responseTime,
-    };
-
-    usage.push(usageRecord);
-
-    // Update template performance metrics
-    const updatedPerformance = { ...template.performance };
-    updatedPerformance.lastUsed = now;
-
-    switch (trackingData.action) {
-      case 'sent':
-        updatedPerformance.totalSent += 1;
-        break;
-      case 'response_received':
-        updatedPerformance.totalResponses += 1;
-        if (trackingData.responseTime) {
-          updatedPerformance.avgResponseTime = 
-            (updatedPerformance.avgResponseTime * (updatedPerformance.totalResponses - 1) + trackingData.responseTime) / 
-            updatedPerformance.totalResponses;
-        }
-        break;
-      case 'connection_accepted':
-        updatedPerformance.totalConnections += 1;
-        break;
-    }
-
-    // Recalculate rates
-    if (updatedPerformance.totalSent > 0) {
-      updatedPerformance.responseRate = (updatedPerformance.totalResponses / updatedPerformance.totalSent) * 100;
-      updatedPerformance.connectionRate = (updatedPerformance.totalConnections / updatedPerformance.totalSent) * 100;
-    }
-
-    const updatedTemplate: MessageTemplate = {
-      ...template,
-      performance: updatedPerformance,
-      updatedAt: now,
-    };
-
-    templates[templateIndex] = updatedTemplate;
-    this.db.writeSync(this.dataFile, { ...data, templates, templateUsage: usage });
-
-    return updatedTemplate;
+    template.isActive = !template.isActive;
+    template.updatedAt = new Date().toISOString();
+    
+    this.saveDatabase(database);
+    return template;
   }
 
   private extractVariables(content: string): string[] {
-    const variableRegex = /\{\{(\w+)\}\}/g;
+    const variableRegex = /\{\{([^}]+)\}\}/g;
     const variables: string[] = [];
     let match;
 
     while ((match = variableRegex.exec(content)) !== null) {
-      if (!variables.includes(match[1])) {
-        variables.push(match[1]);
+      const variable = match[1].trim();
+      if (!variables.includes(variable)) {
+        variables.push(variable);
       }
     }
 
     return variables;
   }
 
-  private calculateDailyUsage(usage: TemplateUsageTracking[]): any {
-    const dailyUsage: { [key: string]: number } = {};
+  async searchTemplates(query: string): Promise<MessageTemplate[]> {
+    const database = this.getDatabase();
+    const searchTerm = query.toLowerCase();
     
-    usage.forEach(u => {
-      const date = new Date(u.timestamp).toISOString().split('T')[0];
-      dailyUsage[date] = (dailyUsage[date] || 0) + 1;
-    });
+    return database.templates.filter(template => 
+      template.name.toLowerCase().includes(searchTerm) ||
+      template.content.toLowerCase().includes(searchTerm) ||
+      template.subject.toLowerCase().includes(searchTerm) ||
+      template.category?.toLowerCase().includes(searchTerm) ||
+      template.tags?.some(tag => tag.toLowerCase().includes(searchTerm))
+    );
+  }
 
-    return dailyUsage;
+  async getTemplatesByTag(tag: string): Promise<MessageTemplate[]> {
+    const database = this.getDatabase();
+    return database.templates.filter(template => 
+      template.tags?.includes(tag) && template.isActive
+    );
+  }
+
+  async getAllTags(): Promise<string[]> {
+    const database = this.getDatabase();
+    const allTags = database.templates
+      .flatMap(template => template.tags || [])
+      .filter((tag, index, array) => array.indexOf(tag) === index);
+    
+    return allTags.sort();
+  }
+
+  async getAllCategories(): Promise<string[]> {
+    const database = this.getDatabase();
+    const categories = database.templates
+      .map(template => template.category)
+      .filter((category, index, array) => 
+        category && array.indexOf(category) === index
+      ) as string[];
+    
+    return categories.sort();
   }
 }

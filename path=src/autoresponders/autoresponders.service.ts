@@ -1,486 +1,350 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../shared/database.service';
 import { CryptoService } from '../shared/crypto.service';
-import { CreateAutoresponderDto, UpdateAutoresponderDto } from './dto/autoresponder.dto';
+import {
+  CreateAutoresponderDto,
+  UpdateAutoresponderDto,
+  AutoresponderQueryDto,
+} from './dto/autoresponder.dto';
 
-export interface AutoresponderRule {
-  id: string;
-  userId: string;
+export interface Autoresponder {
+  id: number;
   name: string;
   description?: string;
   isActive: boolean;
-  priority: number;
-  triggers: {
-    keywords?: string[];
-    senderCriteria?: {
-      jobTitles?: string[];
-      companies?: string[];
-      industries?: string[];
-      connectionDegree?: number[];
-    };
-    messageCriteria?: {
-      isFirstMessage?: boolean;
-      containsLinks?: boolean;
-      messageLength?: { min?: number; max?: number };
-    };
+  triggerType: 'keyword' | 'time_based' | 'event_based';
+  triggerValue: string;
+  responseType: 'text' | 'ai_generated' | 'template';
+  responseContent: string;
+  aiProvider?: 'openai' | 'anthropic' | 'google';
+  aiModel?: string;
+  aiPrompt?: string;
+  maxTokens?: number;
+  temperature?: number;
+  delay?: number; // in seconds
+  conditions?: {
+    timeRange?: { start: string; end: string };
+    days?: string[];
+    userSegments?: string[];
+    channels?: string[];
   };
-  conditions: {
-    timeRestrictions?: {
-      daysOfWeek?: number[];
-      hoursOfDay?: { start: number; end: number };
-      timezone?: string;
-    };
-    rateLimiting?: {
-      maxResponsesPerDay?: number;
-      cooldownHours?: number;
-    };
-  };
-  response: {
-    type: 'template' | 'ai_generated';
-    template?: string;
-    aiPrompt?: string;
-    personalizationFields?: string[];
-    followUpActions?: {
-      scheduleFollowUp?: { delayHours: number; message: string };
-      addToList?: string;
-      setReminder?: { delayHours: number; note: string };
-    };
-  };
-  analytics: {
+  analytics?: {
     totalTriggers: number;
-    totalResponses: number;
-    successRate: number;
-    lastTriggered?: Date;
-    averageResponseTime?: number;
+    successfulResponses: number;
+    failureRate: number;
   };
   createdAt: Date;
   updatedAt: Date;
 }
 
-interface DatabaseSchema {
-  autoresponders: AutoresponderRule[];
+interface AutorespondersData {
+  autoresponders: Autoresponder[];
+  nextId: number;
 }
 
 @Injectable()
 export class AutorespondersService {
+  private readonly dataKey = 'autoresponders';
+
   constructor(
     private readonly db: DatabaseService,
-    private readonly cryptoService: CryptoService,
+    private readonly crypto: CryptoService,
   ) {}
 
-  async findAll(): Promise<AutoresponderRule[]> {
-    const data = this.db.readSync<DatabaseSchema>();
-    return data.autoresponders || [];
+  private getDefaultData(): AutorespondersData {
+    return {
+      autoresponders: [],
+      nextId: 1,
+    };
   }
 
-  async findByUserId(userId: string): Promise<AutoresponderRule[]> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    return autoresponders.filter(rule => rule.userId === userId);
+  private getData(): AutorespondersData {
+    const data = this.db.readSync();
+    return data[this.dataKey] || this.getDefaultData();
   }
 
-  async findOne(id: string): Promise<AutoresponderRule | null> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    return autoresponders.find(rule => rule.id === id) || null;
+  private saveData(data: AutorespondersData): void {
+    const allData = this.db.readSync();
+    allData[this.dataKey] = data;
+    this.db.writeSync(allData);
   }
 
-  async create(createDto: CreateAutoresponderDto): Promise<AutoresponderRule> {
-    const data = this.db.readSync<DatabaseSchema>();
-    
-    if (!data.autoresponders) {
-      data.autoresponders = [];
+  async findAll(query: AutoresponderQueryDto): Promise<{
+    data: Autoresponder[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const data = this.getData();
+    let autoresponders = [...data.autoresponders];
+
+    // Apply filters
+    if (query.search) {
+      const searchLower = query.search.toLowerCase();
+      autoresponders = autoresponders.filter(
+        (autoresponder) =>
+          autoresponder.name.toLowerCase().includes(searchLower) ||
+          autoresponder.description?.toLowerCase().includes(searchLower) ||
+          autoresponder.triggerValue.toLowerCase().includes(searchLower),
+      );
     }
 
-    const newAutoresponder: AutoresponderRule = {
-      id: this.generateId(),
-      userId: createDto.userId,
-      name: createDto.name,
-      description: createDto.description,
-      isActive: createDto.isActive ?? true,
-      priority: createDto.priority ?? 1,
-      triggers: createDto.triggers,
-      conditions: createDto.conditions || {},
-      response: createDto.response,
+    if (query.isActive !== undefined) {
+      autoresponders = autoresponders.filter(
+        (autoresponder) => autoresponder.isActive === query.isActive,
+      );
+    }
+
+    if (query.triggerType) {
+      autoresponders = autoresponders.filter(
+        (autoresponder) => autoresponder.triggerType === query.triggerType,
+      );
+    }
+
+    if (query.responseType) {
+      autoresponders = autoresponders.filter(
+        (autoresponder) => autoresponder.responseType === query.responseType,
+      );
+    }
+
+    // Apply sorting
+    if (query.sortBy) {
+      const sortOrder = query.sortOrder === 'desc' ? -1 : 1;
+      autoresponders.sort((a, b) => {
+        const aValue = a[query.sortBy];
+        const bValue = b[query.sortBy];
+        
+        if (aValue < bValue) return -1 * sortOrder;
+        if (aValue > bValue) return 1 * sortOrder;
+        return 0;
+      });
+    }
+
+    // Apply pagination
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedAutoresponders = autoresponders.slice(startIndex, endIndex);
+
+    return {
+      data: paginatedAutoresponders,
+      total: autoresponders.length,
+      page,
+      limit,
+    };
+  }
+
+  async findOne(id: number): Promise<Autoresponder | null> {
+    const data = this.getData();
+    return data.autoresponders.find((autoresponder) => autoresponder.id === id) || null;
+  }
+
+  async create(createAutoresponderDto: CreateAutoresponderDto): Promise<Autoresponder> {
+    const data = this.getData();
+    
+    // Validate AI configuration if using AI response type
+    if (createAutoresponderDto.responseType === 'ai_generated') {
+      await this.validateAiConfiguration(createAutoresponderDto);
+    }
+
+    const newAutoresponder: Autoresponder = {
+      id: data.nextId,
+      name: createAutoresponderDto.name,
+      description: createAutoresponderDto.description,
+      isActive: createAutoresponderDto.isActive ?? true,
+      triggerType: createAutoresponderDto.triggerType,
+      triggerValue: createAutoresponderDto.triggerValue,
+      responseType: createAutoresponderDto.responseType,
+      responseContent: createAutoresponderDto.responseContent,
+      aiProvider: createAutoresponderDto.aiProvider,
+      aiModel: createAutoresponderDto.aiModel,
+      aiPrompt: createAutoresponderDto.aiPrompt,
+      maxTokens: createAutoresponderDto.maxTokens || 150,
+      temperature: createAutoresponderDto.temperature || 0.7,
+      delay: createAutoresponderDto.delay || 0,
+      conditions: createAutoresponderDto.conditions,
       analytics: {
         totalTriggers: 0,
-        totalResponses: 0,
-        successRate: 0,
+        successfulResponses: 0,
+        failureRate: 0,
       },
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    // Validate response configuration
-    await this.validateResponseConfiguration(newAutoresponder.response);
-
     data.autoresponders.push(newAutoresponder);
-    this.db.writeSync(data);
+    data.nextId++;
+    this.saveData(data);
 
     return newAutoresponder;
   }
 
-  async update(id: string, updateDto: UpdateAutoresponderDto): Promise<AutoresponderRule | null> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    const index = autoresponders.findIndex(rule => rule.id === id);
+  async update(id: number, updateAutoresponderDto: UpdateAutoresponderDto): Promise<Autoresponder | null> {
+    const data = this.getData();
+    const autoresponderIndex = data.autoresponders.findIndex((autoresponder) => autoresponder.id === id);
 
-    if (index === -1) {
+    if (autoresponderIndex === -1) {
       return null;
     }
 
-    const existingRule = autoresponders[index];
-    const updatedRule: AutoresponderRule = {
-      ...existingRule,
-      ...updateDto,
-      id: existingRule.id,
-      userId: existingRule.userId,
-      createdAt: existingRule.createdAt,
+    // Validate AI configuration if updating to AI response type
+    if (updateAutoresponderDto.responseType === 'ai_generated') {
+      await this.validateAiConfiguration(updateAutoresponderDto);
+    }
+
+    const existingAutoresponder = data.autoresponders[autoresponderIndex];
+    const updatedAutoresponder: Autoresponder = {
+      ...existingAutoresponder,
+      ...updateAutoresponderDto,
+      id, // Ensure ID doesn't change
       updatedAt: new Date(),
     };
 
-    // Validate response configuration if updated
-    if (updateDto.response) {
-      await this.validateResponseConfiguration(updatedRule.response);
-    }
+    data.autoresponders[autoresponderIndex] = updatedAutoresponder;
+    this.saveData(data);
 
-    autoresponders[index] = updatedRule;
-    this.db.writeSync(data);
-
-    return updatedRule;
+    return updatedAutoresponder;
   }
 
-  async remove(id: string): Promise<boolean> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    const initialLength = autoresponders.length;
+  async remove(id: number): Promise<boolean> {
+    const data = this.getData();
+    const initialLength = data.autoresponders.length;
+    data.autoresponders = data.autoresponders.filter((autoresponder) => autoresponder.id !== id);
 
-    data.autoresponders = autoresponders.filter(rule => rule.id !== id);
-
-    if (data.autoresponders.length === initialLength) {
-      return false;
+    if (data.autoresponders.length < initialLength) {
+      this.saveData(data);
+      return true;
     }
 
-    this.db.writeSync(data);
-    return true;
+    return false;
   }
 
-  async toggleActive(id: string): Promise<AutoresponderRule | null> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    const index = autoresponders.findIndex(rule => rule.id === id);
+  async toggleStatus(id: number, isActive: boolean): Promise<Autoresponder | null> {
+    const data = this.getData();
+    const autoresponderIndex = data.autoresponders.findIndex((autoresponder) => autoresponder.id === id);
 
-    if (index === -1) {
+    if (autoresponderIndex === -1) {
       return null;
     }
 
-    autoresponders[index].isActive = !autoresponders[index].isActive;
-    autoresponders[index].updatedAt = new Date();
+    data.autoresponders[autoresponderIndex].isActive = isActive;
+    data.autoresponders[autoresponderIndex].updatedAt = new Date();
+    this.saveData(data);
 
-    this.db.writeSync(data);
-    return autoresponders[index];
+    return data.autoresponders[autoresponderIndex];
   }
 
-  async testAutoresponder(
-    id: string,
-    testData: { message: string; senderProfile?: any },
-  ): Promise<{ matches: boolean; response?: string; reasoning: string }> {
-    const autoresponder = await this.findOne(id);
-    if (!autoresponder) {
-      throw new HttpException('Autoresponder not found', HttpStatus.NOT_FOUND);
+  async updateAnalytics(id: number, analytics: Partial<Autoresponder['analytics']>): Promise<void> {
+    const data = this.getData();
+    const autoresponderIndex = data.autoresponders.findIndex((autoresponder) => autoresponder.id === id);
+
+    if (autoresponderIndex !== -1) {
+      data.autoresponders[autoresponderIndex].analytics = {
+        ...data.autoresponders[autoresponderIndex].analytics,
+        ...analytics,
+      };
+      data.autoresponders[autoresponderIndex].updatedAt = new Date();
+      this.saveData(data);
     }
-
-    const matches = this.evaluateTriggers(autoresponder.triggers, testData);
-    let response: string | undefined;
-    let reasoning: string;
-
-    if (matches) {
-      reasoning = 'Message matches autoresponder triggers';
-      
-      if (autoresponder.response.type === 'template' && autoresponder.response.template) {
-        response = this.personalizeTemplate(
-          autoresponder.response.template,
-          testData.senderProfile,
-        );
-      } else if (autoresponder.response.type === 'ai_generated' && autoresponder.response.aiPrompt) {
-        response = await this.generateAIResponse(
-          autoresponder.response.aiPrompt,
-          testData.message,
-          testData.senderProfile,
-        );
-      }
-    } else {
-      reasoning = 'Message does not match autoresponder triggers';
-    }
-
-    return { matches, response, reasoning };
   }
 
-  async processIncomingMessage(
-    message: string,
-    senderProfile: any,
-    recipientUserId: string,
-  ): Promise<{ shouldRespond: boolean; response?: string; autoresponder?: AutoresponderRule }> {
-    const userAutoresponders = await this.findByUserId(recipientUserId);
-    const activeAutoresponders = userAutoresponders
-      .filter(rule => rule.isActive)
-      .sort((a, b) => b.priority - a.priority);
-
-    for (const autoresponder of activeAutoresponders) {
-      // Check rate limiting
-      if (!(await this.checkRateLimit(autoresponder, recipientUserId))) {
-        continue;
-      }
-
-      // Check time restrictions
-      if (!this.checkTimeRestrictions(autoresponder.conditions.timeRestrictions)) {
-        continue;
-      }
-
-      // Evaluate triggers
-      const testData = { message, senderProfile };
-      if (this.evaluateTriggers(autoresponder.triggers, testData)) {
-        // Update analytics
-        await this.updateAnalytics(autoresponder.id, 'trigger');
-
-        let response: string;
-        try {
-          if (autoresponder.response.type === 'template' && autoresponder.response.template) {
-            response = this.personalizeTemplate(autoresponder.response.template, senderProfile);
-          } else if (autoresponder.response.type === 'ai_generated' && autoresponder.response.aiPrompt) {
-            response = await this.generateAIResponse(
-              autoresponder.response.aiPrompt,
-              message,
-              senderProfile,
-            );
-          } else {
-            continue;
-          }
-
-          // Update analytics for successful response
-          await this.updateAnalytics(autoresponder.id, 'response');
-
-          return {
-            shouldRespond: true,
-            response,
-            autoresponder,
-          };
-        } catch (error) {
-          console.error(`Failed to generate response for autoresponder ${autoresponder.id}:`, error);
-          continue;
-        }
-      }
-    }
-
-    return { shouldRespond: false };
+  async findActiveByTrigger(triggerType: string, triggerValue?: string): Promise<Autoresponder[]> {
+    const data = this.getData();
+    return data.autoresponders.filter(
+      (autoresponder) =>
+        autoresponder.isActive &&
+        autoresponder.triggerType === triggerType &&
+        (!triggerValue || autoresponder.triggerValue === triggerValue),
+    );
   }
 
-  private evaluateTriggers(
-    triggers: AutoresponderRule['triggers'],
-    testData: { message: string; senderProfile?: any },
-  ): boolean {
-    const { message, senderProfile } = testData;
-
-    // Check keyword triggers
-    if (triggers.keywords && triggers.keywords.length > 0) {
-      const messageText = message.toLowerCase();
-      const hasKeyword = triggers.keywords.some(keyword =>
-        messageText.includes(keyword.toLowerCase()),
-      );
-      if (!hasKeyword) return false;
+  private async validateAiConfiguration(dto: CreateAutoresponderDto | UpdateAutoresponderDto): Promise<void> {
+    if (!dto.aiProvider) {
+      throw new Error('AI provider is required for AI-generated responses');
     }
 
-    // Check sender criteria
-    if (triggers.senderCriteria && senderProfile) {
-      const criteria = triggers.senderCriteria;
-
-      if (criteria.jobTitles && criteria.jobTitles.length > 0) {
-        const profileTitle = senderProfile.jobTitle?.toLowerCase() || '';
-        const matchesJobTitle = criteria.jobTitles.some(title =>
-          profileTitle.includes(title.toLowerCase()),
-        );
-        if (!matchesJobTitle) return false;
-      }
-
-      if (criteria.companies && criteria.companies.length > 0) {
-        const profileCompany = senderProfile.company?.toLowerCase() || '';
-        const matchesCompany = criteria.companies.some(company =>
-          profileCompany.includes(company.toLowerCase()),
-        );
-        if (!matchesCompany) return false;
-      }
-
-      if (criteria.industries && criteria.industries.length > 0) {
-        const profileIndustry = senderProfile.industry?.toLowerCase() || '';
-        const matchesIndustry = criteria.industries.some(industry =>
-          profileIndustry.includes(industry.toLowerCase()),
-        );
-        if (!matchesIndustry) return false;
-      }
-
-      if (criteria.connectionDegree && criteria.connectionDegree.length > 0) {
-        const profileDegree = senderProfile.connectionDegree || 3;
-        if (!criteria.connectionDegree.includes(profileDegree)) return false;
-      }
+    if (!dto.aiModel) {
+      throw new Error('AI model is required for AI-generated responses');
     }
 
-    // Check message criteria
-    if (triggers.messageCriteria) {
-      const criteria = triggers.messageCriteria;
-
-      if (criteria.isFirstMessage !== undefined) {
-        const isFirst = senderProfile?.isFirstMessage === true;
-        if (criteria.isFirstMessage !== isFirst) return false;
-      }
-
-      if (criteria.containsLinks !== undefined) {
-        const hasLinks = /https?:\/\/[^\s]+/.test(message);
-        if (criteria.containsLinks !== hasLinks) return false;
-      }
-
-      if (criteria.messageLength) {
-        const length = message.length;
-        if (criteria.messageLength.min && length < criteria.messageLength.min) return false;
-        if (criteria.messageLength.max && length > criteria.messageLength.max) return false;
-      }
+    if (!dto.aiPrompt) {
+      throw new Error('AI prompt is required for AI-generated responses');
     }
 
-    return true;
-  }
-
-  private personalizeTemplate(template: string, senderProfile?: any): string {
-    if (!senderProfile) return template;
-
-    return template
-      .replace(/\{firstName\}/g, senderProfile.firstName || 'there')
-      .replace(/\{lastName\}/g, senderProfile.lastName || '')
-      .replace(/\{fullName\}/g, senderProfile.fullName || senderProfile.firstName || 'there')
-      .replace(/\{company\}/g, senderProfile.company || 'your company')
-      .replace(/\{jobTitle\}/g, senderProfile.jobTitle || 'your role');
-  }
-
-  private async generateAIResponse(
-    aiPrompt: string,
-    incomingMessage: string,
-    senderProfile?: any,
-  ): Promise<string> {
+    // Validate API key exists for the provider
     try {
-      const apiKey = await this.cryptoService.getApiKey('openai');
+      const apiKey = await this.crypto.getApiKey(`${dto.aiProvider}_api_key`);
       if (!apiKey) {
-        throw new Error('OpenAI API key not configured');
+        throw new Error(`API key not found for ${dto.aiProvider}`);
       }
-
-      const systemPrompt = `
-        You are an AI assistant helping to generate professional LinkedIn message responses.
-        Use the following context to create a personalized, professional response.
-        
-        Sender Profile: ${JSON.stringify(senderProfile || {})}
-        Custom Instructions: ${aiPrompt}
-        
-        Keep responses concise, professional, and engaging. Avoid being overly salesy or pushy.
-      `;
-
-      // Note: In a real implementation, you would make an actual API call to OpenAI
-      // For this example, we'll return a template-based response
-      const response = await this.mockAIResponse(systemPrompt, incomingMessage, senderProfile);
-      
-      return response;
     } catch (error) {
-      console.error('Failed to generate AI response:', error);
-      // Fallback to a generic template
-      return this.personalizeTemplate(
-        'Hi {firstName}, thanks for reaching out! I\'ll get back to you soon.',
-        senderProfile,
-      );
+      throw new Error(`Failed to validate API key for ${dto.aiProvider}: ${error.message}`);
     }
   }
 
-  private async mockAIResponse(
-    systemPrompt: string,
-    message: string,
-    senderProfile?: any,
-  ): Promise<string> {
-    // Mock AI response generation - replace with actual OpenAI API call
-    const templates = [
-      'Hi {firstName}, thanks for your message! I appreciate you reaching out.',
-      'Hello {firstName}, thank you for connecting. I\'d be happy to discuss this further.',
-      'Hi {firstName}, interesting message! I\'ll review this and get back to you soon.',
-    ];
-
-    const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
-    return this.personalizeTemplate(randomTemplate, senderProfile);
-  }
-
-  private async checkRateLimit(autoresponder: AutoresponderRule, userId: string): Promise<boolean> {
-    const rateLimiting = autoresponder.conditions.rateLimiting;
-    if (!rateLimiting) return true;
-
-    // In a real implementation, you would track rate limiting in the database
-    // For now, we'll assume rate limits are not exceeded
-    return true;
-  }
-
-  private checkTimeRestrictions(timeRestrictions?: AutoresponderRule['conditions']['timeRestrictions']): boolean {
-    if (!timeRestrictions) return true;
-
-    const now = new Date();
-    const currentDayOfWeek = now.getDay();
-    const currentHour = now.getHours();
-
-    // Check days of week
-    if (timeRestrictions.daysOfWeek && timeRestrictions.daysOfWeek.length > 0) {
-      if (!timeRestrictions.daysOfWeek.includes(currentDayOfWeek)) {
-        return false;
-      }
+  async generateAiResponse(autoresponder: Autoresponder, context: any): Promise<string> {
+    if (autoresponder.responseType !== 'ai_generated' || !autoresponder.aiProvider) {
+      throw new Error('Autoresponder is not configured for AI generation');
     }
 
-    // Check hours of day
-    if (timeRestrictions.hoursOfDay) {
-      const { start, end } = timeRestrictions.hoursOfDay;
-      if (currentHour < start || currentHour >= end) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private async updateAnalytics(autoresponder: string, type: 'trigger' | 'response'): Promise<void> {
-    const data = this.db.readSync<DatabaseSchema>();
-    const autoresponders = data.autoresponders || [];
-    const index = autoresponders.findIndex(rule => rule.id === autoresponder);
-
-    if (index !== -1) {
-      const rule = autoresponders[index];
-      
-      if (type === 'trigger') {
-        rule.analytics.totalTriggers++;
-        rule.analytics.lastTriggered = new Date();
-      } else if (type === 'response') {
-        rule.analytics.totalResponses++;
+    try {
+      const apiKey = await this.crypto.getApiKey(`${autoresponder.aiProvider}_api_key`);
+      if (!apiKey) {
+        throw new Error(`API key not found for ${autoresponder.aiProvider}`);
       }
 
-      // Update success rate
-      if (rule.analytics.totalTriggers > 0) {
-        rule.analytics.successRate = rule.analytics.totalResponses / rule.analytics.totalTriggers;
-      }
+      // Build the prompt with context
+      const prompt = this.buildPromptWithContext(autoresponder.aiPrompt!, context);
 
-      rule.updatedAt = new Date();
-      this.db.writeSync(data);
+      // Generate response based on provider
+      switch (autoresponder.aiProvider) {
+        case 'openai':
+          return await this.generateOpenAiResponse(apiKey, autoresponder, prompt);
+        case 'anthropic':
+          return await this.generateAnthropicResponse(apiKey, autoresponder, prompt);
+        case 'google':
+          return await this.generateGoogleResponse(apiKey, autoresponder, prompt);
+        default:
+          throw new Error(`Unsupported AI provider: ${autoresponder.aiProvider}`);
+      }
+    } catch (error) {
+      throw new Error(`Failed to generate AI response: ${error.message}`);
     }
   }
 
-  private async validateResponseConfiguration(response: AutoresponderRule['response']): Promise<void> {
-    if (response.type === 'template' && !response.template) {
-      throw new Error('Template response type requires a template');
-    }
+  private buildPromptWithContext(prompt: string, context: any): string {
+    let finalPrompt = prompt;
     
-    if (response.type === 'ai_generated' && !response.aiPrompt) {
-      throw new Error('AI generated response type requires an AI prompt');
+    // Replace common context variables
+    if (context.userMessage) {
+      finalPrompt = finalPrompt.replace('{{userMessage}}', context.userMessage);
     }
+    if (context.userName) {
+      finalPrompt = finalPrompt.replace('{{userName}}', context.userName);
+    }
+    if (context.currentTime) {
+      finalPrompt = finalPrompt.replace('{{currentTime}}', context.currentTime);
+    }
+
+    return finalPrompt;
   }
 
-  private generateId(): string {
-    return 'ar_' + Date.now().toString(36) + Math.random().toString(36).substr(2);
+  private async generateOpenAiResponse(apiKey: string, autoresponder: Autoresponder, prompt: string): Promise<string> {
+    // Implementation would make actual API call to OpenAI
+    // For now, return a simulated response
+    return `OpenAI Response: ${prompt.substring(0, 100)}...`;
+  }
+
+  private async generateAnthropicResponse(apiKey: string, autoresponder: Autoresponder, prompt: string): Promise<string> {
+    // Implementation would make actual API call to Anthropic
+    // For now, return a simulated response
+    return `Anthropic Response: ${prompt.substring(0, 100)}...`;
+  }
+
+  private async generateGoogleResponse(apiKey: string, autoresponder: Autoresponder, prompt: string): Promise<string> {
+    // Implementation would make actual API call to Google AI
+    // For now, return a simulated response
+    return `Google AI Response: ${prompt.substring(0, 100)}...`;
   }
 }

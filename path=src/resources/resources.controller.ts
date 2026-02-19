@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -12,20 +13,20 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ResourcesService } from './resources.service';
-import { CreateResourceDto, UpdateResourceDto, ResourceFilterDto } from './dto/resources.dto';
+import { CreateResourceDto, UpdateResourceDto, ResourceQueryDto } from './dto/resources.dto';
 
-@Controller('api/resources-api')
+@Controller('api/resources')
 export class ResourcesController {
   constructor(private readonly resourcesService: ResourcesService) {}
 
   @Get()
   @UsePipes(new ValidationPipe({ transform: true }))
-  async getAllResources(@Query() filterDto: ResourceFilterDto) {
+  async getAllResources(@Query() query: ResourceQueryDto) {
     try {
-      return await this.resourcesService.getAllResources(filterDto);
+      return await this.resourcesService.getAllResources(query);
     } catch (error) {
       throw new HttpException(
-        'Failed to retrieve resources',
+        'Failed to fetch resources',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -44,7 +45,7 @@ export class ResourcesController {
         throw error;
       }
       throw new HttpException(
-        'Failed to retrieve resource',
+        'Failed to fetch resource',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -89,13 +90,45 @@ export class ResourcesController {
     }
   }
 
+  @Delete(':id')
+  async deleteResource(@Param('id') id: string) {
+    try {
+      const deleted = await this.resourcesService.deleteResource(id);
+      if (!deleted) {
+        throw new HttpException('Resource not found', HttpStatus.NOT_FOUND);
+      }
+      return { message: 'Resource deleted successfully' };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to delete resource',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('bulk')
+  @UsePipes(new ValidationPipe())
+  async createBulkResources(@Body() resources: CreateResourceDto[]) {
+    try {
+      return await this.resourcesService.createBulkResources(resources);
+    } catch (error) {
+      throw new HttpException(
+        'Failed to create bulk resources',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
   @Get('category/:category')
   async getResourcesByCategory(@Param('category') category: string) {
     try {
       return await this.resourcesService.getResourcesByCategory(category);
     } catch (error) {
       throw new HttpException(
-        'Failed to retrieve resources by category',
+        'Failed to fetch resources by category',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

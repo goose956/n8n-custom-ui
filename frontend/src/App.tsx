@@ -18,6 +18,7 @@ import { BlogPage } from'./components/BlogPage';
 import { DashboardPage } from'./components/DashboardPage';
 import { FunnelBuilderPage } from'./components/FunnelBuilderPage';
 import { UpsellEditorPage } from'./components/UpsellEditorPage';
+import { TikTokScraperPage } from'./components/TikTokScraperPage';
 import { GlobalSearch } from'./components/shared/GlobalSearch';
 import {
  Dashboard as DashboardIcon,
@@ -1071,6 +1072,7 @@ function App() {
  <Route path="/funnels" element={<FunnelBuilderPage />} />
  <Route path="/upsell-editor" element={<UpsellEditorPage />} />
  <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/tiktok-scraper" element={<TikTokScraperPage />} />
  </Routes>
  </Box>
  </ThemeProvider>

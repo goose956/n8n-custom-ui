@@ -1,5 +1,69 @@
-import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { EngagementReportsService } from './engagement-reports.service';
+
+export interface EngagementReportQuery {
+  dateRange?: string;
+  postType?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface EngagementMetrics {
+  likes: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  impressions: number;
+  reach: number;
+  engagementRate: number;
+}
+
+export interface EngagementReport {
+  id: string;
+  postId: string;
+  postContent: string;
+  postType: 'text' | 'image' | 'video' | 'article' | 'poll';
+  publishedAt: string;
+  metrics: EngagementMetrics;
+  audienceInsights: {
+    topLocations: Array<{ location: string; percentage: number }>;
+    demographics: {
+      ageGroups: Array<{ range: string; percentage: number }>;
+      industries: Array<{ industry: string; percentage: number }>;
+    };
+  };
+  performanceScore: number;
+  trending: boolean;
+}
+
+export interface EngagementReportsResponse {
+  reports: EngagementReport[];
+  summary: {
+    totalPosts: number;
+    averageEngagementRate: number;
+    totalReach: number;
+    totalImpressions: number;
+    topPerformingPost: {
+      id: string;
+      content: string;
+      engagementRate: number;
+    };
+    engagementTrends: Array<{
+      date: string;
+      engagement: number;
+      reach: number;
+    }>;
+  };
+  dateRange: {
+    from: string;
+    to: string;
+  };
+  filters: {
+    postType?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  };
+}
 
 @Controller('api/engagement-reports')
 export class EngagementReportsController {
@@ -7,148 +71,59 @@ export class EngagementReportsController {
 
   @Get()
   async getEngagementReports(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('postType') postType?: string,
-    @Query('userId') userId?: string,
-    @Query('limit') limit?: string,
-  ) {
+    @Query() query: EngagementReportQuery,
+  ): Promise<EngagementReportsResponse> {
     try {
-      const filters = {
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        postType,
-        userId,
-        limit: limit ? parseInt(limit, 10) : undefined,
-      };
-
-      // Validate date range
-      if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
-        throw new BadRequestException('Start date cannot be after end date');
-      }
-
-      // Validate limit
-      if (filters.limit && (filters.limit < 1 || filters.limit > 100)) {
-        throw new BadRequestException('Limit must be between 1 and 100');
-      }
-
-      const reports = await this.engagementReportsService.getEngagementReports(filters);
-      
-      return {
-        success: true,
-        data: reports,
-        timestamp: new Date().toISOString(),
-      };
+      const reports = await this.engagementReportsService.getEngagementReports(query);
+      return reports;
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(`Failed to retrieve engagement reports: ${error.message}`);
+      throw new HttpException(
+        {
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: 'Failed to fetch engagement reports',
+          message: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
   @Get('summary')
   async getEngagementSummary(
-    @Query('period') period?: string,
-    @Query('userId') userId?: string,
-  ) {
+    @Query('dateRange') dateRange?: string,
+  ): Promise<EngagementReportsResponse['summary']> {
     try {
-      const validPeriods = ['7d', '30d', '90d', '1y'];
-      if (period && !validPeriods.includes(period)) {
-        throw new BadRequestException(`Invalid period. Must be one of: ${validPeriods.join(', ')}`);
-      }
-
-      const summary = await this.engagementReportsService.getEngagementSummary(period || '30d', userId);
-      
-      return {
-        success: true,
-        data: summary,
-        timestamp: new Date().toISOString(),
-      };
+      const summary = await this.engagementReportsService.getEngagementSummary(dateRange);
+      return summary;
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(`Failed to retrieve engagement summary: ${error.message}`);
+      throw new HttpException(
+        {
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: 'Failed to fetch engagement summary',
+          message: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
   @Get('trends')
   async getEngagementTrends(
-    @Query('metric') metric?: string,
-    @Query('period') period?: string,
-    @Query('userId') userId?: string,
-  ) {
+    @Query('dateRange') dateRange?: string,
+    @Query('metric') metric: string = 'engagement',
+  ): Promise<Array<{ date: string; value: number; metric: string }>> {
     try {
-      const validMetrics = ['likes', 'comments', 'shares', 'views', 'engagement_rate'];
-      if (metric && !validMetrics.includes(metric)) {
-        throw new BadRequestException(`Invalid metric. Must be one of: ${validMetrics.join(', ')}`);
-      }
-
-      const validPeriods = ['7d', '30d', '90d', '1y'];
-      if (period && !validPeriods.includes(period)) {
-        throw new BadRequestException(`Invalid period. Must be one of: ${validPeriods.join(', ')}`);
-      }
-
-      const trends = await this.engagementReportsService.getEngagementTrends(
-        metric || 'engagement_rate',
-        period || '30d',
-        userId,
-      );
-      
-      return {
-        success: true,
-        data: trends,
-        timestamp: new Date().toISOString(),
-      };
+      const trends = await this.engagementReportsService.getEngagementTrends(dateRange, metric);
+      return trends;
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(`Failed to retrieve engagement trends: ${error.message}`);
-    }
-  }
-
-  @Get('top-posts')
-  async getTopPerformingPosts(
-    @Query('metric') metric?: string,
-    @Query('limit') limit?: string,
-    @Query('userId') userId?: string,
-    @Query('period') period?: string,
-  ) {
-    try {
-      const validMetrics = ['likes', 'comments', 'shares', 'views', 'engagement_rate'];
-      if (metric && !validMetrics.includes(metric)) {
-        throw new BadRequestException(`Invalid metric. Must be one of: ${validMetrics.join(', ')}`);
-      }
-
-      const parsedLimit = limit ? parseInt(limit, 10) : 10;
-      if (parsedLimit < 1 || parsedLimit > 50) {
-        throw new BadRequestException('Limit must be between 1 and 50');
-      }
-
-      const validPeriods = ['7d', '30d', '90d', '1y'];
-      if (period && !validPeriods.includes(period)) {
-        throw new BadRequestException(`Invalid period. Must be one of: ${validPeriods.join(', ')}`);
-      }
-
-      const topPosts = await this.engagementReportsService.getTopPerformingPosts(
-        metric || 'engagement_rate',
-        parsedLimit,
-        userId,
-        period || '30d',
+      throw new HttpException(
+        {
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: 'Failed to fetch engagement trends',
+          message: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
-      
-      return {
-        success: true,
-        data: topPosts,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(`Failed to retrieve top performing posts: ${error.message}`);
     }
   }
 }

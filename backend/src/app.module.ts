@@ -1,3 +1,4 @@
+import { LinkedinProfileScraperModule } from'./path=src/linkedin-profile-scraper/linkedin-profile-scraper.module';
 import { LinkedinAnalyticsScraperModule } from'./path=src/linkedin-analytics-scraper/linkedin-analytics-scraper.module';
 import { ResourcesModule } from'./path=src/resources/resources.module';
 import { EngagementReportsModule } from'./path=src/engagement-reports/engagement-reports.module';
@@ -33,6 +34,7 @@ import { MembersModule } from'./members/members.module';
 
 @Module({
  imports: [
+ LinkedinProfileScraperModule,
  LinkedinAnalyticsScraperModule,
  ResourcesModule,
  EngagementReportsModule,

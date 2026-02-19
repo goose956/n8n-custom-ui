@@ -1,120 +1,55 @@
 import {
   IsString,
-  IsNotEmpty,
   IsOptional,
   IsEnum,
   IsArray,
-  IsNumber,
   IsBoolean,
+  IsNumber,
   IsUrl,
+  IsDateString,
   Min,
   Max,
   ArrayMinSize,
   IsIn,
+  Transform,
+  Type,
 } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
 
 export class CreateResourceDto {
   @IsString()
-  @IsNotEmpty()
   title: string;
 
   @IsString()
-  @IsNotEmpty()
   description: string;
 
+  @IsEnum(['article', 'video', 'course', 'book', 'tutorial', 'documentation', 'tool'])
+  type: 'article' | 'video' | 'course' | 'book' | 'tutorial' | 'documentation' | 'tool';
+
   @IsString()
-  @IsNotEmpty()
   category: string;
 
-  @IsEnum(['article', 'video', 'course', 'tutorial', 'template', 'guide'])
-  type: 'article' | 'video' | 'course' | 'tutorial' | 'template' | 'guide';
+  @IsUrl()
+  url: string;
 
   @IsOptional()
   @IsUrl()
-  url?: string;
+  thumbnailUrl?: string;
 
   @IsOptional()
   @IsString()
-  content?: string;
+  author?: string;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tags?: string[];
+  @IsString()
+  duration?: string;
 
   @IsEnum(['beginner', 'intermediate', 'advanced'])
   difficulty: 'beginner' | 'intermediate' | 'advanced';
 
-  @IsNumber()
-  @Min(1)
-  estimatedTime: number;
-
-  @IsString()
-  @IsNotEmpty()
-  author: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isFeatured?: boolean;
-
-  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  prerequisites?: string[];
-
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  relatedResources?: string[];
-}
-
-export class UpdateResourceDto {
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  title?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  description?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  category?: string;
-
-  @IsOptional()
-  @IsEnum(['article', 'video', 'course', 'tutorial', 'template', 'guide'])
-  type?: 'article' | 'video' | 'course' | 'tutorial' | 'template' | 'guide';
-
-  @IsOptional()
-  @IsUrl()
-  url?: string;
-
-  @IsOptional()
-  @IsString()
-  content?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
   tags?: string[];
-
-  @IsOptional()
-  @IsEnum(['beginner', 'intermediate', 'advanced'])
-  difficulty?: 'beginner' | 'intermediate' | 'advanced';
-
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  estimatedTime?: number;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  author?: string;
 
   @IsOptional()
   @IsNumber()
@@ -123,12 +58,21 @@ export class UpdateResourceDto {
   rating?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  reviews?: number;
+
   @IsBoolean()
-  isActive?: boolean;
+  isFree: boolean;
 
   @IsOptional()
-  @IsBoolean()
-  isFeatured?: boolean;
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
 
   @IsOptional()
   @IsArray()
@@ -138,50 +82,120 @@ export class UpdateResourceDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  relatedResources?: string[];
+  learningObjectives?: string[];
 }
 
-export class ResourceFilterDto {
+export class UpdateResourceDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(['article', 'video', 'course', 'book', 'tutorial', 'documentation', 'tool'])
+  type?: 'article' | 'video' | 'course' | 'book' | 'tutorial' | 'documentation' | 'tool';
+
   @IsOptional()
   @IsString()
   category?: string;
 
   @IsOptional()
-  @IsEnum(['article', 'video', 'course', 'tutorial', 'template', 'guide'])
-  type?: 'article' | 'video' | 'course' | 'tutorial' | 'template' | 'guide';
+  @IsUrl()
+  url?: string;
+
+  @IsOptional()
+  @IsUrl()
+  thumbnailUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  duration?: string;
 
   @IsOptional()
   @IsEnum(['beginner', 'intermediate', 'advanced'])
   difficulty?: 'beginner' | 'intermediate' | 'advanced';
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      return value.split(',').map(tag => tag.trim());
-    }
-    return value;
-  })
-  tags?: string | string[];
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  featured?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(5)
-  minRating?: number;
+  rating?: number;
 
   @IsOptional()
-  @IsIn(['title', 'createdAt', 'rating', 'viewCount', 'difficulty'])
-  sortBy?: 'title' | 'createdAt' | 'rating' | 'viewCount' | 'difficulty';
+  @IsNumber()
+  @Min(0)
+  reviews?: number;
 
   @IsOptional()
-  @IsIn(['asc', 'desc'])
-  sortOrder?: 'asc' | 'desc';
+  @IsBoolean()
+  isFree?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  prerequisites?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  learningObjectives?: string[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  completionRate?: number;
+}
+
+export class ResourceQueryDto {
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsEnum(['article', 'video', 'course', 'book', 'tutorial', 'documentation', 'tool'])
+  type?: 'article' | 'video' | 'course' | 'book' | 'tutorial' | 'documentation' | 'tool';
+
+  @IsOptional()
+  @IsEnum(['beginner', 'intermediate', 'advanced'])
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  isFree?: boolean;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  tags?: string | string[];
+
+  @IsOptional()
+  @IsString()
+  search?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -195,11 +209,12 @@ export class ResourceFilterDto {
   @Min(1)
   @Max(100)
   limit?: number;
-}
 
-export class RatingDto {
-  @IsNumber()
-  @Min(0)
-  @Max(5)
-  rating: number;
+  @IsOptional()
+  @IsIn(['title', 'rating', 'createdAt', 'lastUpdated'])
+  sortBy?: 'title' | 'rating' | 'createdAt' | 'lastUpdated';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }

@@ -2,152 +2,17 @@ import {
   IsString,
   IsBoolean,
   IsOptional,
+  IsEnum,
   IsNumber,
-  IsArray,
   IsObject,
+  IsArray,
   ValidateNested,
-  IsIn,
   Min,
   Max,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-class SenderCriteriaDto {
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  jobTitles?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  companies?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  industries?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsNumber({}, { each: true })
-  connectionDegree?: number[];
-}
-
-class MessageCriteriaDto {
-  @IsOptional()
-  @IsBoolean()
-  isFirstMessage?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  containsLinks?: boolean;
-
-  @IsOptional()
-  @IsObject()
-  messageLength?: { min?: number; max?: number };
-}
-
-class TriggersDto {
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  keywords?: string[];
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => SenderCriteriaDto)
-  senderCriteria?: SenderCriteriaDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => MessageCriteriaDto)
-  messageCriteria?: MessageCriteriaDto;
-}
-
-class TimeRestrictionsDto {
-  @IsOptional()
-  @IsArray()
-  @IsNumber({}, { each: true })
-  @Min(0, { each: true })
-  @Max(6, { each: true })
-  daysOfWeek?: number[];
-
-  @IsOptional()
-  @IsObject()
-  hoursOfDay?: { start: number; end: number };
-
-  @IsOptional()
-  @IsString()
-  timezone?: string;
-}
-
-class RateLimitingDto {
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  maxResponsesPerDay?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  cooldownHours?: number;
-}
-
-class ConditionsDto {
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => TimeRestrictionsDto)
-  timeRestrictions?: TimeRestrictionsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => RateLimitingDto)
-  rateLimiting?: RateLimitingDto;
-}
-
-class FollowUpActionsDto {
-  @IsOptional()
-  @IsObject()
-  scheduleFollowUp?: { delayHours: number; message: string };
-
-  @IsOptional()
-  @IsString()
-  addToList?: string;
-
-  @IsOptional()
-  @IsObject()
-  setReminder?: { delayHours: number; note: string };
-}
-
-class ResponseDto {
-  @IsString()
-  @IsIn(['template', 'ai_generated'])
-  type: 'template' | 'ai_generated';
-
-  @IsOptional()
-  @IsString()
-  template?: string;
-
-  @IsOptional()
-  @IsString()
-  aiPrompt?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  personalizationFields?: string[];
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => FollowUpActionsDto)
-  followUpActions?: FollowUpActionsDto;
-}
+import { Type, Transform } from 'class-transformer';
 
 export class CreateAutoresponderDto {
-  @IsString()
-  userId: string;
-
   @IsString()
   name: string;
 
@@ -159,24 +24,52 @@ export class CreateAutoresponderDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @IsEnum(['keyword', 'time_based', 'event_based'])
+  triggerType: 'keyword' | 'time_based' | 'event_based';
+
+  @IsString()
+  triggerValue: string;
+
+  @IsEnum(['text', 'ai_generated', 'template'])
+  responseType: 'text' | 'ai_generated' | 'template';
+
+  @IsString()
+  responseContent: string;
+
+  @IsOptional()
+  @IsEnum(['openai', 'anthropic', 'google'])
+  aiProvider?: 'openai' | 'anthropic' | 'google';
+
+  @IsOptional()
+  @IsString()
+  aiModel?: string;
+
+  @IsOptional()
+  @IsString()
+  aiPrompt?: string;
+
   @IsOptional()
   @IsNumber()
   @Min(1)
-  @Max(10)
-  priority?: number;
-
-  @ValidateNested()
-  @Type(() => TriggersDto)
-  triggers: TriggersDto;
+  @Max(4000)
+  maxTokens?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  delay?: number;
+
+  @IsOptional()
+  @IsObject()
   @ValidateNested()
   @Type(() => ConditionsDto)
   conditions?: ConditionsDto;
-
-  @ValidateNested()
-  @Type(() => ResponseDto)
-  response: ResponseDto;
 }
 
 export class UpdateAutoresponderDto {
@@ -193,23 +86,128 @@ export class UpdateAutoresponderDto {
   isActive?: boolean;
 
   @IsOptional()
+  @IsEnum(['keyword', 'time_based', 'event_based'])
+  triggerType?: 'keyword' | 'time_based' | 'event_based';
+
+  @IsOptional()
+  @IsString()
+  triggerValue?: string;
+
+  @IsOptional()
+  @IsEnum(['text', 'ai_generated', 'template'])
+  responseType?: 'text' | 'ai_generated' | 'template';
+
+  @IsOptional()
+  @IsString()
+  responseContent?: string;
+
+  @IsOptional()
+  @IsEnum(['openai', 'anthropic', 'google'])
+  aiProvider?: 'openai' | 'anthropic' | 'google';
+
+  @IsOptional()
+  @IsString()
+  aiModel?: string;
+
+  @IsOptional()
+  @IsString()
+  aiPrompt?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(1)
-  @Max(10)
-  priority?: number;
+  @Max(4000)
+  maxTokens?: number;
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => TriggersDto)
-  triggers?: TriggersDto;
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  delay?: number;
+
+  @IsOptional()
+  @IsObject()
   @ValidateNested()
   @Type(() => ConditionsDto)
   conditions?: ConditionsDto;
+}
+
+export class ConditionsDto {
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => TimeRangeDto)
+  timeRange?: TimeRangeDto;
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => ResponseDto)
-  response?: ResponseDto;
+  @IsArray()
+  @IsString({ each: true })
+  days?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  userSegments?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  channels?: string[];
+}
+
+export class TimeRangeDto {
+  @IsString()
+  start: string;
+
+  @IsString()
+  end: string;
+}
+
+export class AutoresponderQueryDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(['keyword', 'time_based', 'event_based'])
+  triggerType?: 'keyword' | 'time_based' | 'event_based';
+
+  @IsOptional()
+  @IsEnum(['text', 'ai_generated', 'template'])
+  responseType?: 'text' | 'ai_generated' | 'template';
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value))
+  @IsNumber()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value))
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsEnum(['name', 'createdAt', 'updatedAt', 'triggerType', 'responseType'])
+  sortBy?: 'name' | 'createdAt' | 'updatedAt' | 'triggerType' | 'responseType';
+
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }

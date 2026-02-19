@@ -1,10 +1,7 @@
-import { IsOptional, IsString, IsEmail, IsArray, IsNumber, IsIn, Min, Max } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsArray, IsEnum, IsNumber, IsUrl, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateLeadDto {
-  @IsOptional()
-  @IsString()
-  linkedInId?: string;
-
   @IsString()
   firstName: string;
 
@@ -17,11 +14,27 @@ export class CreateLeadDto {
 
   @IsOptional()
   @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
   company?: string;
 
   @IsOptional()
   @IsString()
-  jobTitle?: string;
+  position?: string;
+
+  @IsOptional()
+  @IsUrl()
+  linkedinUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  linkedinId?: string;
+
+  @IsOptional()
+  @IsUrl()
+  profilePicture?: string;
 
   @IsOptional()
   @IsString()
@@ -29,23 +42,19 @@ export class CreateLeadDto {
 
   @IsOptional()
   @IsString()
-  profileUrl?: string;
+  industry?: string;
 
   @IsOptional()
-  @IsString()
-  connectionDegree?: string;
+  @IsNumber()
+  connections?: number;
 
   @IsOptional()
-  @IsIn(['new', 'contacted', 'responded', 'interested', 'not_interested', 'converted'])
-  engagementStatus?: 'new' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
+  @IsEnum(['new', 'contacted', 'interested', 'qualified', 'converted', 'rejected'])
+  status?: 'new' | 'contacted' | 'interested' | 'qualified' | 'converted' | 'rejected';
 
   @IsOptional()
-  @IsString()
-  lastContactDate?: string;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsEnum(['linkedin', 'manual', 'imported'])
+  source?: 'linkedin' | 'manual' | 'imported';
 
   @IsOptional()
   @IsArray()
@@ -53,21 +62,11 @@ export class CreateLeadDto {
   tags?: string[];
 
   @IsOptional()
-  @IsIn(['manual', 'linkedin_search', 'linkedin_import', 'referral', 'other'])
-  leadSource?: 'manual' | 'linkedin_search' | 'linkedin_import' | 'referral' | 'other';
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  leadScore?: number;
+  @IsString()
+  notes?: string;
 }
 
 export class UpdateLeadDto {
-  @IsOptional()
-  @IsString()
-  linkedInId?: string;
-
   @IsOptional()
   @IsString()
   firstName?: string;
@@ -82,11 +81,27 @@ export class UpdateLeadDto {
 
   @IsOptional()
   @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
   company?: string;
 
   @IsOptional()
   @IsString()
-  jobTitle?: string;
+  position?: string;
+
+  @IsOptional()
+  @IsUrl()
+  linkedinUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  linkedinId?: string;
+
+  @IsOptional()
+  @IsUrl()
+  profilePicture?: string;
 
   @IsOptional()
   @IsString()
@@ -94,23 +109,19 @@ export class UpdateLeadDto {
 
   @IsOptional()
   @IsString()
-  profileUrl?: string;
+  industry?: string;
 
   @IsOptional()
-  @IsString()
-  connectionDegree?: string;
+  @IsNumber()
+  connections?: number;
 
   @IsOptional()
-  @IsIn(['new', 'contacted', 'responded', 'interested', 'not_interested', 'converted'])
-  engagementStatus?: 'new' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
+  @IsEnum(['new', 'contacted', 'interested', 'qualified', 'converted', 'rejected'])
+  status?: 'new' | 'contacted' | 'interested' | 'qualified' | 'converted' | 'rejected';
 
   @IsOptional()
-  @IsString()
-  lastContactDate?: string;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsEnum(['linkedin', 'manual', 'imported'])
+  source?: 'linkedin' | 'manual' | 'imported';
 
   @IsOptional()
   @IsArray()
@@ -118,58 +129,56 @@ export class UpdateLeadDto {
   tags?: string[];
 
   @IsOptional()
-  @IsIn(['manual', 'linkedin_search', 'linkedin_import', 'referral', 'other'])
-  leadSource?: 'manual' | 'linkedin_search' | 'linkedin_import' | 'referral' | 'other';
+  @IsString()
+  notes?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  leadScore?: number;
+  linkedinData?: {
+    headline?: string;
+    summary?: string;
+    experience?: any[];
+    education?: any[];
+    skills?: string[];
+    lastUpdated?: Date;
+  };
 }
 
 export class LeadQueryDto {
   @IsOptional()
-  @IsString()
-  page?: string;
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number;
 
   @IsOptional()
-  @IsString()
-  limit?: string;
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsEnum(['new', 'contacted', 'interested', 'qualified', 'converted', 'rejected'])
+  status?: 'new' | 'contacted' | 'interested' | 'qualified' | 'converted' | 'rejected';
+
+  @IsOptional()
+  @IsEnum(['linkedin', 'manual', 'imported'])
+  source?: 'linkedin' | 'manual' | 'imported';
 
   @IsOptional()
   @IsString()
   search?: string;
 
   @IsOptional()
-  @IsIn(['new', 'contacted', 'responded', 'interested', 'not_interested', 'converted'])
-  engagementStatus?: 'new' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @IsOptional()
   @IsString()
-  company?: string;
-
-  @IsOptional()
-  @IsString()
-  jobTitle?: string;
-
-  @IsOptional()
-  @IsString()
-  location?: string;
-
-  @IsOptional()
-  @IsIn(['manual', 'linkedin_search', 'linkedin_import', 'referral', 'other'])
-  leadSource?: 'manual' | 'linkedin_search' | 'linkedin_import' | 'referral' | 'other';
-
-  @IsOptional()
-  @IsString()
-  tags?: string;
-
-  @IsOptional()
-  @IsIn(['firstName', 'lastName', 'fullName', 'company', 'jobTitle', 'engagementStatus', 'createdAt', 'updatedAt', 'leadScore'])
   sortBy?: string;
 
   @IsOptional()
-  @IsIn(['asc', 'desc'])
+  @IsEnum(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc';
 }

@@ -1,413 +1,290 @@
-```typescript
-import { Injectable, Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { DatabaseService } from '../shared/database.service';
 import { CryptoService } from '../shared/crypto.service';
-import {
-  CreateScrapingJobDto,
-  SearchQueryDto,
-  ScrapingJob,
-  LinkedinProfile,
-  ScrapingJobStatus,
-} from './dto/linkedin-scraper.dto';
+import * as crypto from 'crypto';
+
+export interface ScrapingJob {
+  id: string;
+  profileUrl: string;
+  jobName: string;
+  extractFields: string[];
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+  result?: ProfileData;
+  error?: string;
+  retryCount: number;
+  maxRetries: number;
+}
+
+export interface ProfileData {
+  name?: string;
+  headline?: string;
+  location?: string;
+  about?: string;
+  experience?: ExperienceItem[];
+  education?: EducationItem[];
+  skills?: string[];
+  connections?: number;
+  profileImageUrl?: string;
+  contactInfo?: ContactInfo;
+}
+
+export interface ExperienceItem {
+  title: string;
+  company: string;
+  duration: string;
+  location?: string;
+  description?: string;
+}
+
+export interface EducationItem {
+  school: string;
+  degree?: string;
+  field?: string;
+  duration: string;
+}
+
+export interface ContactInfo {
+  email?: string;
+  phone?: string;
+  website?: string;
+}
+
+export interface ScrapingJobQuery {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
 
 @Injectable()
 export class LinkedinScraperService {
-  private readonly logger = new Logger(LinkedinScraperService.name);
-  private readonly dbFile = 'linkedin-scraper.json';
+  private readonly dataFile = 'linkedin-scraping-jobs.json';
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly crypto: CryptoService,
+    private readonly cryptoService: CryptoService
   ) {}
 
-  async createScrapingJob(createJobDto: CreateScrapingJobDto): Promise<ScrapingJob> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
+  async getScrapingJobs(query: ScrapingJobQuery = {}): Promise<ScrapingJob[]> {
+    const data = this.db.readSync(this.dataFile);
+    let jobs: ScrapingJob[] = data.jobs || [];
 
-      const job: ScrapingJob = {
-        id: uuidv4(),
-        name: createJobDto.name,
-        searchQueries: createJobDto.searchQueries,
-        maxProfiles: createJobDto.maxProfiles || 100,
-        status: ScrapingJobStatus.PENDING,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        totalProfiles: 0,
-        scrapedProfiles: 0,
-        failedProfiles: 0,
-        settings: {
-          delayBetweenRequests: createJobDto.settings?.delayBetweenRequests || 2000,
-          includeConnections: createJobDto.settings?.includeConnections || false,
-          includeExperience: createJobDto.settings?.includeExperience || true,
-          includeEducation: createJobDto.settings?.includeEducation || true,
-          includeSkills: createJobDto.settings?.includeSkills || true,
-        },
-      };
-
-      data.jobs.push(job);
-      this.db.writeSync(this.dbFile, data);
-
-      this.logger.log(`Created scraping job: ${job.id}`);
-      return job;
-    } catch (error) {
-      this.logger.error(`Failed to create scraping job: ${error.message}`);
-      throw error;
+    // Filter by status
+    if (query.status) {
+      jobs = jobs.filter(job => job.status === query.status);
     }
-  }
 
-  async getScrapingJobs(filters: {
-    status?: string;
-    page: number;
-    limit: number;
-  }): Promise<{ jobs: ScrapingJob[]; total: number; page: number; limit: number }> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      let jobs = data.jobs || [];
+    // Sort by priority and creation date
+    jobs.sort((a, b) => {
+      const priorityOrder = { high: 3, medium: 2, low: 1 };
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
-      if (filters.status) {
-        jobs = jobs.filter((job) => job.status === filters.status);
-      }
-
-      jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      const total = jobs.length;
-      const startIndex = (filters.page - 1) * filters.limit;
-      const paginatedJobs = jobs.slice(startIndex, startIndex + filters.limit);
-
-      return {
-        jobs: paginatedJobs,
-        total,
-        page: filters.page,
-        limit: filters.limit,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to fetch scraping jobs: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async getScrapingJobById(jobId: string): Promise<ScrapingJob | null> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      return data.jobs.find((job) => job.id === jobId) || null;
-    } catch (error) {
-      this.logger.error(`Failed to fetch scraping job ${jobId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async startScrapingJob(jobId: string): Promise<ScrapingJob> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const jobIndex = data.jobs.findIndex((job) => job.id === jobId);
-
-      if (jobIndex === -1) {
-        throw new Error('Scraping job not found');
-      }
-
-      const job = data.jobs[jobIndex];
-
-      if (job.status !== ScrapingJobStatus.PENDING) {
-        throw new Error('Job can only be started from pending status');
-      }
-
-      job.status = ScrapingJobStatus.RUNNING;
-      job.startedAt = new Date().toISOString();
-      job.updatedAt = new Date().toISOString();
-
-      data.jobs[jobIndex] = job;
-      this.db.writeSync(this.dbFile, data);
-
-      // Start scraping process asynchronously
-      this.performScraping(jobId).catch((error) => {
-        this.logger.error(`Scraping job ${jobId} failed: ${error.message}`);
-      });
-
-      this.logger.log(`Started scraping job: ${jobId}`);
-      return job;
-    } catch (error) {
-      this.logger.error(`Failed to start scraping job ${jobId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async cancelScrapingJob(jobId: string): Promise<ScrapingJob> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const jobIndex = data.jobs.findIndex((job) => job.id === jobId);
-
-      if (jobIndex === -1) {
-        throw new Error('Scraping job not found');
-      }
-
-      const job = data.jobs[jobIndex];
-
-      if (job.status === ScrapingJobStatus.COMPLETED || job.status === ScrapingJobStatus.FAILED) {
-        throw new Error('Cannot cancel completed or failed job');
-      }
-
-      job.status = ScrapingJobStatus.CANCELLED;
-      job.completedAt = new Date().toISOString();
-      job.updatedAt = new Date().toISOString();
-
-      data.jobs[jobIndex] = job;
-      this.db.writeSync(this.dbFile, data);
-
-      this.logger.log(`Cancelled scraping job: ${jobId}`);
-      return job;
-    } catch (error) {
-      this.logger.error(`Failed to cancel scraping job ${jobId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async searchProfiles(searchQuery: SearchQueryDto): Promise<LinkedinProfile[]> {
-    try {
-      const apiKey = this.crypto.getApiKey('LINKEDIN_SCRAPER_API_KEY');
-      
-      // Simulate LinkedIn search using a proxy service or direct scraping
-      const profiles = await this.scrapeLinkedInSearch(searchQuery, apiKey);
-      
-      // Store profiles in database
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      
-      profiles.forEach(profile => {
-        profile.id = uuidv4();
-        profile.scrapedAt = new Date().toISOString();
-        data.profiles.push(profile);
-      });
-
-      this.db.writeSync(this.dbFile, data);
-      
-      this.logger.log(`Scraped ${profiles.length} profiles for search query`);
-      return profiles;
-    } catch (error) {
-      this.logger.error(`Failed to search profiles: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async getScrapedProfiles(filters: {
-    jobId?: string;
-    page: number;
-    limit: number;
-  }): Promise<{ profiles: LinkedinProfile[]; total: number; page: number; limit: number }> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      let profiles = data.profiles || [];
-
-      if (filters.jobId) {
-        profiles = profiles.filter((profile) => profile.jobId === filters.jobId);
-      }
-
-      profiles.sort((a, b) => new Date(b.scrapedAt).getTime() - new Date(a.scrapedAt).getTime());
-
-      const total = profiles.length;
-      const startIndex = (filters.page - 1) * filters.limit;
-      const paginatedProfiles = profiles.slice(startIndex, startIndex + filters.limit);
-
-      return {
-        profiles: paginatedProfiles,
-        total,
-        page: filters.page,
-        limit: filters.limit,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to fetch scraped profiles: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async getScrapingStats(): Promise<{
-    totalJobs: number;
-    activeJobs: number;
-    completedJobs: number;
-    totalProfiles: number;
-    todayProfiles: number;
-  }> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const jobs = data.jobs || [];
-      const profiles = data.profiles || [];
-
-      const today = new Date().toISOString().split('T')[0];
-      const todayProfiles = profiles.filter((profile) =>
-        profile.scrapedAt.startsWith(today),
-      ).length;
-
-      return {
-        totalJobs: jobs.length,
-        activeJobs: jobs.filter((job) => job.status === ScrapingJobStatus.RUNNING).length,
-        completedJobs: jobs.filter((job) => job.status === ScrapingJobStatus.COMPLETED).length,
-        totalProfiles: profiles.length,
-        todayProfiles,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to fetch scraping stats: ${error.message}`);
-      throw error;
-    }
-  }
-
-  private async performScraping(jobId: string): Promise<void> {
-    try {
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const jobIndex = data.jobs.findIndex((job) => job.id === jobId);
-
-      if (jobIndex === -1) {
-        throw new Error('Job not found');
-      }
-
-      const job = data.jobs[jobIndex];
-      const apiKey = this.crypto.getApiKey('LINKEDIN_SCRAPER_API_KEY');
-      
-      let totalScraped = 0;
-      let totalFailed = 0;
-
-      for (const query of job.searchQueries) {
-        if (job.status === ScrapingJobStatus.CANCELLED) {
-          break;
-        }
-
-        try {
-          const profiles = await this.scrapeLinkedInSearch(query, apiKey);
-          
-          for (const profile of profiles) {
-            if (totalScraped >= job.maxProfiles) {
-              break;
-            }
-
-            try {
-              profile.id = uuidv4();
-              profile.jobId = jobId;
-              profile.scrapedAt = new Date().toISOString();
-              
-              data.profiles.push(profile);
-              totalScraped++;
-              
-              // Update job progress
-              job.scrapedProfiles = totalScraped;
-              job.updatedAt = new Date().toISOString();
-              data.jobs[jobIndex] = job;
-              this.db.writeSync(this.dbFile, data);
-              
-              // Delay between requests
-              await this.delay(job.settings.delayBetweenRequests);
-            } catch (error) {
-              this.logger.error(`Failed to scrape profile: ${error.message}`);
-              totalFailed++;
-            }
-          }
-        } catch (error) {
-          this.logger.error(`Failed to process search query "${query.query}": ${error.message}`);
-          totalFailed++;
-        }
-      }
-
-      // Update final job status
-      const updatedData = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const finalJobIndex = updatedData.jobs.findIndex((job) => job.id === jobId);
-      
-      if (finalJobIndex !== -1) {
-        const finalJob = updatedData.jobs[finalJobIndex];
-        finalJob.status = ScrapingJobStatus.COMPLETED;
-        finalJob.completedAt = new Date().toISOString();
-        finalJob.updatedAt = new Date().toISOString();
-        finalJob.scrapedProfiles = totalScraped;
-        finalJob.failedProfiles = totalFailed;
-        
-        updatedData.jobs[finalJobIndex] = finalJob;
-        this.db.writeSync(this.dbFile, updatedData);
-      }
-
-      this.logger.log(`Completed scraping job ${jobId}: ${totalScraped} scraped, ${totalFailed} failed`);
-    } catch (error) {
-      // Update job status to failed
-      const data = this.db.readSync(this.dbFile) || { jobs: [], profiles: [] };
-      const jobIndex = data.jobs.findIndex((job) => job.id === jobId);
-      
-      if (jobIndex !== -1) {
-        data.jobs[jobIndex].status = ScrapingJobStatus.FAILED;
-        data.jobs[jobIndex].error = error.message;
-        data.jobs[jobIndex].completedAt = new Date().toISOString();
-        data.jobs[jobIndex].updatedAt = new Date().toISOString();
-        
-        this.db.writeSync(this.dbFile, data);
-      }
-
-      this.logger.error(`Scraping job ${jobId} failed: ${error.message}`);
-      throw error;
-    }
-  }
-
-  private async scrapeLinkedInSearch(searchQuery: SearchQueryDto, apiKey: string): Promise<LinkedinProfile[]> {
-    try {
-      // In a real implementation, you would use a LinkedIn scraping service or API
-      // For demonstration, we'll simulate the scraping process
-      
-      const profiles: LinkedinProfile[] = [];
-      
-      // Simulate API call to LinkedIn scraping service
-      const mockProfiles = this.generateMockProfiles(searchQuery);
-      
-      return mockProfiles;
-    } catch (error) {
-      this.logger.error(`Failed to scrape LinkedIn search: ${error.message}`);
-      throw error;
-    }
-  }
-
-  private generateMockProfiles(searchQuery: SearchQueryDto): LinkedinProfile[] {
-    // Generate mock profiles for demonstration
-    const profiles: LinkedinProfile[] = [];
-    const count = Math.min(searchQuery.limit || 10, 20);
+    // Apply pagination
+    const offset = query.offset || 0;
+    const limit = query.limit || 50;
     
-    for (let i = 0; i < count; i++) {
-      profiles.push({
-        id: uuidv4(),
-        linkedinUrl: `https://linkedin.com/in/user-${i + 1}`,
-        firstName: `FirstName${i + 1}`,
-        lastName: `LastName${i + 1}`,
-        headline: `${searchQuery.query} Professional`,
-        location: searchQuery.location || 'United States',
-        profileImageUrl: `https://example.com/avatar-${i + 1}.jpg`,
-        connectionDegree: '2nd',
-        experience: [
-          {
-            title: `${searchQuery.query} Manager`,
-            company: `Company ${i + 1}`,
-            duration: '2+ years',
-            location: searchQuery.location || 'United States',
-            description: `Managing ${searchQuery.query} operations and team development.`
-          }
-        ],
-        education: [
-          {
-            institution: `University ${i + 1}`,
-            degree: 'Bachelor of Science',
-            field: searchQuery.query,
-            duration: '4 years'
-          }
-        ],
-        skills: [searchQuery.query, 'Leadership', 'Management', 'Strategy'],
-        contactInfo: {
-          email: `user${i + 1}@example.com`,
-          phone: null,
-          twitter: null,
-          website: null
-        },
-        scrapedAt: new Date().toISOString(),
-        jobId: null
-      });
-    }
-    
-    return profiles;
+    return jobs.slice(offset, offset + limit);
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  async getScrapingJobById(id: string): Promise<ScrapingJob | null> {
+    const data = this.db.readSync(this.dataFile);
+    const jobs: ScrapingJob[] = data.jobs || [];
+    
+    return jobs.find(job => job.id === id) || null;
+  }
+
+  async createScrapingJob(jobDto: any): Promise<ScrapingJob> {
+    const data = this.db.readSync(this.dataFile);
+    const jobs: ScrapingJob[] = data.jobs || [];
+
+    // Check for duplicate profile URL in pending/processing jobs
+    const existingJob = jobs.find(job => 
+      job.profileUrl === jobDto.profileUrl && 
+      ['pending', 'processing'].includes(job.status)
+    );
+
+    if (existingJob) {
+      throw new HttpException(
+        'A scraping job for this profile is already in progress',
+        HttpStatus.CONFLICT
+      );
+    }
+
+    const newJob: ScrapingJob = {
+      id: crypto.randomUUID(),
+      profileUrl: jobDto.profileUrl,
+      jobName: jobDto.jobName || `LinkedIn Profile - ${new Date().toISOString()}`,
+      extractFields: jobDto.extractFields || [
+        'name', 'headline', 'location', 'about', 
+        'experience', 'education', 'skills', 'connections'
+      ],
+      priority: jobDto.priority || 'medium',
+      status: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      retryCount: 0,
+      maxRetries: 3
+    };
+
+    jobs.push(newJob);
+    data.jobs = jobs;
+    this.db.writeSync(this.dataFile, data);
+
+    return newJob;
+  }
+
+  async processScrapingJob(id: string): Promise<ScrapingJob> {
+    const data = this.db.readSync(this.dataFile);
+    const jobs: ScrapingJob[] = data.jobs || [];
+    
+    const jobIndex = jobs.findIndex(job => job.id === id);
+    if (jobIndex === -1) {
+      throw new HttpException('Scraping job not found', HttpStatus.NOT_FOUND);
+    }
+
+    const job = jobs[jobIndex];
+    
+    if (job.status === 'processing') {
+      throw new HttpException('Job is already being processed', HttpStatus.CONFLICT);
+    }
+
+    if (job.status === 'completed') {
+      throw new HttpException('Job has already been completed', HttpStatus.CONFLICT);
+    }
+
+    // Update job status to processing
+    job.status = 'processing';
+    job.startedAt = new Date();
+    job.updatedAt = new Date();
+    
+    jobs[jobIndex] = job;
+    data.jobs = jobs;
+    this.db.writeSync(this.dataFile, data);
+
+    try {
+      // Simulate scraping process
+      const profileData = await this.scrapeLinkedInProfile(job.profileUrl, job.extractFields);
+      
+      // Update job with results
+      job.status = 'completed';
+      job.completedAt = new Date();
+      job.updatedAt = new Date();
+      job.result = profileData;
+      
+    } catch (error) {
+      // Handle scraping error
+      job.retryCount++;
+      job.updatedAt = new Date();
+      job.error = error.message;
+      
+      if (job.retryCount >= job.maxRetries) {
+        job.status = 'failed';
+      } else {
+        job.status = 'pending'; // Will be retried later
+      }
+    }
+
+    jobs[jobIndex] = job;
+    data.jobs = jobs;
+    this.db.writeSync(this.dataFile, data);
+
+    return job;
+  }
+
+  async getScrapingStats(): Promise<any> {
+    const data = this.db.readSync(this.dataFile);
+    const jobs: ScrapingJob[] = data.jobs || [];
+
+    const stats = {
+      total: jobs.length,
+      pending: jobs.filter(j => j.status === 'pending').length,
+      processing: jobs.filter(j => j.status === 'processing').length,
+      completed: jobs.filter(j => j.status === 'completed').length,
+      failed: jobs.filter(j => j.status === 'failed').length,
+      successRate: 0,
+      averageProcessingTime: 0
+    };
+
+    if (stats.total > 0) {
+      stats.successRate = (stats.completed / (stats.completed + stats.failed)) * 100;
+    }
+
+    // Calculate average processing time for completed jobs
+    const completedJobs = jobs.filter(j => j.status === 'completed' && j.startedAt && j.completedAt);
+    if (completedJobs.length > 0) {
+      const totalTime = completedJobs.reduce((sum, job) => {
+        return sum + (new Date(job.completedAt!).getTime() - new Date(job.startedAt!).getTime());
+      }, 0);
+      stats.averageProcessingTime = totalTime / completedJobs.length / 1000; // in seconds
+    }
+
+    return stats;
+  }
+
+  private async scrapeLinkedInProfile(profileUrl: string, extractFields: string[]): Promise<ProfileData> {
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+
+    // In a real implementation, this would use LinkedIn API or web scraping
+    // For now, we'll return mock data based on the profile URL
+    const mockProfile: ProfileData = {
+      name: "John Doe",
+      headline: "Senior Software Engineer at Tech Company",
+      location: "San Francisco, CA",
+      about: "Experienced software engineer with a passion for building scalable web applications and leading development teams.",
+      experience: [
+        {
+          title: "Senior Software Engineer",
+          company: "Tech Company Inc.",
+          duration: "2021 - Present",
+          location: "San Francisco, CA",
+          description: "Lead development of microservices architecture and mentor junior developers."
+        },
+        {
+          title: "Software Engineer",
+          company: "Startup Solutions",
+          duration: "2019 - 2021",
+          location: "Remote",
+          description: "Developed full-stack web applications using React and Node.js."
+        }
+      ],
+      education: [
+        {
+          school: "University of Technology",
+          degree: "Bachelor of Science",
+          field: "Computer Science",
+          duration: "2015 - 2019"
+        }
+      ],
+      skills: ["JavaScript", "TypeScript", "React", "Node.js", "Python", "AWS", "Docker"],
+      connections: 500,
+      profileImageUrl: "https://example.com/profile-image.jpg",
+      contactInfo: {
+        email: "john.doe@example.com",
+        website: "https://johndoe.dev"
+      }
+    };
+
+    // Filter results based on requested fields
+    const filteredProfile: ProfileData = {};
+    extractFields.forEach(field => {
+      if (mockProfile[field] !== undefined) {
+        filteredProfile[field] = mockProfile[field];
+      }
+    });
+
+    // Simulate occasional failures
+    if (Math.random() < 0.1) {
+      throw new Error('LinkedIn scraping failed: Rate limit exceeded');
+    }
+
+    return filteredProfile;
   }
 }
-```

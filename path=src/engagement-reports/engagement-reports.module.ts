@@ -6,7 +6,11 @@ import { CryptoService } from '../shared/crypto.service';
 
 @Module({
   controllers: [EngagementReportsController],
-  providers: [EngagementReportsService, DatabaseService, CryptoService],
+  providers: [
+    EngagementReportsService,
+    DatabaseService,
+    CryptoService,
+  ],
   exports: [EngagementReportsService],
 })
 export class EngagementReportsModule {}

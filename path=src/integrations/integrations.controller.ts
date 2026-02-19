@@ -3,149 +3,164 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
-  HttpException,
+  NotFoundException,
+  BadRequestException,
+  HttpCode,
   HttpStatus,
-  ValidationPipe,
-  UsePipes,
 } from '@nestjs/common';
 import { IntegrationsService } from './integrations.service';
-import { CreateIntegrationDto, UpdateIntegrationDto } from './dto/integration.dto';
+
+export interface Integration {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  status: 'active' | 'inactive' | 'pending' | 'error';
+  config: {
+    apiUrl?: string;
+    apiKey?: string;
+    webhookUrl?: string;
+    settings?: Record<string, any>;
+  };
+  metadata: {
+    lastSync?: string;
+    syncInterval?: number;
+    errorCount?: number;
+    lastError?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIntegrationDto {
+  name: string;
+  type: string;
+  description?: string;
+  config: {
+    apiUrl?: string;
+    apiKey?: string;
+    webhookUrl?: string;
+    settings?: Record<string, any>;
+  };
+  metadata?: {
+    syncInterval?: number;
+  };
+}
+
+export interface UpdateIntegrationDto {
+  name?: string;
+  description?: string;
+  status?: 'active' | 'inactive' | 'pending' | 'error';
+  config?: {
+    apiUrl?: string;
+    apiKey?: string;
+    webhookUrl?: string;
+    settings?: Record<string, any>;
+  };
+  metadata?: {
+    syncInterval?: number;
+    errorCount?: number;
+    lastError?: string;
+  };
+}
 
 @Controller('api/integrations')
-@UsePipes(new ValidationPipe({ transform: true }))
 export class IntegrationsController {
   constructor(private readonly integrationsService: IntegrationsService) {}
 
   @Get()
-  async getAllIntegrations() {
-    try {
-      return await this.integrationsService.getAllIntegrations();
-    } catch (error) {
-      throw new HttpException(
-        'Failed to retrieve integrations',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+  async getAllIntegrations(): Promise<Integration[]> {
+    return this.integrationsService.findAll();
   }
 
   @Get(':id')
-  async getIntegrationById(@Param('id') id: string) {
-    try {
-      const integration = await this.integrationsService.getIntegrationById(id);
-      if (!integration) {
-        throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
-      }
-      return integration;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to retrieve integration',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  async getIntegration(@Param('id') id: string): Promise<Integration> {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('Integration ID is required');
     }
-  }
 
-  @Get(':id/sync-status')
-  async getSyncStatus(@Param('id') id: string) {
-    try {
-      const syncStatus = await this.integrationsService.getSyncStatus(id);
-      if (!syncStatus) {
-        throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
-      }
-      return syncStatus;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to retrieve sync status',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    const integration = await this.integrationsService.findOne(id);
+    if (!integration) {
+      throw new NotFoundException(`Integration with ID ${id} not found`);
     }
+
+    return integration;
   }
 
   @Post()
-  async createIntegration(@Body() createIntegrationDto: CreateIntegrationDto) {
-    try {
-      return await this.integrationsService.createIntegration(createIntegrationDto);
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to create integration',
-        HttpStatus.BAD_REQUEST,
-      );
+  @HttpCode(HttpStatus.CREATED)
+  async createIntegration(@Body() createIntegrationDto: CreateIntegrationDto): Promise<Integration> {
+    if (!createIntegrationDto.name || !createIntegrationDto.type) {
+      throw new BadRequestException('Name and type are required fields');
     }
-  }
 
-  @Post(':id/sync')
-  async triggerSync(@Param('id') id: string) {
-    try {
-      const result = await this.integrationsService.triggerSync(id);
-      if (!result) {
-        throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
-      }
-      return result;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to trigger sync',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    if (createIntegrationDto.name.trim() === '' || createIntegrationDto.type.trim() === '') {
+      throw new BadRequestException('Name and type cannot be empty');
     }
+
+    return this.integrationsService.create(createIntegrationDto);
   }
 
   @Put(':id')
   async updateIntegration(
     @Param('id') id: string,
     @Body() updateIntegrationDto: UpdateIntegrationDto,
-  ) {
-    try {
-      const updatedIntegration = await this.integrationsService.updateIntegration(
-        id,
-        updateIntegrationDto,
-      );
-      if (!updatedIntegration) {
-        throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
-      }
-      return updatedIntegration;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to update integration',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  ): Promise<Integration> {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('Integration ID is required');
     }
+
+    const existingIntegration = await this.integrationsService.findOne(id);
+    if (!existingIntegration) {
+      throw new NotFoundException(`Integration with ID ${id} not found`);
+    }
+
+    return this.integrationsService.update(id, updateIntegrationDto);
   }
 
-  @Put(':id/status')
-  async updateIntegrationStatus(
-    @Param('id') id: string,
-    @Body() statusUpdate: { status: 'active' | 'inactive' | 'error' },
-  ) {
-    try {
-      const updatedIntegration = await this.integrationsService.updateIntegrationStatus(
-        id,
-        statusUpdate.status,
-      );
-      if (!updatedIntegration) {
-        throw new HttpException('Integration not found', HttpStatus.NOT_FOUND);
-      }
-      return updatedIntegration;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        'Failed to update integration status',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteIntegration(@Param('id') id: string): Promise<void> {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('Integration ID is required');
     }
+
+    const existingIntegration = await this.integrationsService.findOne(id);
+    if (!existingIntegration) {
+      throw new NotFoundException(`Integration with ID ${id} not found`);
+    }
+
+    await this.integrationsService.remove(id);
+  }
+
+  @Post(':id/test')
+  async testIntegration(@Param('id') id: string): Promise<{ success: boolean; message: string }> {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('Integration ID is required');
+    }
+
+    const integration = await this.integrationsService.findOne(id);
+    if (!integration) {
+      throw new NotFoundException(`Integration with ID ${id} not found`);
+    }
+
+    return this.integrationsService.testConnection(id);
+  }
+
+  @Post(':id/sync')
+  async syncIntegration(@Param('id') id: string): Promise<{ success: boolean; message: string }> {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('Integration ID is required');
+    }
+
+    const integration = await this.integrationsService.findOne(id);
+    if (!integration) {
+      throw new NotFoundException(`Integration with ID ${id} not found`);
+    }
+
+    return this.integrationsService.syncData(id);
   }
 }

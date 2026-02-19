@@ -26,4 +26,5 @@ export const API = {
  linkedinScraper: `${API_BASE_URL}/api/linkedin-scraper`,
  linkedinProfileScraper: `${API_BASE_URL}/api/linkedin-profile-scraper`,
  linkedin: `${API_BASE_URL}/api/linkedin`,
+ clockworksTiktokScraper: `${API_BASE_URL}/api/clockworks-tiktok-scraper`,
 } as const;
