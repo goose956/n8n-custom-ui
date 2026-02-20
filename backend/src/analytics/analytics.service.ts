@@ -1,5 +1,4 @@
 import { Injectable } from'@nestjs/common';
-import { readFile, writeFile } from'fs/promises';
 import axios from'axios';
 import { DatabaseService } from'../shared/database.service';
 import { CryptoService } from'../shared/crypto.service';
@@ -472,15 +471,15 @@ export class AnalyticsService {
  }
 
  private async readDatabase(): Promise<any> {
- try {
- const content = await readFile(this.db.dbPath,'utf-8');
- return JSON.parse(content);
- } catch (error) {
- return { analytics: [] };
- }
+ // Delegate to DatabaseService so we get .bak safety and never
+ // return a skeleton that could wipe other collections on write-back.
+ const data = await this.db.read();
+ if (!data.analytics) data.analytics = [];
+ return data;
  }
 
  private async writeDatabase(data: any): Promise<void> {
- await writeFile(this.db.dbPath, JSON.stringify(data, null, 2),'utf-8');
+ // Delegate to DatabaseService so a .bak backup is created first.
+ await this.db.write(data);
  }
 }

@@ -29,25 +29,14 @@ export class AppManagementService {
  * Read the entire database
  */
  private async readDatabase(): Promise<SaaSDatabaseSchema> {
- try {
- const data = await fs.readFile(this.db.dbPath,'utf-8');
- return JSON.parse(data);
- } catch (error) {
- console.error('Failed to read database:', error);
- throw new Error('Database read error');
- }
+ return this.db.read();
  }
 
  /**
  * Write the entire database
  */
  private async writeDatabase(data: SaaSDatabaseSchema): Promise<void> {
- try {
- await fs.writeFile(this.db.dbPath, JSON.stringify(data, null, 2));
- } catch (error) {
- console.error('Failed to write database:', error);
- throw new Error('Database write error');
- }
+ await this.db.write(data);
  }
 
  /**
@@ -777,8 +766,7 @@ export class AppManagementService {
 
  private getApiKey(provider: string): string | null {
  try {
- if (!this.db.exists()) return null;
- const data = JSON.parse(fsSync.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const apiKeys = data.apiKeys || [];
  const keyEntry = apiKeys.find((k: any) => k.name === provider);
  if (!keyEntry) return null;

@@ -1,13 +1,3 @@
-import { LinkedinProfileScraperModule } from'./path=src/linkedin-profile-scraper/linkedin-profile-scraper.module';
-import { LinkedinAnalyticsScraperModule } from'./path=src/linkedin-analytics-scraper/linkedin-analytics-scraper.module';
-import { ResourcesModule } from'./path=src/resources/resources.module';
-import { EngagementReportsModule } from'./path=src/engagement-reports/engagement-reports.module';
-import { IntegrationsModule } from'./path=src/integrations/integrations.module';
-import { CampaignsModule } from'./path=src/campaigns/campaigns.module';
-import { LeadsModule } from'./path=src/leads/leads.module';
-import { AutorespondersModule } from'./path=src/autoresponders/autoresponders.module';
-import { TemplatesModule } from'./path=src/templates/templates.module';
-import { ClockworksTiktokScraperModule } from'./clockworks-tiktok-scraper/clockworks-tiktok-scraper.module';
 import { LinkedInModule } from'./linkedin/linkedin.module';
 import { LinkedinScraperModule } from'./linkedin-scraper/linkedin-scraper.module';
 import { Module } from'@nestjs/common';
@@ -31,21 +21,34 @@ import { StripeModule } from'./stripe/stripe.module';
 import { PreviewModule } from'./preview/preview.module';
 import { FunnelsModule } from'./funnels/funnels.module';
 import { MembersModule } from'./members/members.module';
+import { SkillsModule } from'./skills/skills.module';
 
 @Module({
  imports: [
- LinkedinProfileScraperModule,
- LinkedinAnalyticsScraperModule,
- ResourcesModule,
- EngagementReportsModule,
- IntegrationsModule,
- CampaignsModule,
- LeadsModule,
- AutorespondersModule,
- TemplatesModule,
- ClockworksTiktokScraperModule,
  LinkedInModule,
- LinkedinScraperModule,SharedModule, HealthModule, SettingsModule, WorkflowsModule, ApiKeysModule, AppsModule, PagesModule, ChatModule, AnalyticsModule, PageAgentModule, N8nBuilderModule, AppPlannerModule, BlogModule, ResearchModule, ProgrammerAgentModule, SocialMonitorModule, StripeModule, PreviewModule, FunnelsModule, MembersModule],
+ LinkedinScraperModule,
+ SharedModule,
+ HealthModule,
+ SettingsModule,
+ WorkflowsModule,
+ ApiKeysModule,
+ AppsModule,
+ PagesModule,
+ ChatModule,
+ AnalyticsModule,
+ PageAgentModule,
+ N8nBuilderModule,
+ AppPlannerModule,
+ BlogModule,
+ ResearchModule,
+ ProgrammerAgentModule,
+ SocialMonitorModule,
+ StripeModule,
+ PreviewModule,
+ FunnelsModule,
+ MembersModule,
+ SkillsModule,
+ ],
  controllers: [],
  providers: [],
 })

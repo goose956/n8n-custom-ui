@@ -8,12 +8,11 @@ export class FunnelsService {
   constructor(private readonly db: DatabaseService) {}
 
   private async readDatabase(): Promise<SaaSDatabaseSchema> {
-    const data = await fs.readFile(this.db.dbPath, 'utf-8');
-    return JSON.parse(data);
+    return this.db.read();
   }
 
   private async writeDatabase(data: SaaSDatabaseSchema): Promise<void> {
-    await fs.writeFile(this.db.dbPath, JSON.stringify(data, null, 2));
+    await this.db.write(data);
   }
 
   /** Get all funnels for an app */

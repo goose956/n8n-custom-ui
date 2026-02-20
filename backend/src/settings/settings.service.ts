@@ -21,10 +21,7 @@ export class SettingsService {
  const encryptedApiKey = this.cryptoService.encrypt(settings.n8nApiKey);
 
  // Read existing data first to preserve apps, pages, etc.
- let existingData: any = {};
- if (this.db.exists()) {
- existingData = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
- }
+ const existingData: any = this.db.readSync();
 
  const data = {
  ...existingData,
@@ -33,7 +30,7 @@ export class SettingsService {
  lastUpdated: new Date().toISOString(),
  };
 
- fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
+ this.db.writeSync(data);
  return { success: true, message:'Settings saved successfully' };
  } catch (error) {
  const message = error instanceof Error ? error.message : String(error);
@@ -43,11 +40,7 @@ export class SettingsService {
 
  async loadSettings(): Promise<{ n8nUrl: string; n8nApiKey?: string } | null> {
  try {
- if (!this.db.exists()) {
- return null;
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  return {
  n8nUrl: data.n8nUrl,
  // Don't return the actual API key to frontend
@@ -59,11 +52,7 @@ export class SettingsService {
 
  async testN8nConnection(): Promise<{ success: boolean; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: false, message:'No settings saved' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const decryptedApiKey = this.cryptoService.decrypt(data.n8nApiKey);
 
  const response = await axios.get(`${data.n8nUrl}/api/v1/workflows`, {
@@ -82,11 +71,7 @@ export class SettingsService {
 
  async getWorkflows(): Promise<{ success: boolean; workflows?: any[]; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: false, message:'No settings saved' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const decryptedApiKey = this.cryptoService.decrypt(data.n8nApiKey);
 
  const response = await axios.get(`${data.n8nUrl}/api/v1/workflows`, {
@@ -109,11 +94,7 @@ export class SettingsService {
 
  async testIntegrationKey(service: string): Promise<{ success: boolean; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: false, message:'No API keys saved yet' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const apiKeys = data.apiKeys || [];
  
  const keyEntry = apiKeys.find((k: any) => k.name === service);
@@ -364,10 +345,7 @@ export class SettingsService {
  // Sync versions for use in other services
  loadSettingsSync(): any | null {
  try {
- if (!this.db.exists()) {
- return null;
- }
- return JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ return this.db.readSync();
  } catch {
  return null;
  }

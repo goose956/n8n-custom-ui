@@ -27,4 +27,10 @@ export const API = {
  linkedinProfileScraper: `${API_BASE_URL}/api/linkedin-profile-scraper`,
  linkedin: `${API_BASE_URL}/api/linkedin`,
  clockworksTiktokScraper: `${API_BASE_URL}/api/clockworks-tiktok-scraper`,
+  twitterAutomationAppScraper: `${API_BASE_URL}/api/twitter-automation-app-scraper`,
+  pinterestUpdaterScraper: `${API_BASE_URL}/api/pinterest-updater-scraper`,
+  youtubeAutomaterScraper: `${API_BASE_URL}/api/youtube-automater-scraper`,
+  youtubeAutomationsScraper: `${API_BASE_URL}/api/youtube-automations-scraper`,
+  youtubeContentAppScraper: `${API_BASE_URL}/api/youtube-content-app-scraper`,
+  skills: `${API_BASE_URL}/api/skills`,
 } as const;

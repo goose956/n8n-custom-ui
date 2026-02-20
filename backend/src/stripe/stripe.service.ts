@@ -58,8 +58,7 @@ export class StripeService {
 
  private async getStripeKey(): Promise<string | null> {
  try {
- if (!this.db.exists()) return null;
- const data = JSON.parse(fsSync.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const keyEntry = (data.apiKeys || []).find((k: any) => k.name ==='stripe');
  if (!keyEntry) return null;
  return this.cryptoService.decrypt(keyEntry.value);
@@ -69,16 +68,11 @@ export class StripeService {
  }
 
  private async readDatabase(): Promise<any> {
- try {
- const data = await fs.readFile(this.db.dbPath,'utf-8');
- return JSON.parse(data);
- } catch {
- return {};
- }
+ return this.db.read();
  }
 
  private async writeDatabase(data: any): Promise<void> {
- await fs.writeFile(this.db.dbPath, JSON.stringify(data, null, 2));
+ await this.db.write(data);
  }
 
  // --- Products & Prices -------------------------------------------

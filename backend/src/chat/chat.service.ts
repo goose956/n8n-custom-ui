@@ -31,11 +31,7 @@ export class ChatService {
 
  private getApiKey(provider: string): string | null {
  try {
- if (!this.db.exists()) {
- return null;
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const apiKeys = data.apiKeys || [];
  const keyEntry = apiKeys.find((k: any) => k.name === provider);
 

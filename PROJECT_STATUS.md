@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 16, 2026 (Session 6)
+**Last Updated:** February 20, 2026 (Session 7)
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -8,7 +8,7 @@
 
 ## Current State
 
-The platform is a fully functional multi-app SaaS management system with 19 backend modules and 15 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
+The platform is a fully functional multi-app SaaS management system with 20 backend modules and 16 frontend pages. All data scoped by `app_id` for per-app isolation. Both backend and frontend compile clean with zero TypeScript errors.
 
 ### Services
 
@@ -43,6 +43,7 @@ The platform is a fully functional multi-app SaaS management system with 19 back
 | SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
 | StripeModule | `stripe/` | Stripe products, prices, checkout sessions, webhooks, payments |
 | PreviewModule | `preview/` | Vite-based live preview (single page + full site) with safeProxy + mock data |
+| SkillsModule | `skills/` | Two-layer agent system: Tools (executable code) + Skills (AI prompts), agentic loop, PDF generation |
 
 ### Shared Infrastructure
 
@@ -71,7 +72,8 @@ The platform is a fully functional multi-app SaaS management system with 19 back
 | Analytics | AnalyticsPage.tsx | Stats cards, usage tables |
 | Templates | TemplatesPage.tsx | 9 template previews (index, thanks, members, checkout, admin, pricing, about, faq, contact) |
 | Stripe | StripePage.tsx | Product/price management, payment history, Stripe sync |
-| Settings | SettingsPage.tsx | n8n config, API keys, integration keys, Stripe tab |
+| Settings | SettingsPage.tsx | n8n config, API keys, integration keys (OpenAI, Brave, Apify, Stripe, etc.) |
+| Skill Workshop | SkillWorkshopPage.tsx | Two-panel agent skill editor, tool editor, agentic output, AI builder chat, follow-up chaining |
 
 ### Frontend Architecture
 
@@ -118,40 +120,28 @@ All app data scoped by app_id for clean per-app isolation:
 
 ---
 
-## Recent Changes (Feb 16, 2026 — Session 6)
+## Recent Changes (Feb 20, 2026 — Session 7)
 
-### Full Site Preview (7 commits)
-- **Full site preview mode** — Preview ALL pages together as a navigable website in a new browser tab
-- Opens via `window.open()` instead of iframe, uses Vite programmatic API (ports 5200-5299)
-- React Router with sidebar navigation, auto-generated routes from project pages
-- **SafeProxy system** — Deep Proxy that handles array methods (.map, .filter), string methods (.toUpperCase, .toLowerCase), Symbol.iterator, and Symbol.toPrimitive
-- **Mock data injection** — Rich mock data for billing, profile, settings, stats, trends (no real API calls needed in preview)
-- **Auto-inject missing globals** — `injectMissingGlobals()` detects usage of API_BASE/API_URL without declaration and auto-injects
-- **Icon deduplication** — `deduplicateIconImports()` resolves barrel import collisions between @mui/material and @mui/icons-material
-- **Stale session recovery** — When `update()` fails (backend restarted), resets session so fresh `start()` happens
+### Agent Skill Workshop v2 — Complete Rewrite
+- **Two-layer architecture** — Tools (executable code) + Skills (markdown AI prompts) + agentic loop (max 10 iterations)
+- **4 tools created:** brave-search, generate-image (DALL-E 3), apify-scraper (Website Content Crawler), generate-pdf (pdfkit)
+- **6 skills created:** web-research, image-creator, content-writer, llm-content-writer, deep-research, content-ideator
+- **ToolContext** — `getCredential()`, `fetch()`, `log()`, `saveImage()`, `savePdf()` available to all tool code
+- **AI Builder Chat** — Conversational creation of tools + skills via SkillBuilderChat component
+- **Follow-up chat** — Chain actions on skill output ("save as PDF", "generate a header image", "summarize for LinkedIn")
+- **Output renderer** — Auto-detects markdown/JSON/HTML, renders with react-markdown + remark-gfm, dark theme, image/PDF URL resolution
+- **Image persistence** — DALL-E URLs saved locally to `backend/public/skill-images/` (no more expiring URLs)
+- **PDF generation** — pdfkit renders styled A4 PDFs with headers, lists, tables, page numbers to `backend/public/skill-pdfs/`
 
-### Admin Template Overhaul
-- **Slimmed admin template** to 2 tabs only: Analytics (page performance) + Contact Submissions (inbox with status management)
-- Removed: Visitors, Errors, API Usage tabs (was 4 tabs)
-- KPI cards: Active Users, Page Views, Revenue, Contact Messages (with new message count)
-- Contact submissions table with name/email/subject/status/date + action menu (mark read, replied, archive, delete)
+### Bug Fixes
+- **Apify API key not saving** — Settings page `'********'` vs `'--------'` mismatch
+- **Stripe API key not saving** — Same `'********'` vs `'--------'` mismatch
+- **JSX fragment nesting** — Follow-up chat block needed proper `<>...</>` wrapper
 
-### Contact Form System (New)
-- **ContactController** — `POST /api/contact` (submit), `GET /api/contact` (list with filters), `POST /api/contact/:id/status` (update), `DELETE /api/contact/:id`
-- **contactFormTemplate()** — Static TSX template for members area contact page (posts to `/api/contact` with app_id)
-- Added `'contact'` to `DEFAULT_MEMBERS_PAGES` (required, 0 AI tokens) and `TEMPLATE_PAGE_TYPES`
-- Every new project gets analytics + contact form admin out of the box
-
-### Session 5 Highlights (Coder Agent Rewrite)
-- Line-based edit system replacing string-matching (array.splice, descending sort, dedup guard)
-- Component library pre-reading for AI context
-- ProgrammerAgentPage UI overhaul (browser chrome, split view, 3-tab chat panel)
-- 13 members area components created by Coder Agent
-
-### Session 4 Highlights
-- StripeModule, DashboardPage, GlobalSearch, StatCard component
-- Workflow Builder intelligence overhaul, AI-powered project creation
-- Blog publish sync, Social Monitor fixes, 4 new page templates
+### Previous Sessions
+- Session 6: Full site preview, admin template, contact form API
+- Session 5: Coder Agent rewrite, ProgrammerAgentPage overhaul
+- Session 4: StripeModule, DashboardPage, GlobalSearch, Workflow Builder intelligence
 
 ---
 

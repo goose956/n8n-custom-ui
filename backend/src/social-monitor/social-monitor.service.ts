@@ -520,16 +520,11 @@ Draft a helpful reply to this post. Be genuinely useful first, and only mention 
  }
 
  private loadData(): any {
- try {
- if (!this.db.exists()) return {};
- return JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
- } catch {
- return {};
- }
+ return this.db.readSync();
  }
 
  private saveData(data: any): void {
- fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
+ this.db.writeSync(data);
  }
 
  private async trackCost(provider: string, model: string, tokensIn: number, tokensOut: number, duration: number, module: string): Promise<void> {

@@ -25,25 +25,13 @@ export class PagesService {
  constructor(private readonly db: DatabaseService) {}
 
  private readDatabase(): DatabaseSchema {
- try {
- if (!this.db.exists()) {
- return { pages: [] };
- }
- const data = fs.readFileSync(this.db.dbPath,'utf-8');
- return JSON.parse(data);
- } catch (error) {
- console.error('Failed to read database:', error);
- return { pages: [] };
- }
+ const data = this.db.readSync();
+ if (!data.pages) data.pages = [];
+ return data;
  }
 
  private writeDatabase(data: DatabaseSchema): void {
- try {
- fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
- } catch (error) {
- console.error('Failed to write database:', error);
- throw new Error('Database write error');
- }
+ this.db.writeSync(data);
  }
 
  private getNextPageId(): number {

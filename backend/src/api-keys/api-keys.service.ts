@@ -23,10 +23,7 @@ export class ApiKeysService {
  return { success: false, message:'API key name and value are required' };
  }
 
- let data: any = { n8nUrl:'', n8nApiKey:'', apiKeys: [] as ApiKey[] };
- if (this.db.exists()) {
- data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
- }
+ const data: any = this.db.readSync();
 
  if (!data.apiKeys) {
  data.apiKeys = [];
@@ -43,7 +40,7 @@ export class ApiKeysService {
  };
  (data.apiKeys as ApiKey[]).push(newKey);
 
- fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
+ this.db.writeSync(data);
  return { success: true, message:`API key "${name}" saved successfully` };
  } catch (error) {
  const message = error instanceof Error ? error.message : String(error);
@@ -53,11 +50,7 @@ export class ApiKeysService {
 
  async getApiKeys(): Promise<{ success: boolean; keys: any[]; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: true, keys: [], message:'No API keys saved' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const keys = (data.apiKeys || []).map((k: ApiKey) => ({
  name: k.name,
  createdAt: k.createdAt,
@@ -77,11 +70,7 @@ export class ApiKeysService {
  */
  async getApiKeyMasked(name: string): Promise<{ success: boolean; value?: string; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: false, message:'No API keys saved' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const apiKey = (data.apiKeys || []).find((k: ApiKey) => k.name === name);
 
  if (!apiKey) {
@@ -105,11 +94,7 @@ export class ApiKeysService {
  */
  async getApiKeyDecrypted(name: string): Promise<string | null> {
  try {
- if (!this.db.exists()) {
- return null;
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const apiKey = (data.apiKeys || []).find((k: ApiKey) => k.name === name);
 
  if (!apiKey) {
@@ -125,11 +110,7 @@ export class ApiKeysService {
 
  async deleteApiKey(name: string): Promise<{ success: boolean; message: string }> {
  try {
- if (!this.db.exists()) {
- return { success: false, message:'No API keys saved' };
- }
-
- const data = JSON.parse(fs.readFileSync(this.db.dbPath,'utf-8'));
+ const data = this.db.readSync();
  const initialLength = (data.apiKeys || []).length;
 
  data.apiKeys = (data.apiKeys || []).filter((k: ApiKey) => k.name !== name);
@@ -138,7 +119,7 @@ export class ApiKeysService {
  return { success: false, message:`API key "${name}" not found` };
  }
 
- fs.writeFileSync(this.db.dbPath, JSON.stringify(data, null, 2));
+ this.db.writeSync(data);
  return { success: true, message:`API key "${name}" deleted successfully` };
  } catch (error) {
  const message = error instanceof Error ? error.message : String(error);

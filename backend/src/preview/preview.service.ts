@@ -207,6 +207,7 @@ export class PreviewService implements OnModuleDestroy {
  // Build route config from the TSX files
  const tsxFiles = req.files.filter(f => f.path.match(/\.(tsx|jsx)$/));
  const routes: { importPath: string; componentName: string; routePath: string; label: string }[] = [];
+ const usedComponentNames = new Set<string>();
 
  // Files to skip — layouts, indexes, barrel exports
  const skipPatterns = [/MembersLayout/i, /\/index\.(tsx|jsx)$/i, /Layout\.(tsx|jsx)$/i];
@@ -217,7 +218,15 @@ export class PreviewService implements OnModuleDestroy {
 
  const normalized = this.normalizePath(file.path);
  const importPath = './components/' + normalized.replace(/\.(tsx|jsx|ts|js)$/, '');
- const componentName = this.detectComponentNameFromContent(file.content) || normalized.replace(/\.(tsx|jsx)$/, '').replace(/[^a-zA-Z0-9]/g, '');
+ let componentName = this.detectComponentNameFromContent(file.content) || normalized.replace(/\.(tsx|jsx)$/, '').replace(/[^a-zA-Z0-9]/g, '');
+
+ // Deduplicate component names to avoid "identifier already declared" errors
+ if (usedComponentNames.has(componentName)) {
+ let suffix = 2;
+ while (usedComponentNames.has(`${componentName}${suffix}`)) suffix++;
+ componentName = `${componentName}${suffix}`;
+ }
+ usedComponentNames.add(componentName);
 
  // Derive route path from just the filename (not folder structure)
  const basename = normalized.split('/').pop() || '';

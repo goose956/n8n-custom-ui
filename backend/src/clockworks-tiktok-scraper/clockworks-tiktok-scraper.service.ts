@@ -3,39 +3,36 @@ import axios from 'axios';
 import { CryptoService } from '../shared/crypto.service';
 import { DatabaseService } from '../shared/database.service';
 
-interface ScraperRequest {
-  profiles?: string[];
-  hashtags?: string[];
-  searchTerms?: string[];
-  maxItems?: number;
-  maxRequestRetries?: number;
-  maxScrollWaitTime?: number;
-  resultsPerPage?: number;
+interface ScrapeRequest {
+  urls: string[];
+  options?: {
+    maxItems?: number;
+    includeComments?: boolean;
+    includeStats?: boolean;
+  };
 }
 
-interface ScraperRunResponse {
+interface ScrapeResponse {
   success: boolean;
   runId?: string;
   error?: string;
 }
 
-interface ScraperResultsResponse {
+interface StatusResponse {
+  success: boolean;
+  status?: string;
+  data?: any;
+  error?: string;
+}
+
+interface ResultsResponse {
   success: boolean;
   data?: any[];
   error?: string;
 }
 
-interface ScraperStatusResponse {
-  success: boolean;
-  status?: string;
-  runDetails?: any;
-  error?: string;
-}
-
 @Injectable()
 export class ClockworksTiktokScraperService {
-  private readonly actorId = 'clockworks/tiktok-scraper';
-
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly db: DatabaseService,
@@ -54,107 +51,105 @@ export class ClockworksTiktokScraperService {
     }
   }
 
-  async runTiktokScraper(input: ScraperRequest): Promise<ScraperRunResponse> {
+  async runApifyActor(actorId: string, input: Record<string, any>): Promise<any> {
+    const token = this.getApiKey('apify');
+    if (!token) throw new Error('Apify API key not configured');
+
+    const runResponse = await axios.post(
+      `https://api.apify.com/v2/acts/${actorId}/runs`,
+      input,
+      { 
+        headers: { 'Authorization': `Bearer ${token}` }, 
+        params: { waitForFinish: 120 }, 
+        timeout: 130000 
+      },
+    );
+
+    return runResponse.data?.data;
+  }
+
+  async getApifyResults(datasetId: string): Promise<any[]> {
+    const token = this.getApiKey('apify');
+    if (!token) throw new Error('Apify API key not configured');
+
+    const results = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items`, {
+      headers: { 'Authorization': `Bearer ${token}` }, 
+      params: { format: 'json' }, 
+      timeout: 15000,
+    });
+    return results.data || [];
+  }
+
+  async runScraper(request: ScrapeRequest): Promise<ScrapeResponse> {
     try {
-      const token = this.getApiKey('apify');
-      if (!token) {
+      if (!request.urls || request.urls.length === 0) {
         return {
           success: false,
-          error: 'Apify API key not configured. Please add your Apify API key to continue.',
+          error: 'At least one URL is required',
         };
       }
 
-      // Validate input
-      if (!input.profiles && !input.hashtags && !input.searchTerms) {
+      // Validate URLs are TikTok URLs
+      const tiktokUrlPattern = /^https?:\/\/(www\.)?(tiktok\.com|vm\.tiktok\.com)/;
+      const invalidUrls = request.urls.filter(url => !tiktokUrlPattern.test(url));
+      if (invalidUrls.length > 0) {
         return {
           success: false,
-          error: 'At least one of profiles, hashtags, or searchTerms must be provided',
+          error: `Invalid TikTok URLs detected: ${invalidUrls.join(', ')}`,
         };
       }
 
-      // Prepare input for the TikTok scraper
-      const scraperInput = {
-        profiles: input.profiles || [],
-        hashtags: input.hashtags || [],
-        searchTerms: input.searchTerms || [],
-        maxItems: input.maxItems || 20,
-        maxRequestRetries: input.maxRequestRetries || 3,
-        maxScrollWaitTime: input.maxScrollWaitTime || 10,
-        resultsPerPage: input.resultsPerPage || 20,
+      const input = {
+        startUrls: request.urls.map(url => ({ url })),
+        resultsLimit: request.options?.maxItems || 100,
+        shouldDownloadCovers: false,
+        shouldDownloadSlideshowImages: false,
+        shouldDownloadVideos: false,
+        shouldDownloadSubtitles: false,
+        addParentData: true,
       };
 
-      const runResponse = await axios.post(
-        `https://api.apify.com/v2/acts/${this.actorId}/runs`,
-        scraperInput,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000,
-        }
-      );
+      // Use clockworks TikTok scraper actor
+      const runData = await this.runApifyActor('clockworks/tiktok-scraper', input);
 
-      const runId = runResponse.data?.data?.id;
-      if (!runId) {
+      if (!runData?.id) {
         return {
           success: false,
-          error: 'Failed to get run ID from Apify response',
+          error: 'Failed to start scraper run',
         };
       }
 
       // Store run information in database
       const data = this.db.readSync();
       if (!data.tiktokScraperRuns) {
-        data.tiktokScraperRuns = [];
+        data.tiktokScraperRuns = {};
       }
-
-      data.tiktokScraperRuns.push({
-        runId,
-        input: scraperInput,
-        status: 'RUNNING',
-        createdAt: new Date().toISOString(),
-      });
+      
+      data.tiktokScraperRuns[runData.id] = {
+        id: runData.id,
+        status: runData.status,
+        startedAt: new Date().toISOString(),
+        urls: request.urls,
+        options: request.options || {},
+        defaultDatasetId: runData.defaultDatasetId,
+      };
 
       this.db.writeSync(data);
 
       return {
         success: true,
-        runId,
+        runId: runData.id,
       };
     } catch (error) {
-      console.error('Failed to run TikTok scraper:', error);
-      
-      if (axios.isAxiosError(error)) {
-        const statusCode = error.response?.status;
-        const errorMessage = error.response?.data?.error?.message || error.message;
-        
-        if (statusCode === 401) {
-          return {
-            success: false,
-            error: 'Invalid Apify API key. Please check your configuration.',
-          };
-        } else if (statusCode === 402) {
-          return {
-            success: false,
-            error: 'Insufficient Apify account balance. Please top up your account.',
-          };
-        } else {
-          return {
-            success: false,
-            error: `Apify API error: ${errorMessage}`,
-          };
-        }
-      }
-
+      console.error('TikTok scraper error:', error);
       return {
         success: false,
-        error: 'Failed to start TikTok scraper. Please try again.',
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
 
-  async getScraperResults(runId: string): Promise<ScraperResultsResponse> {
+  async getStatus(runId: string): Promise<StatusResponse> {
     try {
       const token = this.getApiKey('apify');
       if (!token) {
@@ -164,18 +159,13 @@ export class ClockworksTiktokScraperService {
         };
       }
 
-      // Get run details to check status
-      const runResponse = await axios.get(
-        `https://api.apify.com/v2/acts/${this.actorId}/runs/${runId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          timeout: 15000,
-        }
-      );
+      // Get run status from Apify
+      const response = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        timeout: 15000,
+      });
 
-      const runData = runResponse.data?.data;
+      const runData = response.data?.data;
       if (!runData) {
         return {
           success: false,
@@ -183,157 +173,91 @@ export class ClockworksTiktokScraperService {
         };
       }
 
-      if (runData.status !== 'SUCCEEDED') {
-        return {
-          success: false,
-          error: `Scraper run is not completed. Current status: ${runData.status}`,
-        };
-      }
-
-      const datasetId = runData.defaultDatasetId;
-      if (!datasetId) {
-        return {
-          success: false,
-          error: 'No dataset available for this run',
-        };
-      }
-
-      // Get the results from the dataset
-      const resultsResponse = await axios.get(
-        `https://api.apify.com/v2/datasets/${datasetId}/items`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          params: {
-            format: 'json',
-          },
-          timeout: 15000,
-        }
-      );
-
-      const results = resultsResponse.data || [];
-
-      // Update run status in database
+      // Update local database with current status
       const data = this.db.readSync();
-      if (data.tiktokScraperRuns) {
-        const runIndex = data.tiktokScraperRuns.findIndex((r: any) => r.runId === runId);
-        if (runIndex !== -1) {
-          data.tiktokScraperRuns[runIndex].status = runData.status;
-          data.tiktokScraperRuns[runIndex].completedAt = new Date().toISOString();
-          data.tiktokScraperRuns[runIndex].resultCount = results.length;
-          this.db.writeSync(data);
+      if (data.tiktokScraperRuns && data.tiktokScraperRuns[runId]) {
+        data.tiktokScraperRuns[runId].status = runData.status;
+        data.tiktokScraperRuns[runId].updatedAt = new Date().toISOString();
+        if (runData.finishedAt) {
+          data.tiktokScraperRuns[runId].finishedAt = runData.finishedAt;
         }
+        this.db.writeSync(data);
       }
+
+      return {
+        success: true,
+        status: runData.status,
+        data: {
+          id: runData.id,
+          status: runData.status,
+          startedAt: runData.startedAt,
+          finishedAt: runData.finishedAt,
+          stats: runData.stats,
+        },
+      };
+    } catch (error) {
+      console.error('Status check error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async getResults(runId: string): Promise<ResultsResponse> {
+    try {
+      // Get run info from database
+      const data = this.db.readSync();
+      const runInfo = data.tiktokScraperRuns?.[runId];
+      
+      if (!runInfo) {
+        return {
+          success: false,
+          error: 'Run not found in database',
+        };
+      }
+
+      // If we don't have a dataset ID, get it from the run
+      let datasetId = runInfo.defaultDatasetId;
+      if (!datasetId) {
+        const token = this.getApiKey('apify');
+        if (!token) {
+          return {
+            success: false,
+            error: 'Apify API key not configured',
+          };
+        }
+
+        const response = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          timeout: 15000,
+        });
+
+        datasetId = response.data?.data?.defaultDatasetId;
+        if (!datasetId) {
+          return {
+            success: false,
+            error: 'No dataset available for this run',
+          };
+        }
+
+        // Update database with dataset ID
+        data.tiktokScraperRuns[runId].defaultDatasetId = datasetId;
+        this.db.writeSync(data);
+      }
+
+      // Get results from dataset
+      const results = await this.getApifyResults(datasetId);
 
       return {
         success: true,
         data: results,
       };
     } catch (error) {
-      console.error('Failed to get TikTok scraper results:', error);
-      
-      if (axios.isAxiosError(error)) {
-        const statusCode = error.response?.status;
-        const errorMessage = error.response?.data?.error?.message || error.message;
-        
-        if (statusCode === 404) {
-          return {
-            success: false,
-            error: 'Run not found or dataset not available',
-          };
-        } else {
-          return {
-            success: false,
-            error: `Apify API error: ${errorMessage}`,
-          };
-        }
-      }
-
+      console.error('Results retrieval error:', error);
       return {
         success: false,
-        error: 'Failed to retrieve scraper results. Please try again.',
-      };
-    }
-  }
-
-  async getScraperStatus(runId: string): Promise<ScraperStatusResponse> {
-    try {
-      const token = this.getApiKey('apify');
-      if (!token) {
-        return {
-          success: false,
-          error: 'Apify API key not configured',
-        };
-      }
-
-      const runResponse = await axios.get(
-        `https://api.apify.com/v2/acts/${this.actorId}/runs/${runId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          timeout: 15000,
-        }
-      );
-
-      const runData = runResponse.data?.data;
-      if (!runData) {
-        return {
-          success: false,
-          error: 'Run not found',
-        };
-      }
-
-      // Update run status in database
-      const data = this.db.readSync();
-      if (data.tiktokScraperRuns) {
-        const runIndex = data.tiktokScraperRuns.findIndex((r: any) => r.runId === runId);
-        if (runIndex !== -1) {
-          data.tiktokScraperRuns[runIndex].status = runData.status;
-          if (runData.finishedAt) {
-            data.tiktokScraperRuns[runIndex].completedAt = runData.finishedAt;
-          }
-          this.db.writeSync(data);
-        }
-      }
-
-      return {
-        success: true,
-        status: runData.status,
-        runDetails: {
-          id: runData.id,
-          status: runData.status,
-          startedAt: runData.startedAt,
-          finishedAt: runData.finishedAt,
-          stats: runData.stats,
-          meta: runData.meta,
-          options: runData.options,
-        },
-      };
-    } catch (error) {
-      console.error('Failed to get TikTok scraper status:', error);
-      
-      if (axios.isAxiosError(error)) {
-        const statusCode = error.response?.status;
-        const errorMessage = error.response?.data?.error?.message || error.message;
-        
-        if (statusCode === 404) {
-          return {
-            success: false,
-            error: 'Run not found',
-          };
-        } else {
-          return {
-            success: false,
-            error: `Apify API error: ${errorMessage}`,
-          };
-        }
-      }
-
-      return {
-        success: false,
-        error: 'Failed to retrieve scraper status. Please try again.',
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }

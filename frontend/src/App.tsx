@@ -19,6 +19,7 @@ import { DashboardPage } from'./components/DashboardPage';
 import { FunnelBuilderPage } from'./components/FunnelBuilderPage';
 import { UpsellEditorPage } from'./components/UpsellEditorPage';
 import { TikTokScraperPage } from'./components/TikTokScraperPage';
+import { SkillWorkshopPage } from'./components/SkillWorkshopPage';
 import { GlobalSearch } from'./components/shared/GlobalSearch';
 import {
  Dashboard as DashboardIcon,
@@ -49,6 +50,7 @@ import {
  Menu as MenuIcon,
  Close as CloseIcon,
  Home as HomeIcon,
+ Science as ScienceIcon,
 } from'@mui/icons-material';
 
 const lightTheme = createTheme({
@@ -284,6 +286,7 @@ const navItems: NavItem[] = [
  { label:'Research', path:'/research', icon: <ResearchIcon sx={{ fontSize: 18 }} /> },
  { label:'Social', path:'/social', icon: <SocialIcon sx={{ fontSize: 18 }} /> },
  { label:'Analytics', path:'/analytics', icon: <AnalyticsIcon sx={{ fontSize: 18 }} /> },
+ { label:'Skill Workshop', path:'/skills', icon: <ScienceIcon sx={{ fontSize: 18 }} /> },
  { label:'Settings', path:'/settings', icon: <SettingsIcon sx={{ fontSize: 18 }} /> },
 ];
 
@@ -1073,6 +1076,7 @@ function App() {
  <Route path="/upsell-editor" element={<UpsellEditorPage />} />
  <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/tiktok-scraper" element={<TikTokScraperPage />} />
+          <Route path="/skills" element={<SkillWorkshopPage />} />
  </Routes>
  </Box>
  </ThemeProvider>

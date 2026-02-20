@@ -45,10 +45,8 @@ import {
  BarChart as DataIcon,
  Bolt as AutoIcon,
  Handyman as ManualIcon,
- RocketLaunch as FinalizeIcon,
  BugReport as BugIcon,
  VerifiedUser as QaPassIcon,
- MenuBook as DocsIcon,
  Warning as WarningIcon,
  Info as InfoIcon,
  Replay as RetryIcon,
@@ -154,7 +152,7 @@ interface QaIssue {
  autoFix?: string;
 }
 
-type Phase ='setup' |'planning' |'pages' |'generating' |'results' |'finalizing' |'finalized' |'qa-running' |'qa-results' |'documenting' |'documented';
+type Phase ='setup' |'planning' |'pages' |'generating' |'results' |'qa-running' |'qa-results';
 
 /* "â‚¬"â‚¬"â‚¬ Quick Key Templates "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
 
@@ -303,16 +301,13 @@ const PHASE_STEPS = [
  { key:'pages', label:'Pages' },
  { key:'generating', label:'Generate' },
  { key:'results', label:'Review' },
- { key:'finalized', label:'Finalize' },
  { key:'qa-results', label:'QA' },
- { key:'documented', label:'Docs' },
 ] as const;
 
 function getStepIndex(phase: Phase): number {
  const map: Record<Phase, number> = {
  setup: 0, planning: 1, pages: 2, generating: 3, results: 4,
- finalizing: 5, finalized: 5,'qa-running': 6,'qa-results': 6,
- documenting: 7, documented: 7,
+ 'qa-running': 5,'qa-results': 5,
  };
  return map[phase] ?? 0;
 }
@@ -324,6 +319,9 @@ function PageTypeIcon({ type }: { type: string }) {
  case'dashboard': return <DashboardIcon sx={{ fontSize: 18 }} />;
  case'profile': return <ProfileIcon sx={{ fontSize: 18 }} />;
  case'settings': return <SettingsIcon sx={{ fontSize: 18 }} />;
+ case'scraper': return <ApifyIcon sx={{ fontSize: 18 }} />;
+ case'admin': return <BuildIcon sx={{ fontSize: 18 }} />;
+ case'contact': return <SendIcon sx={{ fontSize: 18 }} />;
  default: return <PagesIcon sx={{ fontSize: 18 }} />;
  }
 }
@@ -398,22 +396,13 @@ export function ProgrammerAgentPage() {
  const [newPageName, setNewPageName] = useState('');
  const [newPageDesc, setNewPageDesc] = useState('');
 
- // Finalize state
+ // QA state
  const [backendTasks, setBackendTasks] = useState<BackendTask[]>([]);
- const [, setFinalizeLoading] = useState(false);
- const [finalizeSummary, setFinalizeSummary] = useState('');
- const [implementingTask, setImplementingTask] = useState<string | null>(null);
- const [implementingAll, setImplementingAll] = useState(false);
-
- // QA & Docs state
  const [qaIssues, setQaIssues] = useState<QaIssue[]>([]);
  const [qaSummary, setQaSummary] = useState('');
  const [, setQaLoading] = useState(false);
  const [fixingIssue, setFixingIssue] = useState<string | null>(null);
  const [fixingAll, setFixingAll] = useState(false);
- const [docsFiles, setDocsFiles] = useState<GeneratedFile[]>([]);
- const [, setDocsLoading] = useState(false);
- const [activeDocTab, setActiveDocTab] = useState(0);
 
  // Cost estimation
  const [costEstimate, setCostEstimate] = useState<{ estimatedTokens: number; estimatedCost: number; breakdown: { role: string; model: string; tokens: number; cost: number }[] } | null>(null);
@@ -1251,160 +1240,6 @@ export function ProgrammerAgentPage() {
  navigator.clipboard.writeText(text);
  setSnack({ open: true, msg:'Copied to clipboard', severity:'info' });
  };
-
-/* --- Finalize Agent: analyze + implement all tasks --- */
-
-  const handleFinalize = async () => {
-    if (files.length === 0) return;
-    setFinalizeLoading(true);
-    setPhase('finalizing');
-    setBackendTasks([]);
-    setFinalizeSummary('Analyzing pages for backend requirements...');
-
-    try {
-      const res = await fetch(`${API.programmerAgent}/finalize-agent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files,
-          appId: selectedAppId || undefined,
-          model: orchestratorModel || undefined,
-        }),
-      });
-
-      if (!res.ok || !res.body) {
-        setSnack({ open: true, msg: `Server error (${res.status})`, severity: 'error' });
-        setPhase('results');
-        setFinalizeLoading(false);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ') && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (eventType === 'status') {
-                setFinalizeSummary(data.message || '');
-                if (data.tasks) setBackendTasks(data.tasks);
-                if (data.phase === 'done') {
-                  setPhase('finalized');
-                  setFinalizeLoading(false);
-                  const doneCount = (data.tasks || []).filter((t) => t.status === 'done').length;
-                  const total = (data.tasks || []).length;
-                  setSnack({ open: true, msg: `Backend agent complete: ${doneCount}/${total} tasks implemented`, severity: 'success' });
-                }
-              } else if (eventType === 'tasks') {
-                setBackendTasks(data.tasks || []);
-                setFinalizeSummary(data.summary || '');
-              } else if (eventType === 'task-start') {
-                setBackendTasks(prev => prev.map(t =>
-                  t.id === data.taskId ? { ...t, status: 'in-progress' } : t
-                ));
-                setFinalizeSummary(`[${data.progress}] Working on: ${data.title}...`);
-              } else if (eventType === 'task-done') {
-                setBackendTasks(prev => prev.map(t =>
-                  t.id === data.taskId ? { ...t, status: data.success ? 'done' : 'pending' } : t
-                ));
-                if (data.success) {
-                  setFinalizeSummary(`Completed: ${data.message}`);
-                } else {
-                  setFinalizeSummary(`Failed: ${data.message}`);
-                }
-              } else if (eventType === 'file-update') {
-                // AI edited a frontend file (e.g. wired admin panel to show contact form submissions)
-                if (data.path && data.content) {
-                  setFiles(prev => prev.map(f =>
-                    (f.path.includes(data.path) || data.path.includes(f.path))
-                      ? { ...f, content: data.content }
-                      : f
-                  ));
-                  setSnack({ open: true, msg: `Updated ${data.path.split('/').pop()}`, severity: 'info' });
-                }
-              } else if (eventType === 'error') {
-                setSnack({ open: true, msg: data.message || 'Agent error', severity: 'error' });
-              } else if (eventType === 'done') {
-                setFinalizeLoading(false);
-                setPhase('finalized');
-              }
-            } catch { /* ignore parse errors */ }
-            eventType = '';
-          }
-        }
-      }
-    } catch (err) {
-      setSnack({ open: true, msg: err instanceof Error ? err.message : 'Network error', severity: 'error' });
-      setPhase('results');
-    } finally {
-      setFinalizeLoading(false);
-    }
-  };
-
- const handleImplementTask = async (task: BackendTask) => {
- setImplementingTask(task.id);
- try {
- const res = await fetch(`${API.programmerAgent}/implement-task`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({ task, appId: selectedAppId || undefined }),
- });
- const data = await res.json();
- if (data.success) {
- setBackendTasks(prev => prev.map(t => t.id === task.id ? { ...t, status:'done' as const } : t));
- setSnack({ open: true, msg: data.message, severity:'success' });
- } else {
- setSnack({ open: true, msg: data.message ||'Implementation failed', severity:'error' });
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- } finally {
- setImplementingTask(null);
- }
- };
-
- const handleImplementAll = async () => {
- const pendingAuto = backendTasks.filter(t => t.status ==='pending' && t.implementation);
- if (pendingAuto.length === 0) return;
- setImplementingAll(true);
-
- try {
- const res = await fetch(`${API.programmerAgent}/implement-all`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({ tasks: backendTasks, appId: selectedAppId || undefined }),
- });
- const data = await res.json();
- if (data.success) {
- setBackendTasks(data.tasks || backendTasks);
- const successCount = (data.results || []).filter((r: any) => r.success).length;
- setSnack({ open: true, msg:`Implemented ${successCount} task(s) successfully`, severity:'success' });
- } else {
- setSnack({ open: true, msg:'Some tasks failed', severity:'error' });
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- } finally {
- setImplementingAll(false);
- }
- };
-
- /* "â‚¬"â‚¬"â‚¬ QA Agent handlers "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
-
  const handleQaReview = async () => {
  if (files.length === 0) return;
  setQaLoading(true);
@@ -1439,11 +1274,11 @@ export function ProgrammerAgentPage() {
  });
  } else {
  setSnack({ open: true, msg: data.error ||'QA review failed', severity:'error' });
- setPhase('finalized');
+ setPhase('results');
  }
  } catch (err) {
  setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- setPhase('finalized');
+ setPhase('results');
  } finally {
  setQaLoading(false);
  }
@@ -1505,65 +1340,6 @@ export function ProgrammerAgentPage() {
  setFixingAll(false);
  }
  };
-
- const handleGenerateDocs = async () => {
- if (files.length === 0) return;
- setDocsLoading(true);
- setPhase('documenting');
- setDocsFiles([]);
-
- try {
- const res = await fetch(`${API.programmerAgent}/generate-docs`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({
- files,
- appId: selectedAppId || undefined,
- backendTasks: backendTasks.length > 0 ? backendTasks : undefined,
- model: subAgentModel || undefined,
- }),
- });
- const data = await res.json();
- if (data.success) {
- setDocsFiles(data.docs || []);
- setPhase('documented');
- setSnack({ open: true, msg:`Generated ${data.docs?.length || 0} documentation file(s)`, severity:'success' });
- } else {
- setSnack({ open: true, msg: data.error ||'Docs generation failed', severity:'error' });
- setPhase('qa-results');
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- setPhase('qa-results');
- } finally {
- setDocsLoading(false);
- }
- };
-
- const handleSaveDocs = async () => {
- if (docsFiles.length === 0) return;
- setSaving(true);
- try {
- const res = await fetch(`${API.programmerAgent}/save`, {
- method:'POST',
- headers: {'Content-Type':'application/json' },
- body: JSON.stringify({ files: docsFiles }),
- });
- const data = await res.json();
- if (data.success) {
- setSnack({ open: true, msg:`Saved ${docsFiles.length} doc file(s)`, severity:'success' });
- } else {
- setSnack({ open: true, msg: data.error ||'Save failed', severity:'error' });
- }
- } catch (err) {
- setSnack({ open: true, msg: err instanceof Error ? err.message :'Network error', severity:'error' });
- } finally {
- setSaving(false);
- }
- };
-
- /* "â‚¬"â‚¬"â‚¬ Add custom page "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */
-
  const handleAddPage = () => {
  if (!newPageName.trim()) return;
  const id = newPageName.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
@@ -2202,9 +1978,9 @@ export function ProgrammerAgentPage() {
 
  {/* "â‚¬"â‚¬"â‚¬ PHASE: RESULTS "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='results' && files.length > 0 && (
- <Box sx={{ display:'grid', gridTemplateColumns: chatPanelOpen ?'280px 1fr 380px' :'280px 1fr', gap: 2, transition:'grid-template-columns 0.3s' }}>
+ <Box sx={{ display:'grid', gridTemplateColumns: chatPanelOpen ?'280px 1fr 380px' :'280px 1fr', gap: 2, transition:'grid-template-columns 0.3s', height:'calc(100vh - 200px)', minHeight: 500 }}>
  {/* Left: file list + plan */}
- <Box sx={{ display:'flex', flexDirection:'column', gap: 2 }}>
+ <Box sx={{ display:'flex', flexDirection:'column', gap: 2, overflow:'auto', '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { bgcolor:'#ccc', borderRadius: 3 } }}>
  {/* Summary */}
  {summary && !editMode && (
  <Paper sx={{ p: 2.5, borderRadius: 3, border:`1px solid ${primaryColor}15`, bgcolor:`${primaryColor}02` }} elevation={0}>
@@ -2332,25 +2108,11 @@ export function ProgrammerAgentPage() {
  {loadingFiles ?'Reloading-..' :'Reload from Disk'}
  </Button>
  )}
- <Button
- variant="outlined"
- fullWidth
- startIcon={phase === 'finalizing' ? <CircularProgress size={16} color="inherit" /> : <FinalizeIcon />}
- onClick={handleFinalize}
- disabled={phase === 'finalizing'}
- sx={{
- fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
- borderColor: primaryColor, color: primaryColor,
-'&:hover': { borderColor: primaryColor, bgcolor:`${primaryColor}08` },
- }}
- >
- {phase === 'finalizing' ? 'Agent Working...' : 'Finalize & Wire Up Backend'}
- </Button>
  </Box>
  </Box>
 
  {/* Right: code/preview viewer with browser chrome (same pattern as Pages tab) */}
- <Paper sx={{ borderRadius: 3, border:'1px solid rgba(0,0,0,0.08)', overflow:'hidden', display:'flex', flexDirection:'column', bgcolor:'#f5f5f7' }} elevation={0}>
+ <Paper sx={{ borderRadius: 3, border:'1px solid rgba(0,0,0,0.08)', overflow:'hidden', display:'flex', flexDirection:'column', bgcolor:'#f5f5f7', minHeight: 0 }} elevation={0}>
 
  {/* "â‚¬"â‚¬"â‚¬ Browser Chrome (same as Pages tab) "â‚¬"â‚¬"â‚¬ */}
  <Box sx={{ display:'flex', alignItems:'center', gap: 1, px: 2, py: 1, bgcolor:'#e8e8ec', borderBottom:'1px solid rgba(0,0,0,0.08)' }}>
@@ -2460,7 +2222,7 @@ export function ProgrammerAgentPage() {
  {/* "â‚¬"â‚¬"â‚¬ Content: Preview / Code / Split (iframe renders actual TSX) "â‚¬"â‚¬"â‚¬ */}
  {splitView && canPreview ? (
  /* Split view: preview left, code right */
- <Box sx={{ flex: 1, display:'grid', gridTemplateColumns:'1fr 1fr', minHeight: 580 }}>
+ <Box sx={{ flex: 1, display:'grid', gridTemplateColumns:'1fr 1fr', minHeight: 0 }}>
  <Box sx={{ bgcolor:'#fff', overflow:'hidden', borderRight:'1px solid rgba(0,0,0,0.08)', position:'relative' }}>
  {previewLoading && (
  <Box sx={{ position:'absolute', top: 0, left: 0, right: 0, bottom: 0, display:'flex', alignItems:'center', justifyContent:'center', bgcolor:'rgba(255,255,255,0.85)', zIndex: 10 }}>
@@ -2470,7 +2232,7 @@ export function ProgrammerAgentPage() {
  )}
  <iframe
  src={previewPort ?`http://localhost:${previewPort}` : undefined}
- style={{ width:'100%', height:'100%', minHeight: 580, border:'none' }}
+ style={{ width:'100%', height:'100%', border:'none' }}
  title="Page Preview"
  />
  </Box>
@@ -2480,7 +2242,7 @@ export function ProgrammerAgentPage() {
  </Box>
  ) : showPreview && canPreview && previewPort ? (
  /* Full preview - Vite dev server */
- <Box sx={{ flex: 1, bgcolor:'#fff', position:'relative', minHeight: 580 }}>
+ <Box sx={{ flex: 1, bgcolor:'#fff', position:'relative', minHeight: 0 }}>
  {previewLoading && (
  <Box sx={{ position:'absolute', top: 0, left: 0, right: 0, bottom: 0, display:'flex', alignItems:'center', justifyContent:'center', bgcolor:'rgba(255,255,255,0.85)', zIndex: 10 }}>
  <CircularProgress size={28} />
@@ -2489,14 +2251,14 @@ export function ProgrammerAgentPage() {
  )}
  <iframe
  src={previewPort ?`http://localhost:${previewPort}` : undefined}
- style={{ width:'100%', height:'100%', minHeight: 580, border:'none' }}
+ style={{ width:'100%', height:'100%', border:'none' }}
  title="Page Preview"
  />
  </Box>
  ) : (
  /* Code view */
  <Box sx={{
- flex: 1, p: 2, minHeight: 580, overflow:'auto', bgcolor:'#1e1e2e',
+ flex: 1, p: 2, minHeight: 0, overflow:'auto', bgcolor:'#1e1e2e',
 '&::-webkit-scrollbar': { width: 6 },
 '&::-webkit-scrollbar-thumb': { bgcolor:'#444', borderRadius: 3 },
  }}>
@@ -2509,7 +2271,7 @@ export function ProgrammerAgentPage() {
  {chatPanelOpen && (
  <Paper sx={{
  borderRadius: 3, border:'1px solid rgba(0,0,0,0.08)', overflow:'hidden',
- display:'flex', flexDirection:'column', bgcolor:'#fafbfc', minHeight: 580,
+ display:'flex', flexDirection:'column', bgcolor:'#fafbfc', minHeight: 0,
  }} elevation={0}>
  {/* Tab header */}
  <Box sx={{ px: 1, py: 0.75, borderBottom:'1px solid #eee', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -3081,265 +2843,6 @@ export function ProgrammerAgentPage() {
  </Box>
  )}
 
- {/* "â‚¬"â‚¬"â‚¬ PHASE: FINALIZING "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
- {phase ==='finalizing' && (
- <Paper sx={{ p: 4, borderRadius: 3, border:`1px solid ${primaryColor}25` }} elevation={0}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 2, mb: 3 }}>
- <CircularProgress size={24} sx={{ color: primaryColor }} />
- <Typography variant="h6" sx={{ fontWeight: 700, color: primaryColor, fontSize:'1.1rem' }}>
- Analyzing Backend Requirements-..
- </Typography>
- </Box>
- <LinearProgress sx={{
- borderRadius: 4, height: 6, mb: 3,
- bgcolor:`${primaryColor}15`,
-'& .MuiLinearProgress-bar': { background:`linear-gradient(90deg, ${primaryColor}, #764ba2)` },
- }} />
- <Typography variant="body2" color="text.secondary">
- {finalizeSummary || 'The AI agent is analyzing pages and implementing backend tasks one by one...'}-..
- </Typography>
- </Paper>
- )}
-
- {/* "â‚¬"â‚¬"â‚¬ PHASE: FINALIZED (backend tasks view) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
- {(phase ==='finalized' || phase ==='finalizing') && (
- <Box sx={{ display:'grid', gridTemplateColumns:'1fr 340px', gap: 3 }}>
- {/* Left: task list */}
- <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
- {/* Summary */}
- <Paper sx={{ p: 3, borderRadius: 3, border:`1px solid ${primaryColor}15`, bgcolor:`${primaryColor}02` }} elevation={0}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 2 }}>
- <Box sx={{
- width: 44, height: 44, borderRadius: 2.5,
- background:`linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
- display:'flex', alignItems:'center', justifyContent:'center',
- }}>
- <BuildIcon sx={{ color:'#fff', fontSize: 22 }} />
- </Box>
- <Box sx={{ flex: 1 }}>
- <Typography variant="h6" sx={{ fontWeight: 700, fontSize:'1.05rem' }}>
- Backend Infrastructure Tasks
- </Typography>
- <Typography variant="body2" color="text.secondary">
- {finalizeSummary}
- </Typography>
- </Box>
- </Box>
-
- {/* Progress bar */}
- {backendTasks.length > 0 && (() => {
- const done = backendTasks.filter(t => t.status ==='done').length;
- const pct = Math.round((done / backendTasks.length) * 100);
- return (
- <Box sx={{ mt: 2 }}>
- <Box sx={{ display:'flex', justifyContent:'space-between', mb: 0.5 }}>
- <Typography variant="caption" sx={{ fontWeight: 600 }}>{done}/{backendTasks.length} tasks complete</Typography>
- <Typography variant="caption" sx={{ fontWeight: 600, color: primaryColor }}>{pct}%</Typography>
- </Box>
- <LinearProgress variant="determinate" value={pct} sx={{
- borderRadius: 4, height: 8,
- bgcolor:`${primaryColor}15`,
-'& .MuiLinearProgress-bar': { background:`linear-gradient(90deg, #4caf50, #66bb6a)`, borderRadius: 4 },
- }} />
- </Box>
- );
- })()}
- </Paper>
-
- {/* Implement All button */}
- {backendTasks.filter(t => t.status ==='pending' && t.implementation).length > 0 && (
- <Button
- variant="contained"
- startIcon={implementingAll ? <CircularProgress size={18} color="inherit" /> : <AutoIcon />}
- onClick={handleImplementAll}
- disabled={implementingAll}
- sx={{
- background:`linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)`,
- fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
-'&:hover': { opacity: 0.9 },
- }}
- >
- {implementingAll ?'Implementing-..' :`Auto-Implement ${backendTasks.filter(t => t.status ==='pending' && t.implementation).length} Tasks`}
- </Button>
- )}
-
- {/* Task cards grouped by category */}
- {(['database','api','integration','security','data'] as const).map(cat => {
- const catTasks = backendTasks.filter(t => t.category === cat);
- if (catTasks.length === 0) return null;
-
- const catLabels: Record<string, { label: string; icon: JSX.Element; color: string }> = {
- database: { label:'Database', icon: <DbIcon sx={{ fontSize: 18 }} />, color:'#2196f3' },
- api: { label:'API Routes', icon: <ApiIcon sx={{ fontSize: 18 }} />, color:'#ff9800' },
- integration: { label:'Integrations', icon: <IntegrationIcon sx={{ fontSize: 18 }} />, color:'#9c27b0' },
- security: { label:'Security', icon: <SecurityIcon sx={{ fontSize: 18 }} />, color:'#f44336' },
- data: { label:'Data', icon: <DataIcon sx={{ fontSize: 18 }} />, color:'#4caf50' },
- };
-
- const info = catLabels[cat];
-
- return (
- <Paper key={cat} sx={{ borderRadius: 3, border:'1px solid rgba(0,0,0,0.06)', overflow:'hidden' }} elevation={0}>
- <Box sx={{ px: 2.5, py: 1.5, bgcolor:`${info.color}08`, borderBottom:`1px solid ${info.color}15`, display:'flex', alignItems:'center', gap: 1 }}>
- <Box sx={{ color: info.color }}>{info.icon}</Box>
- <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize:'0.88rem', flex: 1 }}>{info.label}</Typography>
- <Chip
- label={`${catTasks.filter(t => t.status ==='done').length}/${catTasks.length}`}
- size="small"
- sx={{ height: 22, fontSize:'0.7rem', fontWeight: 700, bgcolor:`${info.color}12`, color: info.color }}
- />
- </Box>
-
- <Box sx={{ display:'flex', flexDirection:'column' }}>
- {catTasks.map(task => (
- <Box key={task.id} sx={{
- display:'flex', alignItems:'flex-start', gap: 1.5, px: 2.5, py: 2,
- borderBottom:'1px solid rgba(0,0,0,0.03)',
- bgcolor: task.status ==='done' ?'rgba(76,175,80,0.03)' : task.status ==='in-progress' ? `${primaryColor}08` :'transparent',
- opacity: task.status ==='done' ? 0.7 : 1,
- transition:'all 0.15s',
- }}>
- {task.status ==='done'
- ? <DoneIcon sx={{ fontSize: 20, color:'#4caf50', mt: 0.3 }} />
- : task.status ==='in-progress'
- ? <CircularProgress size={18} sx={{ color: primaryColor, mt: 0.3 }} />
- : <PendingIcon sx={{ fontSize: 20, color:'#bbb', mt: 0.3 }} />
- }
- <Box sx={{ flex: 1, minWidth: 0 }}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 1, mb: 0.3 }}>
- <Typography variant="body2" sx={{
- fontWeight: 600, fontSize:'0.85rem',
- textDecoration: task.status ==='done' ?'line-through' :'none',
- }}>
- {task.title}
- </Typography>
- <Chip
- label={task.priority}
- size="small"
- sx={{
- height: 18, fontSize:'0.6rem', fontWeight: 700,
- bgcolor: task.priority ==='high' ?'rgba(244,67,54,0.08)' : task.priority ==='medium' ?'rgba(255,152,0,0.08)' :'rgba(0,0,0,0.04)',
- color: task.priority ==='high' ?'#f44336' : task.priority ==='medium' ?'#ff9800' :'#999',
- }}
- />
- {task.implementation && task.status !=='done' && (
- <Chip icon={<AutoIcon sx={{ fontSize:'12px !important' }} />} label="Auto" size="small"
- sx={{ height: 18, fontSize:'0.6rem', fontWeight: 700, bgcolor:'rgba(76,175,80,0.08)', color:'#4caf50' }} />
- )}
- {!task.implementation && task.status !=='done' && (
- <Chip icon={<ManualIcon sx={{ fontSize:'12px !important' }} />} label="Manual" size="small"
- sx={{ height: 18, fontSize:'0.6rem', fontWeight: 700, bgcolor:'rgba(0,0,0,0.04)', color:'#999' }} />
- )}
- </Box>
- <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
- {task.description}
- </Typography>
- </Box>
- {task.implementation && task.status !=='done' && (
- <Button
- size="small"
- variant="outlined"
- onClick={() => handleImplementTask(task)}
- disabled={implementingTask === task.id || implementingAll}
- startIcon={implementingTask === task.id ? <CircularProgress size={12} /> : <AutoIcon />}
- sx={{
- textTransform:'none', fontWeight: 600, fontSize:'0.72rem',
- borderColor:'#4caf50', color:'#4caf50', flexShrink: 0,
- borderRadius: 1.5, px: 1.5, minWidth: 0,
-'&:hover': { borderColor:'#4caf50', bgcolor:'rgba(76,175,80,0.04)' },
- }}
- >
- {implementingTask === task.id ?'-..' :'Run'}
- </Button>
- )}
- </Box>
- ))}
- </Box>
- </Paper>
- );
- })}
-
- {/* Navigation */}
- <Box sx={{ display:'flex', gap: 2, justifyContent:'space-between' }}>
- <Button variant="outlined" onClick={() => setPhase('results')} sx={{ borderRadius: 2, textTransform:'none' }}>
- Back to Code
- </Button>
- <Button
- variant="contained"
- startIcon={<BugIcon />}
- onClick={handleQaReview}
- sx={{
- background:`linear-gradient(135deg, #ff9800 0%, #f57c00 100%)`,
- fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
-'&:hover': { opacity: 0.9 },
- }}
- >
- QA &amp; Docs Agent
- </Button>
- <Button variant="outlined" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setBackendTasks([]); setQaIssues([]); setDocsFiles([]); }}
- sx={{ borderRadius: 2, textTransform:'none' }}>
- New Build
- </Button>
- </Box>
- </Box>
-
- {/* Right: overview + tips */}
- <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
- {/* Generated pages reference */}
- <Paper sx={{ p: 3, borderRadius: 3, border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
- <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, fontSize:'0.88rem' }}>Generated Pages</Typography>
- <Box sx={{ display:'flex', flexDirection:'column', gap: 0.5 }}>
- {files.filter(f => f.path.match(/\.(tsx|jsx)$/)).map((f, i) => (
- <Box key={i} sx={{ display:'flex', alignItems:'center', gap: 1, py: 0.5 }}>
- <FileIcon sx={{ fontSize: 14, color: primaryColor }} />
- <Typography variant="caption" sx={{ fontWeight: 500 }}>{f.path.split('/').pop()}</Typography>
- </Box>
- ))}
- </Box>
- </Paper>
-
- {/* Category legend */}
- <Paper sx={{ p: 3, borderRadius: 3, border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
- <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, fontSize:'0.88rem' }}>Task Categories</Typography>
- <Box sx={{ display:'flex', flexDirection:'column', gap: 1 }}>
- {[
- { icon: <DbIcon sx={{ fontSize: 16 }} />, label:'Database', desc:'Tables, records, seeds', color:'#2196f3' },
- { icon: <ApiIcon sx={{ fontSize: 16 }} />, label:'API Routes', desc:'Endpoints the pages call', color:'#ff9800' },
- { icon: <IntegrationIcon sx={{ fontSize: 16 }} />, label:'Integrations', desc:'Stripe, email, webhooks', color:'#9c27b0' },
- { icon: <SecurityIcon sx={{ fontSize: 16 }} />, label:'Security', desc:'Auth, JWT, validation', color:'#f44336' },
- { icon: <DataIcon sx={{ fontSize: 16 }} />, label:'Data', desc:'Sample/mock data', color:'#4caf50' },
- ].map(c => (
- <Box key={c.label} sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Box sx={{ color: c.color }}>{c.icon}</Box>
- <Box sx={{ flex: 1 }}>
- <Typography variant="caption" sx={{ fontWeight: 600, display:'block' }}>{c.label}</Typography>
- <Typography variant="caption" color="text.secondary" sx={{ fontSize:'0.65rem' }}>{c.desc}</Typography>
- </Box>
- </Box>
- ))}
- </Box>
- </Paper>
-
- {/* Badge legend */}
- <Paper sx={{ p: 3, borderRadius: 3, border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
- <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, fontSize:'0.88rem' }}>Badges</Typography>
- <Box sx={{ display:'flex', flexDirection:'column', gap: 1 }}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Chip icon={<AutoIcon sx={{ fontSize:'12px !important' }} />} label="Auto" size="small"
- sx={{ height: 20, fontSize:'0.65rem', fontWeight: 700, bgcolor:'rgba(76,175,80,0.08)', color:'#4caf50' }} />
- <Typography variant="caption" color="text.secondary">Can be auto-implemented (DB seed)</Typography>
- </Box>
- <Box sx={{ display:'flex', alignItems:'center', gap: 1 }}>
- <Chip icon={<ManualIcon sx={{ fontSize:'12px !important' }} />} label="Manual" size="small"
- sx={{ height: 20, fontSize:'0.65rem', fontWeight: 700, bgcolor:'rgba(0,0,0,0.04)', color:'#999' }} />
- <Typography variant="caption" color="text.secondary">Requires manual coding / setup</Typography>
- </Box>
- </Box>
- </Paper>
- </Box>
- </Box>
- )}
-
  {/* "â‚¬"â‚¬"â‚¬ PHASE: QA-RUNNING (loading) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
  {phase ==='qa-running' && (
  <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
@@ -3468,144 +2971,11 @@ export function ProgrammerAgentPage() {
  )}
 
  {/* Navigation */}
- <Box sx={{ display:'flex', gap: 2, justifyContent:'space-between' }}>
- <Button variant="outlined" onClick={() => setPhase('finalized')} sx={{ borderRadius: 2, textTransform:'none' }}>
- Back to Tasks
+ <Box sx={{ display:'flex', gap: 2, justifyContent:'flex-end' }}>
+ <Button variant="outlined" onClick={() => setPhase('results')} sx={{ borderRadius: 2, textTransform:'none' }}>
+ Back to Review
  </Button>
- <Button
- variant="contained"
- startIcon={<DocsIcon />}
- onClick={handleGenerateDocs}
- sx={{
- background:`linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
- fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
-'&:hover': { opacity: 0.9 },
- }}
- >
- Generate Documentation
- </Button>
- <Button variant="outlined" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setBackendTasks([]); setQaIssues([]); setDocsFiles([]); }}
- sx={{ borderRadius: 2, textTransform:'none' }}>
- New Build
- </Button>
- </Box>
- </Box>
- )}
-
- {/* "â‚¬"â‚¬"â‚¬ PHASE: DOCUMENTING (loading) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
- {phase ==='documenting' && (
- <Paper sx={{ p: 4, borderRadius: 3, textAlign:'center', border:'1px solid rgba(0,0,0,0.06)' }} elevation={0}>
- <DocsIcon sx={{ fontSize: 48, color: primaryColor, mb: 2 }} />
- <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Generating Documentation-..</Typography>
- <LinearProgress sx={{
- borderRadius: 4, height: 6, maxWidth: 400, mx:'auto', mb: 2,
-'& .MuiLinearProgress-bar': { background:`linear-gradient(90deg, ${primaryColor}, #764ba2)` },
- }} />
- <Typography variant="body2" color="text.secondary">
- Writing README, component docs, and API reference-..
- </Typography>
- </Paper>
- )}
-
- {/* "â‚¬"â‚¬"â‚¬ PHASE: DOCUMENTED (show docs) "â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬"â‚¬ */}
- {phase ==='documented' && (
- <Box sx={{ display:'flex', flexDirection:'column', gap: 3 }}>
- {/* Header */}
- <Paper sx={{ p: 3, borderRadius: 3, border:`1px solid ${primaryColor}15`, bgcolor:`${primaryColor}02` }} elevation={0}>
- <Box sx={{ display:'flex', alignItems:'center', gap: 2 }}>
- <Box sx={{
- width: 48, height: 48, borderRadius: 3,
- background:`linear-gradient(135deg, ${primaryColor} 0%, #764ba2 100%)`,
- display:'flex', alignItems:'center', justifyContent:'center',
- }}>
- <DocsIcon sx={{ color:'#fff', fontSize: 24 }} />
- </Box>
- <Box sx={{ flex: 1 }}>
- <Typography variant="h6" sx={{ fontWeight: 700, fontSize:'1.1rem' }}>
- Documentation Generated
- </Typography>
- <Typography variant="body2" color="text.secondary">
- {docsFiles.length} documentation file{docsFiles.length !== 1 ?'s' :''} ready
- </Typography>
- </Box>
- </Box>
- </Paper>
-
- {/* Doc tabs */}
- {docsFiles.length > 0 && (
- <Paper sx={{ borderRadius: 3, border:'1px solid rgba(0,0,0,0.06)', overflow:'hidden' }} elevation={0}>
- {/* Tab headers */}
- <Box sx={{ display:'flex', borderBottom:'1px solid rgba(0,0,0,0.06)', bgcolor:'rgba(0,0,0,0.01)' }}>
- {docsFiles.map((doc, idx) => (
- <Box
- key={idx}
- onClick={() => setActiveDocTab(idx)}
- sx={{
- px: 2.5, py: 1.5, cursor:'pointer',
- fontWeight: activeDocTab === idx ? 700 : 500,
- fontSize:'0.8rem',
- borderBottom: activeDocTab === idx ?`2px solid ${primaryColor}` :'2px solid transparent',
- color: activeDocTab === idx ? primaryColor :'text.secondary',
- transition:'all 0.15s',
- display:'flex', alignItems:'center', gap: 0.5,
-'&:hover': { bgcolor:'rgba(0,0,0,0.02)' },
- }}
- >
- <FileIcon sx={{ fontSize: 14 }} />
- {doc.path.split('/').pop()}
- </Box>
- ))}
- </Box>
-
- {/* Doc content */}
- <Box sx={{ p: 3, maxHeight:'60vh', overflow:'auto' }}>
- <Box sx={{ display:'flex', justifyContent:'flex-end', mb: 1 }}>
- <Tooltip title="Copy">
- <IconButton size="small" onClick={() => {
- navigator.clipboard.writeText(docsFiles[activeDocTab]?.content ||'');
- setSnack({ open: true, msg:'Copied to clipboard', severity:'success' });
- }}>
- <CopyIcon sx={{ fontSize: 16 }} />
- </IconButton>
- </Tooltip>
- </Box>
- <Box
- component="pre"
- sx={{
- fontFamily:'"Fira Code", "JetBrains Mono", monospace',
- fontSize:'0.8rem',
- lineHeight: 1.6,
- whiteSpace:'pre-wrap',
- wordBreak:'break-word',
- m: 0,
- color:'#333',
- }}
- >
- {docsFiles[activeDocTab]?.content ||''}
- </Box>
- </Box>
- </Paper>
- )}
-
- {/* Navigation */}
- <Box sx={{ display:'flex', gap: 2, justifyContent:'space-between' }}>
- <Button variant="outlined" onClick={() => setPhase('qa-results')} sx={{ borderRadius: 2, textTransform:'none' }}>
- Back to QA
- </Button>
- <Button
- variant="contained"
- startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
- onClick={handleSaveDocs}
- disabled={saving || docsFiles.length === 0}
- sx={{
- background:`linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)`,
- fontWeight: 700, borderRadius: 2, textTransform:'none', py: 1.2,
-'&:hover': { opacity: 0.9 },
- }}
- >
- {saving ?'Saving-..' :'Save Documentation'}
- </Button>
- <Button variant="outlined" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setBackendTasks([]); setQaIssues([]); setDocsFiles([]); }}
+ <Button variant="outlined" onClick={() => { setPhase('setup'); setFiles([]); setPlan([]); setSummary(''); setPages([]); setBackendTasks([]); setQaIssues([]); }}
  sx={{ borderRadius: 2, textTransform:'none' }}>
  New Build
  </Button>

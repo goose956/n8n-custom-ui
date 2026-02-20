@@ -7,6 +7,7 @@ import { CryptoService } from'../shared/crypto.service';
 import { DatabaseService } from'../shared/database.service';
 import { AnalyticsService } from'../analytics/analytics.service';
 import { getPageTemplate, TEMPLATE_PAGE_TYPES } from'./members-templates';
+import { generateScraperFiles, ScraperTemplateParams, scraperResultsPageTemplate } from'./apify-scraper-templates';
 import { GitOps } from './git-ops';
 import { RetryEngine, RetryEngineContext } from './retry-engine';
 import { PromptHelpers } from './prompt-helpers';
@@ -36,7 +37,7 @@ export interface MembersAreaPage {
  id: string;
  name: string;
  description: string;
- type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'custom';
+ type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'scraper' |'custom';
  required: boolean;
 }
 
@@ -142,6 +143,7 @@ const EST_TOKENS_PER_PAGE: Record<string, number> = {
  profile: 120, // template + shared AI copy
  settings: 120, // template + shared AI copy
  contact: 120, // template + shared AI copy
+ scraper: 0,   // static template, zero AI tokens
 };
 
 // --- Default members area pages ---------------------------------------------
@@ -152,6 +154,7 @@ const DEFAULT_MEMBERS_PAGES: MembersAreaPage[] = [
  { id:'settings', name:'Settings', description:'Account settings, notifications, privacy, and preferences', type:'settings', required: true },
  { id:'contact', name:'Contact', description:'Contact form that sends messages directly to admin inbox via /api/contact', type:'contact', required: true },
  { id:'admin', name:'Admin Panel', description:'Admin dashboard with analytics and contact form submissions -- wired to the live backend API', type:'admin', required: true },
+ { id:'scraper', name:'Data Scraper', description:'Apify scraper integration \u2014 run data scrapers, view results in a searchable table, filter and export to CSV', type:'scraper', required: true },
 ];
 
 // --- Service -------------------------------------------------------------------
@@ -696,6 +699,13 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  if (contactPage) pages = [...pages, contactPage];
  }
 
+ // Ensure scraper page is always included
+ const hasScraper = pages.some(p => p.id ==='scraper' || p.type ==='scraper');
+ if (!hasScraper) {
+ const scraperPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='scraper');
+ if (scraperPage) pages = [...pages, scraperPage];
+ }
+
  // Resolve the app's name and description so we can inject them into prompts
  let appName ='';
  let appDescription ='';
@@ -744,6 +754,18 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  ?`\n\nWEB RESEARCH (use for inspiration and best practices):\n${searchResults.flatMap(s => s.results).map((r: any, i: number) =>`${i + 1}. ${r.title}: ${r.description}`).join('\n')}`
  :'';
 
+ // Resolve app info for templates (needed by Steps 1-4)
+ let templateAppName = appName ||'App';
+ let templateAppId = request.appId || 1;
+ let templatePrimaryColor ='#667eea';
+ if (request.appId) {
+ try {
+ const data = this.db.readSync();
+ const app = (data.apps || []).find((a: any) => a.id === request.appId);
+ if (app) templatePrimaryColor = app.primary_color ||'#667eea';
+ } catch (err) { this.logger.debug("Caught (use defaults): " + err); }
+ }
+
  // Step 1: Generate shared types + navigation layout with sub-agent
  allPlanSteps.push({
  id: 1,
@@ -759,13 +781,28 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  try {
  const sharedResult = await this.callAI(
  subAgentModel,
-`You are a TypeScript expert. Generate clean shared types and a sidebar navigation component for a members area.\n${this.getDesignSystemContext()}\n${this.getAppContext(request.appId)}`,
-`${appIdentity}\n\nGenerate two files for a members area with these pages:\n${pagesDescription}\n\nThe members area is for: ${request.prompt}\n\nFile 1: TypeScript interfaces and types for all the data structures needed across the members area. Type names, field names, and comments should reflect the actual domain of this app (not generic names).\nFile 2: A MembersLayout component that has a left sidebar navigation with links to each page, and a main content area. The sidebar should highlight the active page. Navigation labels must be specific to this app's features. Use MUI components.\n\nUse the ===FILE: path=== / ===END_FILE=== format.\n\nReturn ONLY the code. No explanations.`,
+`You are a TypeScript expert. Generate clean shared types for a members area.\n${this.getDesignSystemContext()}\n${this.getAppContext(request.appId)}`,
+`${appIdentity}\n\nGenerate ONE file of TypeScript interfaces and types for a members area with these pages:\n${pagesDescription}\n\nThe members area is for: ${request.prompt}\n\nType names, field names, and comments should reflect the actual domain of this app (not generic names).\n\nUse the ===FILE: frontend/src/components/types.ts=== / ===END_FILE=== format.\n\nReturn ONLY the code. No explanations.`,
  );
  totalSubAgentTokens += sharedResult.tokensUsed;
  sharedCode = sharedResult.content;
  const sharedFiles = this.parseFiles(sharedResult.content);
- allFiles.push(...sharedFiles);
+
+ // Remove any AI-generated MembersLayout — we build it deterministically below
+ const typesOnly = sharedFiles.filter(f => !f.path.includes('MembersLayout'));
+ allFiles.push(...typesOnly);
+
+ // Build MembersLayout deterministically from the actual pages list (zero AI tokens)
+ const layoutContent = this.buildMembersLayoutTemplate(pages, templateAppName, templatePrimaryColor);
+ const layoutSlug = this.getAppSlug(request.appId) || this.toKebabCase(templateAppName);
+ allFiles.push({
+   path: `frontend/src/components/members/${layoutSlug}/MembersLayout.tsx`,
+   content: layoutContent,
+   language: 'typescript',
+   description: 'Members area sidebar layout (template)',
+ });
+ this.logger.log('Built MembersLayout from template (0 AI tokens, all pages included)');
+
  allPlanSteps[0].status ='complete';
  } catch (err) {
  this.logger.debug("Caught: " + err);
@@ -775,18 +812,6 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  // Step 2: Generate each page
  const complexPageTypes = ['custom'];
  let stepId = 2;
-
- // Resolve app info for templates
- let templateAppName = appName ||'App';
- let templateAppId = request.appId || 1;
- let templatePrimaryColor ='#667eea';
- if (request.appId) {
- try {
- const data = this.db.readSync();
- const app = (data.apps || []).find((a: any) => a.id === request.appId);
- if (app) templatePrimaryColor = app.primary_color ||'#667eea';
- } catch (err) { this.logger.debug("Caught (use defaults): " + err); }
- }
 
  // Generate AI copy for all template pages in one cheap call
  let templateCopy: Record<string, Record<string, any>> = {};
@@ -822,6 +847,25 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  allPlanSteps.push(step);
 
  try {
+ // Handle scraper page via dedicated Apify template (zero AI tokens)
+ if (page.type === 'scraper') {
+ const scraperCode = scraperResultsPageTemplate({
+ slug: this.getAppSlug(request.appId) || this.toKebabCase(templateAppName),
+ appName: templateAppName,
+ primaryColor: templatePrimaryColor,
+ appId: templateAppId,
+ });
+ this.logger.log('Using Apify scraper template for scraper page (0 AI tokens)');
+ allFiles.push({
+ path:`${membersPath}/${page.id}.tsx`,
+ content: scraperCode,
+ language:'typescript',
+ description:`${page.name} page (template)`,
+ });
+ step.status ='complete';
+ continue;
+ }
+
  // Check for static template first -- saves ~2000-4000 tokens per page
  const templateCode = getPageTemplate(page.type, {
  appName: templateAppName,
@@ -1018,6 +1062,50 @@ ${routerRoutes}
  routerStep.status ='failed';
  }
 
+ // Step 4: Generate Apify scraper backend integration (controller/service/module) -- zero AI tokens
+ const scraperStep: PlanStep = {
+ id: stepId++,
+ title:'Apify scraper backend',
+ description:'Generate Apify scraper NestJS backend (controller/service/module) and register in app',
+ agent:'sub-agent',
+ status:'running',
+ };
+ allPlanSteps.push(scraperStep);
+
+ try {
+ const appSlug = this.getAppSlug(request.appId) || this.toKebabCase(templateAppName);
+ const scraperParams: ScraperTemplateParams = {
+ slug: appSlug,
+ appName: templateAppName,
+ primaryColor: templatePrimaryColor,
+ appId: templateAppId,
+ };
+ const scraperFiles = generateScraperFiles(scraperParams, membersPath);
+
+ // Add backend files only (frontend page already generated in Step 2 via template)
+ for (const bf of scraperFiles.backendFiles) {
+ allFiles.push({ path: bf.path, content: bf.content, language: bf.language, description: bf.description });
+ }
+
+ // Auto-register the scraper module in app.module.ts and add API config entry
+ const regOk = this.registerNestModule(scraperFiles.moduleName, scraperFiles.modulePath);
+ if (regOk) {
+ this.logger.log(`Registered ${scraperFiles.moduleName} in app.module.ts`);
+ } else {
+ this.logger.warn(`Could not register ${scraperFiles.moduleName} — manual registration may be needed`);
+ }
+ const apiOk = this.addApiConfigEntry(scraperFiles.apiConfigKey, scraperFiles.apiConfigValue);
+ if (apiOk) {
+ this.logger.log(`Added API config entry: ${scraperFiles.apiConfigKey}`);
+ }
+
+ this.logger.log(`Generated Apify scraper backend: ${scraperFiles.backendFiles.length} files (0 AI tokens)`);
+ scraperStep.status ='complete';
+ } catch (err) {
+ this.logger.debug('Caught (scraper generation): ' + err);
+ scraperStep.status ='failed';
+ }
+
  this.recordUsage(orchestratorModel, subAgentModel, totalOrchestratorTokens, totalSubAgentTokens);
 
  // Auto-save all generated files to disk immediately
@@ -1068,7 +1156,7 @@ ${routerRoutes}
  }
 
  private toKebabCase(str: string): string {
- return str.replace(/([a-z])([A-Z])/g, '$1-$2').replace(/[\s_]+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
+ return str.replace(/([a-z])([A-Z])/g, '$1-$2').replace(/[\s_]+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '');
  }
 
  // --- Single page / component generate (original flow) ---------------------
@@ -1657,6 +1745,144 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
  .replace(/^```(?:tsx?|typescript|javascript)?\n?/m,'')
  .replace(/\n?```$/m,'')
  .trim();
+ }
+
+ // --- Deterministic MembersLayout builder ---------------------------------
+
+ private buildMembersLayoutTemplate(pages: MembersAreaPage[], appName: string, primaryColor: string): string {
+   const iconMap: Record<string, string> = {
+     dashboard: 'Dashboard', profile: 'Person', settings: 'Settings',
+     admin: 'AdminPanelSettings', contact: 'ContactSupport', scraper: 'Storage',
+   };
+
+   const navItems = pages.map(p => {
+     const icon = iconMap[p.type] || iconMap[p.id] || 'Article';
+     const label = p.name || p.id.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+     return '    { path: \'/' + p.id + '\', label: \'' + label.replace(/'/g, "\\'") + '\', icon: <' + icon + ' /> }';
+   });
+
+   const usedIcons = new Set<string>(['Article']);
+   pages.forEach(p => usedIcons.add(iconMap[p.type] || iconMap[p.id] || 'Article'));
+   const iconImports = Array.from(usedIcons).sort().join(', ');
+   const safeName = appName.replace(/'/g, "\\'");
+
+   const lines: string[] = [];
+   lines.push("import { useState } from 'react';");
+   lines.push("import { Box, Typography, List, ListItemButton, ListItemIcon, ListItemText, Divider, Avatar, useMediaQuery, IconButton, Drawer } from '@mui/material';");
+   lines.push('import { ' + iconImports + " } from '@mui/icons-material';");
+   lines.push("import MenuIcon from '@mui/icons-material/Menu';");
+   lines.push("import { Link, useLocation, Outlet } from 'react-router-dom';");
+   lines.push('');
+   lines.push('const SIDEBAR_WIDTH = 260;');
+   lines.push("const PRIMARY = '" + primaryColor + "';");
+   lines.push('');
+   lines.push('const navItems = [');
+   lines.push(navItems.join(',\n') + ',');
+   lines.push('];');
+   lines.push('');
+   lines.push('function SidebarContent({ currentPath }: { currentPath: string }) {');
+   lines.push('  return (');
+   lines.push("    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#111827', color: '#e5e7eb' }}>");
+   lines.push("      <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>");
+   lines.push("        <Avatar sx={{ bgcolor: PRIMARY, width: 36, height: 36, fontSize: 14, fontWeight: 700 }}>");
+   lines.push("          {'" + safeName.charAt(0).toUpperCase() + "'}");
+   lines.push('        </Avatar>');
+   lines.push("        <Typography variant=\"subtitle1\" sx={{ fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>");
+   lines.push('          ' + safeName);
+   lines.push('        </Typography>');
+   lines.push('      </Box>');
+   lines.push("      <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />");
+   lines.push('      <List sx={{ flex: 1, py: 1 }}>');
+   lines.push('        {navItems.map((item) => (');
+   lines.push('          <ListItemButton');
+   lines.push('            key={item.path}');
+   lines.push('            component={Link}');
+   lines.push('            to={item.path}');
+   lines.push('            selected={currentPath === item.path}');
+   lines.push('            sx={{');
+   lines.push("              mx: 1, borderRadius: 1.5, mb: 0.5,");
+   lines.push("              color: currentPath === item.path ? '#fff' : '#9ca3af',");
+   lines.push("              bgcolor: currentPath === item.path ? PRIMARY : 'transparent',");
+   lines.push("              '&:hover': { bgcolor: currentPath === item.path ? PRIMARY : 'rgba(255,255,255,0.06)' },");
+   lines.push('            }}');
+   lines.push('          >');
+   lines.push('            <ListItemIcon sx={{ color: \'inherit\', minWidth: 36 }}>{item.icon}</ListItemIcon>');
+   lines.push('            <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />');
+   lines.push('          </ListItemButton>');
+   lines.push('        ))}');
+   lines.push('      </List>');
+   lines.push('    </Box>');
+   lines.push('  );');
+   lines.push('}');
+   lines.push('');
+   lines.push('export function MembersLayout() {');
+   lines.push('  const location = useLocation();');
+   lines.push("  const isMobile = useMediaQuery('(max-width:900px)');");
+   lines.push('  const [mobileOpen, setMobileOpen] = useState(false);');
+   lines.push('  const sidebar = <SidebarContent currentPath={location.pathname} />;');
+   lines.push('');
+   lines.push('  return (');
+   lines.push("    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f9fafb' }}>");
+   lines.push('      {isMobile ? (');
+   lines.push('        <>');
+   lines.push("          <IconButton onClick={() => setMobileOpen(true)} sx={{ position: 'fixed', top: 12, left: 12, zIndex: 1300 }}>");
+   lines.push('            <MenuIcon />');
+   lines.push('          </IconButton>');
+   lines.push("          <Drawer open={mobileOpen} onClose={() => setMobileOpen(false)} PaperProps={{ sx: { width: SIDEBAR_WIDTH } }}>");
+   lines.push('            {sidebar}');
+   lines.push('          </Drawer>');
+   lines.push('        </>');
+   lines.push('      ) : (');
+   lines.push("        <Box sx={{ width: SIDEBAR_WIDTH, flexShrink: 0, height: '100vh', position: 'sticky', top: 0 }}>");
+   lines.push('          {sidebar}');
+   lines.push('        </Box>');
+   lines.push('      )}');
+   lines.push('      <Box sx={{ flex: 1, p: { xs: 2, md: 3 } }}>');
+   lines.push('        <Outlet />');
+   lines.push('      </Box>');
+   lines.push('    </Box>');
+   lines.push('  );');
+   lines.push('}');
+
+   return lines.join('\n') + '\n';
+ }
+
+ // --- Add API config entry ------------------------------------------------
+
+ private addApiConfigEntry(key: string, value: string): boolean {
+ const configPath = path.resolve(__dirname, '..', '..', '..', 'frontend', 'src', 'config', 'api.ts');
+ try {
+ if (!fs.existsSync(configPath)) {
+ this.logger.warn('api.ts config file not found, skipping API config entry');
+ return false;
+ }
+ let content = fs.readFileSync(configPath, 'utf-8');
+
+ // Already present?
+ if (content.includes(key + ':') || content.includes(`'${key}':`)) {
+ this.logger.log(`API config key '${key}' already exists, skipping`);
+ return true;
+ }
+
+ // Find the closing of the API_CONFIG export
+ // Pattern: insert before the last `};` in the file
+ const lastBrace = content.lastIndexOf('};');
+ if (lastBrace < 0) {
+ // Try alternate pattern: last `}`
+ const altBrace = content.lastIndexOf('}');
+ if (altBrace < 0) return false;
+ content = content.slice(0, altBrace) + `  ${key}: \`${value}\`,\n` + content.slice(altBrace);
+ } else {
+ content = content.slice(0, lastBrace) + `  ${key}: \`${value}\`,\n` + content.slice(lastBrace);
+ }
+
+ fs.writeFileSync(configPath, content, 'utf-8');
+ this.logger.log(`Added API config entry: ${key}`);
+ return true;
+ } catch (err) {
+ this.logger.debug('Caught (API config entry): ' + err);
+ return false;
+ }
  }
 
  // --- Auto-register a NestJS module in app.module.ts ---------------------

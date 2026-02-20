@@ -273,8 +273,8 @@ function SettingsPage() {
  const handleSaveIntegrationKey = async (keyName: keyof IntegrationKeys) => {
  const value = integrationKeys[keyName];
  
- if (!value || value ==='--------') {
- setMessage({ type:'error', text:'Please enter a valid API key' });
+ if (!value || value ==='--------' || value.startsWith('--------')) {
+ setMessage({ type:'error', text:'Please enter a valid API key (clear the field first if updating)' });
  return;
  }
 
@@ -558,7 +558,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="sk-..." value={integrationKeys.openai} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openai: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="sk-..." value={integrationKeys.openai} onFocus={() => { if (integrationKeys.openai === '--------') setIntegrationKeys((prev) => ({ ...prev, openai: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openai: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('openai')} disabled={integrationKeysLoading.openai || !integrationKeys.openai} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.openai ?'Saving...' :'Save'}
@@ -603,7 +603,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="sk-or-..." value={integrationKeys.openrouter} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openrouter: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="sk-or-..." value={integrationKeys.openrouter} onFocus={() => { if (integrationKeys.openrouter === '--------') setIntegrationKeys((prev) => ({ ...prev, openrouter: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, openrouter: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('openrouter')} disabled={integrationKeysLoading.openrouter || !integrationKeys.openrouter} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.openrouter ?'Saving...' :'Save'}
@@ -631,7 +631,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="sk-ant-..." value={integrationKeys.claude} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, claude: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="sk-ant-..." value={integrationKeys.claude} onFocus={() => { if (integrationKeys.claude === '--------') setIntegrationKeys((prev) => ({ ...prev, claude: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, claude: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('claude')} disabled={integrationKeysLoading.claude || !integrationKeys.claude} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.claude ?'Saving...' :'Save'}
@@ -659,7 +659,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="BSA..." value={integrationKeys.brave} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, brave: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="BSA..." value={integrationKeys.brave} onFocus={() => { if (integrationKeys.brave === '--------') setIntegrationKeys((prev) => ({ ...prev, brave: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, brave: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('brave')} disabled={integrationKeysLoading.brave || !integrationKeys.brave} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.brave ?'Saving...' :'Save'}
@@ -687,7 +687,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="Your Make.com API key" value={integrationKeys.make} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, make: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="Your Make.com API key" value={integrationKeys.make} onFocus={() => { if (integrationKeys.make === '--------') setIntegrationKeys((prev) => ({ ...prev, make: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, make: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('make')} disabled={integrationKeysLoading.make || !integrationKeys.make} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.make ?'Saving...' :'Save'}
@@ -718,12 +718,12 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Token" type="password" placeholder="apify_api_..." value={integrationKeys.apify} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, apify: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Token" type="password" placeholder="apify_api_..." value={integrationKeys.apify} onFocus={() => { if (integrationKeys.apify === '--------') setIntegrationKeys((prev) => ({ ...prev, apify: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, apify: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('apify')} disabled={integrationKeysLoading.apify || !integrationKeys.apify} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.apify ?'Saving...' :'Save'}
  </Button>
- {integrationKeys.apify ==='********' && (
+ {integrationKeys.apify ==='--------' && (
  <>
  <Button variant="outlined" onClick={() => handleTestIntegrationKey('apify')} disabled={integrationKeysTestLoading.apify} size="small" sx={{ borderColor:'#e0e0e0', color:'#666','&:hover': { borderColor:'#667eea', color:'#667eea' } }}>
  {integrationKeysTestLoading.apify ?'Testing...' :'Test'}
@@ -746,7 +746,7 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="API Key" type="password" placeholder="Your Zapier API key" value={integrationKeys.zapier} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, zapier: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="API Key" type="password" placeholder="Your Zapier API key" value={integrationKeys.zapier} onFocus={() => { if (integrationKeys.zapier === '--------') setIntegrationKeys((prev) => ({ ...prev, zapier: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, zapier: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('zapier')} disabled={integrationKeysLoading.zapier || !integrationKeys.zapier} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.zapier ?'Saving...' :'Save'}
@@ -777,12 +777,12 @@ function SettingsPage() {
  <Chip icon={<CheckCircleIcon sx={{ fontSize:'14px !important' }} />} label="Configured" size="small" sx={{ height: 24, fontSize:'0.75rem', fontWeight: 600, bgcolor:'#e8f5e9', color:'#27ae60','& .MuiChip-icon': { color:'#27ae60' } }} />
  )}
  </Box>
- <TextField fullWidth label="Secret Key" type="password" placeholder="sk_live_... or sk_test_..." value={integrationKeys.stripe} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, stripe: e.target.value }))} variant="outlined" size="small" />
+ <TextField fullWidth label="Secret Key" type="password" placeholder="sk_live_... or sk_test_..." value={integrationKeys.stripe} onFocus={() => { if (integrationKeys.stripe === '--------') setIntegrationKeys((prev) => ({ ...prev, stripe: '' })); }} onChange={(e) => setIntegrationKeys((prev) => ({ ...prev, stripe: e.target.value }))} variant="outlined" size="small" />
  <Box sx={{ display:'flex', gap: 1 }}>
  <Button variant="contained" onClick={() => handleSaveIntegrationKey('stripe')} disabled={integrationKeysLoading.stripe || !integrationKeys.stripe} size="small" sx={{ background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)','&:hover': { background:'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' } }}>
  {integrationKeysLoading.stripe ?'Saving...' :'Save'}
  </Button>
- {integrationKeys.stripe ==='********' && (
+ {integrationKeys.stripe ==='--------' && (
  <>
  <Button variant="outlined" onClick={() => handleTestIntegrationKey('stripe')} disabled={integrationKeysTestLoading.stripe} size="small" sx={{ borderColor:'#e0e0e0', color:'#666','&:hover': { borderColor:'#667eea', color:'#667eea' } }}>
  {integrationKeysTestLoading.stripe ?'Testing...' :'Test'}

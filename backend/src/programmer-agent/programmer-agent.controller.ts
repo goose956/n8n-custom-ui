@@ -295,28 +295,7 @@ export class ProgrammerAgentController {
  return this.agentService.qaAutoFixAll(body.files, body.issues as any, body.model);
  }
 
- /**
- * Generate documentation for the members area
- */
- @Post('generate-docs')
- async generateDocs(
- @Body()
- body: {
- files: { path: string; content: string; language: string; description?: string }[];
- appId?: number;
- backendTasks?: {
- id: string;
- category: string;
- title: string;
- description: string;
- status: string;
- priority: string;
- }[];
- model?: string;
- },
- ) {
- return this.agentService.generateDocs(body.files, body.appId, body.backendTasks as any, body.model);
- }
+ // generate-docs endpoint removed — docs step dropped from generation flow
 
  /**
  * List saved members area files from disk for editing
@@ -326,38 +305,7 @@ export class ProgrammerAgentController {
  return this.agentService.getMembersFiles(appId ? parseInt(appId) : undefined);
  }
 
- /**
- * Finalize Agent -- analyze pages + implement tasks one-by-one with SSE progress
- */
- @Post('finalize-agent')
- async finalizeAgent(
- @Body()
- body: {
- files: { path: string; content: string; language: string; description?: string }[];
- appId?: number;
- model?: string;
- },
- @Res() res: Response,
- ) {
- res.setHeader('Content-Type','text/event-stream');
- res.setHeader('Cache-Control','no-cache');
- res.setHeader('Connection','keep-alive');
- res.setHeader('X-Accel-Buffering','no');
- res.flushHeaders();
-
- const sendEvent = (event: string, data: any) => {
- res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
- };
-
- try {
- await this.agentService.finalizeAgentStream(body.files as any, body.appId, body.model, sendEvent);
- } catch (err) {
- sendEvent('error', { message: err instanceof Error ? err.message :'Unknown error' });
- } finally {
- sendEvent('done', {});
- res.end();
- }
- }
+ // finalize-agent endpoint removed — finalize step dropped from generation flow
 
  /**
  * Coder Agent -- autonomous builder with SSE streaming for live progress
