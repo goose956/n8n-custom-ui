@@ -1,0 +1,1071 @@
+
+
+High-Impact Skill Catalogue for an AI 
+Skill-Based Platform
+Overview
+This document presents 20 carefully selected skills designed for maximum cross-industry 
+reusability. Each skill is classified by its primary category (Input, Processing, or Output), the 
+industries it serves, and the specific job to be done it addresses. The guiding principle is 
+composability: these skills should snap together like building blocks so that an accountant, 
+a recruiter, a marketer, and a logistics manager can all assemble workflows from the same 
+shared library.
+The skills are ordered to move roughly from ingestion (getting data in), through processing 
+(transforming, analysing, enriching), to output (delivering a finished artefact). This mirrors 
+the natural anatomy of any workflow.
+Skills at a Glance
+#Skill NameCategoryPrimary I/OIndustries Served
+1
+Email Ingest & 
+Parse
+Input
+Email → 
+Structured Data
+All
+2
+Document / 
+PDF Data 
+Extraction
+Input
+PDF/DOCX → 
+Structured Data
+Accounting, 
+Legal, 
+Healthcare, 
+Insurance
+3
+Web Scrape & 
+Collect
+Input
+URL → 
+Structured Data
+Sales, 
+Marketing, 
+Research, 
+Recruitment
+4
+CSV / 
+Spreadsheet 
+Normaliser
+Input
+CSV/XLSX → 
+Clean Table
+All
+5
+Image & 
+Receipt OCR
+Input
+Image → 
+Structured Data
+Accounting, 
+Retail, 
+Logistics, 
+Expenses
+
+6
+Form / Survey 
+Response 
+Collector
+Input
+Form 
+Submission → 
+Structured Data
+All
+7
+Text 
+Summariser
+Processing
+Long Text → 
+Short Summary
+All
+8
+Sentiment & 
+Tone Analyser
+Processing
+Text → Score + 
+Label
+Support, 
+Marketing, HR, 
+Product
+9
+Data 
+Enrichment & 
+Lookup
+Processing
+Partial Record 
+→ Enriched 
+Record
+Sales, 
+Recruitment, 
+Marketing
+10
+Classifier & 
+Triage Router
+Processing
+Item → 
+Category + 
+Route
+Support, 
+Operations, 
+Legal, IT
+11
+Template Filler 
+/ Mail-Merge
+Processing
+Template + 
+Data → 
+Populated 
+Document
+All
+12
+Translation & 
+Localisation
+Processing
+Text (Language 
+A) → Text 
+(Language B)
+All 
+(international)
+13
+Calculation & 
+Formula Engine
+Processing
+Numbers + 
+Rules → Result
+Accounting, 
+Finance, 
+Engineering, 
+Logistics
+14
+Compliance & 
+Policy Checker
+Processing
+Document → 
+Pass/Fail + 
+Issues
+Legal, Finance, 
+Healthcare, HR
+15
+Generate PDF 
+Report
+Output
+Structured Data 
+→ Formatted 
+PDF
+All
+16
+Generate Excel / 
+Spreadsheet
+Output
+Structured Data 
+→ XLSX
+Accounting, 
+Finance, 
+Operations, HR
+17
+Send Email 
+(Compose & 
+Deliver)
+Output
+Data + 
+Template → 
+Sent Email
+All
+
+Detailed Skill Descriptions
+INPUT SKILLS — Getting Data In
+1. Email Ingest & Parse
+Category: Input
+Input: Raw email (subject, body, attachments)
+Output: Structured JSON fields (sender, date, intent, key entities, attachment references)
+Job to be done: "I receive information via email and need it extracted into a usable format 
+so the rest of my workflow can act on it."
+Why this is high-impact: Email remains the universal business inbox. Every industry — 
+from a solicitor receiving case updates, to an e-commerce store getting supplier invoices, to 
+a recruiter receiving CVs — starts workflows from an email. A skill that can ingest an email, 
+identify its intent (invoice, enquiry, complaint, application), pull out key fields, and hand off 
+structured data is the single most reusable entry point on any platform. It pairs naturally 
+with almost every other skill on this list.
+Cross-industry examples: Accounting (invoice emails), Recruitment (application emails), 
+Customer Support (ticket emails), Sales (lead enquiry emails), Legal (document delivery 
+emails).
+2. Document / PDF Data Extraction
+Category: Input
+18
+Calendar Event 
+Creator
+Output
+Date/Time + 
+Details → 
+Calendar Entry
+All
+19
+Structured Data 
+Push (API / 
+Webhook)
+Output
+Data → External 
+System
+All (CRM, ERP, 
+databases)
+20
+Dashboard / 
+Chart Generator
+Output
+Dataset → 
+Visual Chart 
+Image or HTML
+Marketing, 
+Finance, 
+Operations, 
+Executive
+
+Input: PDF, DOCX, or scanned document
+Output: Structured data (key-value pairs, tables, line items)
+Job to be done: "I have a document — a contract, invoice, report, or form — and I need the 
+important data pulled out so I can use it downstream."
+Why this is high-impact: Businesses run on documents. Invoices, contracts, medical 
+records, insurance claims, shipping manifests, and compliance reports all arrive as PDFs or 
+Word files. A skill that can extract tables, line items, dates, amounts, and named entities 
+from these documents eliminates the most tedious data-entry bottleneck in any 
+organisation. It is the gateway skill for any document-heavy workflow and feeds directly 
+into skills like the Calculation Engine (#13), Template Filler (#11), or Generate Excel (#16).
+Cross-industry examples: Accounting (invoice line items), Legal (contract clause 
+extraction), Healthcare (lab report data), Insurance (claims forms), Logistics (bills of lading).
+3. Web Scrape & Collect
+Category: Input
+Input: URL or search query
+Output: Structured data (records, lists, text blocks)
+Job to be done: "I need to gather information from the web — competitor prices, job 
+listings, contact details, product specs — and bring it into my workflow as clean data."
+Why this is high-impact: The web is the largest unstructured data source in the world. 
+Sales teams scrape leads from directories, marketers monitor competitor pricing, recruiters 
+harvest job boards, and researchers collect public datasets. A reusable scraping skill that 
+accepts a URL (or a list of URLs) and returns structured records is a force multiplier. It turns 
+the open internet into an input source for any downstream processing or output skill.
+Cross-industry examples: Sales (lead list building from LinkedIn/directories), Marketing 
+(competitor price monitoring), Recruitment (job board aggregation), Research (public data 
+collection), Real Estate (property listing aggregation).
+4. CSV / Spreadsheet Normaliser
+Category: Input
+Input: Raw CSV or XLSX file (messy headers, mixed formats, duplicates)
+Output: Clean, validated, consistently formatted table
+Job to be done: "I've received a spreadsheet from a client, supplier, or colleague and the 
+data is messy — inconsistent headers, mixed date formats, duplicates. I need it cleaned up 
+
+before I can work with it."
+Why this is high-impact: Spreadsheets are the lingua franca of business data exchange, 
+but they are almost never clean. Every industry deals with incoming CSVs that need header 
+mapping, deduplication, type coercion (dates, currencies), and validation. This skill sits 
+between raw data arrival and any analytical or output step. Without it, every downstream 
+skill has to handle dirty data individually, which is fragile and wasteful.
+Cross-industry examples: Accounting (bank statement imports), HR (employee roster 
+uploads), Marketing (mailing list imports), Logistics (shipment manifests), Operations 
+(inventory counts).
+5. Image & Receipt OCR
+Category: Input
+Input: Photograph or scan of a receipt, label, whiteboard, or handwritten note
+Output: Structured text and data fields
+Job to be done: "I have a photo of a receipt, a shipping label, or a whiteboard sketch and I 
+need the text and numbers extracted as data."
+Why this is high-impact: Mobile-first work means people photograph receipts for expense 
+reports, snap shipping labels in warehouses, and capture whiteboard notes after meetings. 
+OCR bridges the physical-to-digital gap. As a standalone skill it is reusable across expense 
+management, logistics, field services, and any context where a camera is faster than a 
+keyboard. It feeds naturally into the Calculation Engine (#13) or Generate Excel (#16).
+Cross-industry examples: Accounting (expense receipt capture), Logistics (shipping label 
+reading), Field Services (meter reading capture), Retail (price tag verification), Healthcare 
+(prescription label reading).
+6. Form / Survey Response Collector
+Category: Input
+Input: Form submission or survey response (via webhook, API, or structured file)
+Output: Normalised record with validated fields
+Job to be done: "People fill out forms — applications, feedback surveys, intake 
+questionnaires — and I need each response captured, validated, and ready for processing."
+Why this is high-impact: Forms are the structured counterpart to email. Every business 
+collects information through forms: client intake, job applications, customer feedback, 
+event registrations, support requests. A skill that ingests form responses, validates required 
+fields, and normalises the data into a consistent schema is the starting point for countless 
+
+workflows. It pairs with the Classifier (#10) to route responses and with Send Email (#17) to 
+acknowledge receipt.
+Cross-industry examples: HR (job applications), Healthcare (patient intake), Legal (client 
+onboarding), Education (enrolment forms), Customer Support (bug reports), Events 
+(registration).
+PROCESSING SKILLS — Transforming & Enriching
+7. Text Summariser
+Category: Processing
+Input: Long-form text (article, transcript, report, email thread)
+Output: Concise summary (configurable length and style)
+Job to be done: "I have a long document, meeting transcript, or email thread and I need 
+the key points distilled into a short, readable summary."
+Why this is high-impact: Information overload is universal. Lawyers summarise case files, 
+executives summarise board reports, support agents summarise ticket histories, and 
+marketers summarise competitor research. A configurable summariser — where the user 
+can set the target length, tone, and focus — is one of the most frequently invoked 
+processing steps in any knowledge-work workflow. It sits between almost any input skill 
+and any output skill.
+Cross-industry examples: Legal (case file summaries), Executive (board report briefs), 
+Support (ticket history summaries), Research (literature review condensation), Sales 
+(meeting recap summaries).
+8. Sentiment & Tone Analyser
+Category: Processing
+Input: Text (review, email, chat message, survey response)
+Output: Sentiment score, tone label (positive/negative/neutral, urgent/casual/formal), key 
+phrases
+Job to be done: "I need to understand the emotional tone of incoming messages so I can 
+prioritise, route, or respond appropriately."
+Why this is high-impact: Understanding tone changes the priority and routing of almost 
+any communication. Support teams flag angry customers for immediate escalation. 
+Marketing teams gauge campaign reception. HR teams monitor employee satisfaction in 
+
+survey responses. Product teams analyse app store reviews. A sentiment skill is a 
+lightweight but high-leverage processing step that adds a decision-making signal to any 
+text-based workflow.
+Cross-industry examples: Customer Support (ticket urgency scoring), Marketing 
+(campaign feedback analysis), HR (employee pulse survey analysis), Product (app review 
+monitoring), Sales (deal risk assessment from email tone).
+9. Data Enrichment & Lookup
+Category: Processing
+Input: Partial record (e.g., company name, email address, domain)
+Output: Enriched record (full company details, social profiles, industry, revenue, location)
+Job to be done: "I have a name, email, or domain and I need to fill in the missing details — 
+company size, industry, location, social profiles — so I can qualify, segment, or personalise."
+Why this is high-impact: Partial data is everywhere. A sales lead comes in with just an 
+email. A marketing list has company names but no industry codes. A recruitment pipeline 
+has candidate names but no LinkedIn URLs. An enrichment skill that can take a thin record 
+and return a fat one — by calling public APIs, searching the web, or querying databases — is 
+a critical middle step. It dramatically increases the value of any lead, contact, or prospect 
+list.
+Cross-industry examples: Sales (lead enrichment), Marketing (audience segmentation), 
+Recruitment (candidate profiling), Finance (KYC / vendor verification), Real Estate (buyer 
+profiling).
+10. Classifier & Triage Router
+Category: Processing
+Input: Unstructured item (email, ticket, document, form response)
+Output: Category label + routing instruction (e.g., "Billing Issue → Finance Team")
+Job to be done: "Incoming items need to be sorted into categories and sent to the right 
+person or queue — automatically, without someone reading every single one."
+Why this is high-impact: Triage is the hidden bottleneck in every organisation. Support 
+tickets need categorising. Emails need routing. Legal documents need classifying by type. 
+Insurance claims need sorting by severity. A classifier skill that can read an item, assign it to 
+a predefined category, and output a routing instruction is the connective tissue between 
+input skills and the rest of the workflow. It replaces the manual "someone reads it and 
+decides where it goes" step that exists in every business.
+
+Cross-industry examples: Customer Support (ticket categorisation), Legal (document type 
+classification), Insurance (claims severity triage), IT (incident priority routing), HR 
+(application screening), Operations (procurement request routing).
+11. Template Filler / Mail-Merge
+Category: Processing
+Input: Template (with placeholders) + data record(s)
+Output: Populated document(s) — one per record
+Job to be done: "I have a template — a letter, contract, proposal, or report layout — and a 
+set of data. I need each record merged into the template to produce a finished document."
+Why this is high-impact: Mail-merge is one of the oldest automation patterns and it 
+remains one of the most universally needed. Accountants merge client data into 
+engagement letters. Lawyers merge case details into court filings. Marketers merge 
+audience segments into personalised emails. HR merges employee data into offer letters. A 
+template-filler skill is the bridge between structured data and finished documents, and it 
+pairs directly with the PDF (#15), Excel (#16), and Email (#17) output skills.
+Cross-industry examples: Legal (contract generation), Accounting (engagement letters), 
+HR (offer letters), Marketing (personalised campaigns), Sales (proposal generation), 
+Education (certificates).
+12. Translation & Localisation
+Category: Processing
+Input: Text in source language
+Output: Text in target language (with optional locale-specific formatting for dates, 
+currencies, units)
+Job to be done: "I have content in one language and need it accurately translated — and 
+ideally localised — for a different market or audience."
+Why this is high-impact: Any business that operates internationally or serves multilingual 
+customers needs translation. E-commerce product listings, customer support responses, 
+marketing copy, legal documents, and internal communications all require translation. A 
+skill that handles not just word-for-word translation but also locale-aware formatting (date 
+formats, currency symbols, measurement units) is reusable across every industry with an 
+international footprint.
+Cross-industry examples: E-commerce (product listing translation), Customer Support 
+(multilingual ticket responses), Marketing (campaign localisation), Legal (contract 
+
+translation), Tourism (booking confirmation localisation).
+13. Calculation & Formula Engine
+Category: Processing
+Input: Numbers + rules/formulas (e.g., tax rates, discount tiers, unit conversions)
+Output: Computed result (totals, margins, projections, converted values)
+Job to be done: "I need to apply business rules — tax calculations, pricing formulas, unit 
+conversions, financial projections — to a set of numbers and get a reliable result."
+Why this is high-impact: Every industry has calculations that sit between raw data and a 
+final deliverable. Accountants calculate VAT. Logistics companies calculate shipping costs. 
+Retailers calculate margin and discount tiers. Engineers calculate material quantities. A 
+formula engine skill that accepts numbers and a rule set (or formula) and returns computed 
+results is a critical processing step that prevents users from having to embed business logic 
+into every individual workflow. It is the "spreadsheet brain" of the platform.
+Cross-industry examples: Accounting (tax calculations, profit margins), Logistics (shipping 
+cost estimation), Retail (pricing and discount calculations), Finance (loan amortisation, 
+interest), Engineering (material quantity calculations), HR (payroll calculations).
+14. Compliance & Policy Checker
+Category: Processing
+Input: Document or data record + rule set (regulations, internal policies, checklists)
+Output: Pass/fail status + list of issues/violations with references
+Job to be done: "I need to check whether a document, process, or data set complies with a 
+specific set of rules — regulatory requirements, internal policies, or industry standards."
+Why this is high-impact: Compliance is a universal concern that spans every regulated 
+industry. Financial services check transactions against AML rules. Healthcare organisations 
+verify HIPAA compliance. Legal teams review contracts against internal policies. HR 
+departments check job postings against employment law. A compliance checker skill that 
+can take a document and a rule set and return a pass/fail verdict with specific issues cited is 
+high-value because non-compliance carries real financial and legal risk. It is also one of the 
+hardest tasks to do manually at scale.
+Cross-industry examples: Finance (AML/KYC checks), Healthcare (HIPAA compliance), 
+Legal (contract policy review), HR (employment law compliance), Manufacturing (safety 
+regulation checks), Real Estate (disclosure requirement verification).
+
+OUTPUT SKILLS — Delivering Results
+15. Generate PDF Report
+Category: Output
+Input: Structured data + layout/template instructions
+Output: Formatted PDF file
+Job to be done: "I need to turn my data and analysis into a professional, shareable PDF 
+report that looks polished and is ready to send to a client, manager, or regulator."
+Why this is high-impact: PDF is the universal format for formal business deliverables. 
+Accountants deliver financial statements as PDFs. Consultants deliver reports. Lawyers 
+deliver briefs. Marketers deliver campaign reports. Healthcare providers deliver patient 
+summaries. A skill that takes structured data and a layout specification and produces a 
+clean, branded PDF is the final mile of countless workflows. It is the skill that turns internal 
+data into an external-facing deliverable.
+Cross-industry examples: Accounting (financial statements), Consulting (client reports), 
+Legal (case briefs), Marketing (campaign performance reports), Healthcare (patient 
+discharge summaries), Real Estate (property valuation reports).
+16. Generate Excel / Spreadsheet
+Category: Output
+Input: Structured data + optional formatting rules (headers, formulas, conditional 
+formatting)
+Output: XLSX file with formatted sheets, formulas, and charts
+Job to be done: "I need to deliver data in a spreadsheet that the recipient can open, filter, 
+sort, and work with — not just a static report, but a live, editable file."
+Why this is high-impact: While PDF is for final deliverables, Excel is for working 
+deliverables. Clients expect to receive data they can manipulate. Accountants deliver trial 
+balances. Operations managers deliver inventory reports. HR delivers headcount analyses. 
+A skill that can produce a properly formatted XLSX — with headers, data types, formulas, 
+and even conditional formatting — is essential because it respects the recipient's need to 
+interact with the data. It pairs with the CSV Normaliser (#4) on the input side and the 
+Calculation Engine (#13) on the processing side.
+Cross-industry examples: Accounting (trial balances, ledgers), HR (headcount reports), 
+Operations (inventory reports), Finance (budget models), Marketing (campaign data 
+exports), Logistics (shipment tracking sheets).
+
+17. Send Email (Compose & Deliver)
+Category: Output
+Input: Recipient(s), subject, body content (from template or generated text), optional 
+attachments
+Output: Sent email (with delivery confirmation)
+Job to be done: "I need to send an email — a notification, a report, a follow-up, or a 
+personalised message — as the final step of my workflow."
+Why this is high-impact: Email is the most universal output channel. Every workflow that 
+involves communicating a result to a person ends with an email: sending an invoice, 
+confirming an appointment, delivering a report, following up with a lead, notifying a team 
+member. A send-email skill that can compose a message (from a template or generated 
+content), attach files (from the PDF or Excel skills), and deliver it is the most commonly used 
+final step on any automation platform. It is the output counterpart to Email Ingest (#1).
+Cross-industry examples: All industries — invoice delivery, appointment confirmations, 
+report distribution, lead follow-ups, internal notifications, customer acknowledgements.
+18. Calendar Event Creator
+Category: Output
+Input: Date, time, duration, title, description, attendees
+Output: Calendar event (Google Calendar, Outlook, iCal)
+Job to be done: "I need to create a calendar event — a meeting, a deadline, a reminder, or 
+a booking — as the result of my workflow."
+Why this is high-impact: Scheduling is a cross-industry need that touches every role. Sales 
+reps book demos. Recruiters schedule interviews. Healthcare clinics book appointments. 
+Legal teams set court date reminders. Project managers create milestone deadlines. A 
+calendar skill that can create, update, or cancel events across major calendar platforms is a 
+high-frequency output step. It pairs naturally with the Email Ingest (#1) skill (extracting 
+dates from emails) and the Classifier (#10) skill (routing scheduling requests).
+Cross-industry examples: Sales (demo scheduling), Recruitment (interview booking), 
+Healthcare (patient appointments), Legal (court date reminders), Education (class 
+scheduling), Services (client booking).
+19. Structured Data Push (API / Webhook)
+Category: Output
+
+Input: Structured data payload (JSON)
+Output: Delivered to external system via API call or webhook (CRM, ERP, database, Slack, 
+etc.)
+Job to be done: "I need to push the result of my workflow into another system — update a 
+CRM record, add a row to a database, post a message to Slack, or trigger another workflow."
+Why this is high-impact: Not every workflow ends with a human-readable document. 
+Many end by updating a system of record: adding a lead to a CRM, updating an inventory 
+count in an ERP, posting a notification to Slack, or triggering a downstream webhook. A 
+generic "push data to an API" skill is the most flexible output primitive on the platform. It 
+makes every workflow extensible by allowing it to connect to any system with an API. 
+Without this skill, the platform is a closed loop; with it, the platform becomes a node in a 
+larger ecosystem.
+Cross-industry examples: Sales (CRM updates), Operations (ERP inventory updates), IT 
+(Slack/Teams notifications), Marketing (audience list pushes to ad platforms), Finance 
+(accounting system journal entries), All (webhook triggers for downstream workflows).
+20. Dashboard / Chart Generator
+Category: Output
+Input: Dataset (table or time series) + chart type specification
+Output: Visual chart (PNG image or interactive HTML) or mini-dashboard
+Job to be done: "I need to turn my data into a visual — a bar chart, line graph, pie chart, or 
+simple dashboard — so that stakeholders can understand the story at a glance."
+Why this is high-impact: Data without visualisation is data without impact. Executives 
+want dashboards, not spreadsheets. Marketers want campaign performance charts. 
+Finance teams want revenue trend lines. Operations managers want throughput graphs. A 
+chart generator skill that can take a dataset and a chart specification and produce a clean 
+visual — either as a static image (for embedding in PDFs or emails) or as interactive HTML 
+(for dashboards) — is the skill that turns raw analysis into persuasive communication. It 
+pairs with the PDF Report (#15) and Send Email (#17) skills to deliver visual reports.
+Cross-industry examples: Finance (revenue trend charts), Marketing (campaign 
+performance dashboards), Operations (throughput and efficiency graphs), HR (headcount 
+and attrition visuals), Sales (pipeline funnel charts), Executive (KPI dashboards).
+Composability Matrix
+
+The real power of this skill set is how they chain together. Below are example workflow 
+chains that demonstrate cross-industry reuse:
+WorkflowSkills UsedIndustry
+Invoice Processing Pipeline
+Email Ingest (#1) → PDF 
+Extraction (#2) → Calculation 
+Engine (#13) → Generate 
+Excel (#16) → Send Email (#17)
+Accounting
+Lead Enrichment & Outreach
+Web Scrape (#3) → Data 
+Enrichment (#9) → Template 
+Filler (#11) → Send Email (#17)
+Sales
+Customer Feedback Analysis
+Form Collector (#6) → 
+Sentiment Analyser (#8) → 
+Classifier (#10) → Dashboard 
+Generator (#20) → Generate 
+PDF (#15)
+Product / Support
+Compliance Document 
+Review
+Email Ingest (#1) → PDF 
+Extraction (#2) → Compliance 
+Checker (#14) → Generate 
+PDF (#15) → Send Email (#17)
+Legal / Finance
+Multilingual Support Triage
+Email Ingest (#1) → 
+Translation (#12) → 
+Sentiment Analyser (#8) → 
+Classifier (#10) → Send Email 
+(#17)
+Customer Support
+Expense Report Automation
+Image OCR (#5) → CSV 
+Normaliser (#4) → Calculation 
+Engine (#13) → Generate PDF 
+(#15) → Send Email (#17)
+All (Expenses)
+Recruitment Pipeline
+Email Ingest (#1) → Text 
+Summariser (#7) → Classifier 
+(#10) → Data Enrichment (#9) 
+→ Calendar Creator (#18)
+HR / Recruitment
+Inventory Reorder Alert
+CSV Normaliser (#4) → 
+Calculation Engine (#13) → 
+Classifier (#10) → API Push 
+(#19) → Send Email (#17)
+Retail / Logistics
+
+Design Principles Applied
+1.Input diversity: The six input skills cover the major data entry points — email, 
+documents, web, spreadsheets, images, and forms — ensuring the platform can ingest 
+data from virtually any source a business encounters.
+2.Processing generality: The eight processing skills are deliberately domain-agnostic. A 
+summariser does not care whether it is summarising a legal brief or a marketing report. 
+A classifier does not care whether it is triaging support tickets or insurance claims. This 
+generality is what makes them reusable across industries.
+3.Output format coverage: The six output skills cover the major delivery formats — PDF 
+(formal), Excel (interactive), Email (communication), Calendar (scheduling), API (system 
+integration), and Charts (visual). Together they ensure that any workflow can deliver its 
+result in the format the recipient expects.
+4.Composability over completeness: Rather than building 100 narrow, industry-specific 
+skills, these 20 general-purpose skills can be composed into thousands of industry-
+specific workflows. The platform's value comes from the combinations, not the 
+individual pieces.
+Expanded Skills (21-50)
+INPUT SKILLS (Continued)
+21. Audio / Video Transcription
+Category: Input
+Input: Audio or video file (MP3, WAV, MP4, etc.)
+Output: Text transcript with optional speaker diarization and timestamps
+Job to be done: "I have a recording of a meeting, interview, or podcast, and I need a 
+written transcript to search, summarise, or repurpose."
+Why this is high-impact: As video and audio become primary communication channels, 
+the need to convert spoken words into text is universal. Sales teams transcribe sales calls 
+for coaching. Marketers transcribe webinars to create blog posts. Researchers transcribe 
+interviews for analysis. A transcription skill is the gateway to applying any text-based 
+processing skill (like Summariser #7 or Classifier #10) to audio/video content.
+Cross-industry examples: Sales (call transcription), Marketing (webinar transcription), HR 
+(interview transcription), Media (podcast transcription), Legal (deposition transcription).
+
+22. QR / Barcode Scanner
+Category: Input
+Input: Image containing a QR code or barcode
+Output: The encoded data (URL, product ID, text)
+Why this is high-impact: QR codes and barcodes are the physical world's hyperlinks. They 
+are used on packaging, in warehouses, on marketing materials, and at events. A skill that 
+can read these codes from an image allows workflows to be triggered from physical objects. 
+It bridges the gap between the physical and digital worlds in a structured way, making it 
+essential for logistics, retail, and event management.
+Cross-industry examples: Logistics (inventory scanning), Retail (product information 
+lookup), Marketing (event check-in, campaign tracking), Manufacturing (work-in-progress 
+tracking).
+PROCESSING SKILLS (Continued)
+23. Data Validation & Formatting
+Category: Processing
+Input: Data record with potentially invalid fields (e.g., phone numbers, emails, addresses)
+Output: Validated record with standardised formatting, plus an error report
+Job to be done: "I need to ensure the data I've collected is valid and consistently formatted 
+— phone numbers in E.164 format, emails are valid, postcodes are correct — before I use it."
+Why this is high-impact: Dirty data is the enemy of automation. Invalid email addresses 
+cause bounces. Incorrectly formatted phone numbers prevent outreach. Bad addresses 
+lead to failed deliveries. A data validation skill that cleans and standardises contact 
+information is a crucial pre-processing step for any workflow that involves communication 
+or shipping. It's the quality control gate for your data.
+Cross-industry examples: Sales/Marketing (contact list cleaning), E-commerce (shipping 
+address validation), Finance (customer data validation), HR (employee record 
+standardisation).
+24. Document Comparison (Diff & Redline)
+Category: Processing
+Input: Two versions of a document (text, DOCX, PDF)
+
+Output: A new document showing the differences (a
+'redline' view) or a structured list of changes.
+Job to be done: "I need to compare two versions of a contract, proposal, or manuscript to 
+see exactly what has changed, without missing a single comma."
+Why this is high-impact: Version control is critical in legal, sales, and creative fields. 
+Lawyers redline contracts. Sales teams track changes in proposals. Editors review 
+manuscript revisions. A document comparison skill that can reliably highlight every 
+addition, deletion, and modification is a massive time-saver and risk-reducer. It replaces 
+the painstaking and error-prone manual review process.
+Cross-industry examples: Legal (contract negotiation), Sales (proposal revisions), 
+Procurement (RFP updates), Writing/Editing (manuscript changes), Compliance (policy 
+updates).
+25. Approval Chain Router
+Category: Processing
+Input: A request (e.g., for purchase, leave, publication) + associated data (amount, 
+department)
+Output: Routing decision for the next approver in a multi-step chain
+Job to be done: "I need to route requests for approval through a specific chain of 
+command, where the next step depends on rules like the amount or department."
+Why this is high-impact: Many business processes require multi-step approvals. A 
+purchase order might need manager approval, then finance approval if over a certain 
+amount. A blog post might need editorial approval, then legal approval. This skill 
+automates the routing logic, ensuring requests go to the right people in the right order, with 
+escalations for delays. It's the engine of any workflow that requires sign-off.
+Cross-industry examples: Finance (purchase order approvals), HR (leave requests), 
+Marketing (campaign budget approvals), Legal (document sign-off), IT (access requests).
+26. Deadline & Reminder Engine
+Category: Processing
+Input: A date, a task, and a reminder schedule (e.g., "remind 3 days before, 1 day before, 
+and on the day")
+Output: Scheduled notifications
+
+Job to be done: "I need to track important dates and deadlines and automatically send 
+reminders to the right people at the right times so nothing falls through the cracks."
+Why this is high-impact: Forgetting deadlines has real consequences. Missed legal filings, 
+late project deliveries, and forgotten contract renewals all create risk and cost money. A 
+reminder engine that can be programmed with a set of dates and a notification cadence is a 
+universal safety net. It's a proactive skill that prevents problems before they happen.
+Cross-industry examples: Legal (filing deadlines), Project Management (task reminders), 
+Sales (follow-up reminders), HR (performance review deadlines), Finance (payment 
+reminders).
+27. Content Generation (Blog Post / Article)
+Category: Processing
+Input: A topic, keywords, and an outline or source material
+Output: A draft article or blog post
+Job to be done: "I need to create a well-structured, SEO-friendly blog post or article based 
+on a topic or a set of notes, without starting from a blank page."
+Why this is high-impact: Content marketing is a core function for almost every business, 
+but it's time-consuming. A skill that can take a brief or an outline and generate a coherent 
+first draft frees up marketers and writers to focus on editing, strategy, and promotion. It's a 
+powerful content creation accelerator.
+Cross-industry examples: Marketing (blog posts, articles), HR (internal communications), 
+Sales (educational content for leads), PR (press releases).
+28. Content Repurposing (Long-form to Social)
+Category: Processing
+Input: A long-form piece of content (article, video transcript, webinar recording)
+Output: A set of short-form social media posts (e.g., for Twitter, LinkedIn, Facebook)
+Job to be done: "I have a great piece of long-form content, and I need to break it down into 
+a series of engaging social media posts to maximize its reach."
+Why this is high-impact: Creating content is only half the battle; distributing it is the other 
+half. This skill automates the process of extracting key quotes, ideas, and takeaways from a 
+single large asset and formatting them for different social platforms. It multiplies the ROI of 
+every piece of content created.
+
+Cross-industry examples: Marketing (repurposing blog posts), Media (repurposing 
+articles), Education (repurposing lectures), Corporate Comms (repurposing 
+announcements).
+29. Knowledge Base Q&A
+Category: Processing
+Input: A question + a designated knowledge base (a collection of documents)
+Output: A direct answer synthesized from the knowledge base, with source citations
+Job to be done: "I need to get a direct answer to my question by searching through our 
+company's internal documentation, without having to read through dozens of files."
+Why this is high-impact: As companies grow, finding information in internal wikis, 
+intranets, and document stores becomes a major productivity drain. A Q&A skill that uses 
+retrieval-augmented generation (RAG) to find relevant information and synthesize a direct 
+answer is a game-changer for internal support, HR, and any knowledge-intensive role. It 
+turns a messy document library into a searchable oracle.
+Cross-industry examples: IT/HR Support (internal helpdesks), Customer Support (agent 
+assistance), R&D (research retrieval), Sales Enablement (product information queries).
+30. File Format Converter
+Category: Processing
+Input: A file in one format (e.g., DOCX, PNG, XLSX)
+Output: The same file converted to another format (e.g., PDF, JPG, CSV)
+Job to be done: "I have a file in one format, but I need it in another format for a specific 
+purpose — a Word doc needs to be a PDF for sharing, a PNG needs to be a JPG for the web."
+Why this is high-impact: File format incompatibility is a constant, low-level friction point 
+in business. This skill acts as a universal adapter, ensuring that files are always in the right 
+format for the next step in the workflow. It's a simple but essential utility that makes many 
+other skills work together seamlessly.
+Cross-industry examples: All industries — converting documents to PDF, images for web 
+use, spreadsheets to CSV for import.
+31. Document Merger / Splitter
+Category: Processing
+Input: Multiple documents to merge, or one document to split with rules
+
+Output: A single merged document, or multiple smaller documents
+Job to be done: "I need to combine several PDFs into a single report, or I need to split a 
+large document into separate chapters or sections."
+Why this is high-impact: Assembling and disassembling documents is a common 
+administrative task. Legal teams merge exhibits into a single filing. HR teams assemble 
+onboarding packets. Accountants split large reports for different departments. This skill 
+automates the digital equivalent of a stapler and a staple remover, saving time and 
+reducing errors in document preparation.
+Cross-industry examples: Legal (merging case files), HR (assembling onboarding packets), 
+Finance (splitting reports), Real Estate (combining transaction documents).
+32. Deduplication Engine
+Category: Processing
+Input: A list of records (contacts, companies, products) with potential duplicates
+Output: A single, clean list with duplicates removed or merged
+Job to be done: "I have a list of contacts or products that I know has duplicates, and I need 
+to clean it up so I have a single source of truth."
+Why this is high-impact: Duplicate data corrupts marketing campaigns, skews sales 
+reporting, and leads to wasted effort. A deduplication skill that can identify and merge 
+duplicate records based on fuzzy matching (e.g., "John Smith" vs. "J. Smith") is essential for 
+maintaining data hygiene in any CRM, ERP, or marketing automation system.
+Cross-industry examples: Sales/Marketing (CRM contact deduplication), E-commerce 
+(product catalogue deduplication), Operations (inventory list cleaning), HR (candidate 
+database deduplication).
+33. Price & Feature Comparator
+Category: Processing
+Input: A list of products or services with their attributes (from web scraping or a database)
+Output: A structured comparison table or a "best value" recommendation based on criteria
+Job to be done: "I need to compare the prices and features of competing products or 
+services to make a purchasing decision or to position my own product."
+Why this is high-impact: Comparison shopping is a fundamental business activity, 
+whether for procurement, competitive analysis, or personal use. This skill automates the 
+process of gathering data from multiple sources and presenting it in a structured, easy-to-
+
+compare format. It supports better purchasing decisions and provides valuable market 
+intelligence.
+Cross-industry examples: Procurement (supplier price comparison), Marketing 
+(competitive analysis), IT (software purchasing decisions), Finance (investment option 
+comparison).
+34. Image Editor (Resize, Crop, Watermark)
+Category: Processing
+Input: An image file + editing instructions (dimensions, coordinates, watermark image)
+Output: An edited image file
+Why this is high-impact: Images rarely come in the exact format needed. Website banners 
+need to be a specific size, social media posts require different aspect ratios, and marketing 
+materials need to be watermarked. An image editing skill that can automate these basic 
+transformations saves countless hours for marketing, web, and creative teams.
+Cross-industry examples: Marketing (resizing images for web and social), E-commerce 
+(cropping product photos), Photography (batch watermarking), Real Estate (resizing 
+property photos).
+35. Proposal & Quote Generator
+Category: Processing
+Input: Client details, a list of line items (products/services), and pricing rules
+Output: A formatted proposal or quote document (PDF or DOCX)
+Job to be done: "I need to quickly generate a professional-looking proposal or quote for a 
+client based on their specific needs, without manually creating the document each time."
+Why this is high-impact: For any service-based business, from freelancers to large 
+agencies, generating proposals is a constant and critical sales activity. This skill automates 
+the creation of these documents, pulling in client data, calculating prices based on selected 
+services, and formatting it all into a polished template. It dramatically speeds up the sales 
+cycle.
+Cross-industry examples: Agencies (client proposals), Freelancers (project quotes), Sales 
+Teams (sales quotes), Construction (bids and estimates), Event Planning (service quotes).
+OUTPUT SKILLS (Continued)
+
+36. Text-to-Speech (Audio Generation)
+Category: Output
+Input: Text content
+Output: An audio file (MP3) of the text being read
+Job to be done: "I need to turn this article (or these notes) into an audio file so I can listen 
+to it, or so I can create a voiceover for a video."
+Why this is high-impact: Audio is a powerful and convenient medium. This skill makes any 
+text-based content accessible to people who prefer to listen, such as commuters or those 
+with visual impairments. It also enables the creation of audio-first content like podcast 
+snippets or video voiceovers without hiring a voice actor.
+Cross-industry examples: Media (article narration), Education (lesson audio), Marketing 
+(video voiceovers), Accessibility (content for visually impaired users).
+37. Image Generation
+Category: Output
+Input: A descriptive text prompt
+Output: An AI-generated image file
+Job to be done: "I need a unique image for my blog post, presentation, or social media 
+campaign, but I don't have a budget for stock photos or a designer."
+Why this is high-impact: Visual content is essential for engagement, but creating it can be 
+expensive and time-consuming. An AI image generation skill allows anyone to create 
+custom visuals on demand, providing a nearly infinite source of royalty-free images for 
+marketing, content creation, and internal presentations.
+Cross-industry examples: Marketing (blog and social media images), Content Creation 
+(article illustrations), Design (prototyping and mood boards), Education (presentation 
+visuals).
+38. QR / Barcode Generator
+Category: Output
+Input: Data to be encoded (URL, product ID, contact info)
+Output: A QR code or barcode image file
+Job to be done: "I need to create a QR code for my event check-in, a barcode for my 
+product packaging, or a vCard QR code for my business card."
+
+Why this is high-impact: This is the output counterpart to the QR/Barcode Scanner (#22). It 
+allows workflows to create the physical-digital links that other workflows can then 
+consume. It's essential for any process that involves labelling, tracking, or linking physical 
+items to digital information.
+Cross-industry examples: Logistics (generating shipping labels), Retail (creating product 
+barcodes), Marketing (generating QR codes for campaigns), Events (creating check-in QR 
+codes).
+39. Digital Signature Requester
+Category: Output
+Input: A document + signer's email address
+Output: A request sent via a digital signature platform (e.g., DocuSign) and a status update
+Job to be done: "I need to get this contract or agreement legally signed by a client, 
+employee, or partner."
+Why this is high-impact: Getting documents signed is the final step for many critical 
+business processes — closing a sale, hiring an employee, onboarding a new client. This skill 
+automates the process of sending a document for signature and tracking its status, 
+integrating the workflow with legally binding e-signature platforms.
+Cross-industry examples: Sales (contract signing), HR (offer letter signing), Legal 
+(agreement signing), Real Estate (lease signing), Finance (loan document signing).
+40. File Encryption & Password Protection
+Category: Output
+Input: A file + a password or encryption key
+Output: An encrypted or password-protected version of the file
+Job to be done: "I need to send this sensitive document securely, ensuring that only the 
+intended recipient with the password can open it."
+Why this is high-impact: Data security is paramount. When sending sensitive financial, 
+legal, or personal information, password protection is a basic requirement. This skill 
+provides a crucial security layer to any workflow that handles confidential data, ensuring 
+that documents are protected before they are sent or stored.
+Cross-industry examples: Finance (sending financial reports), HR (sending payroll 
+information), Legal (sharing confidential case files), Healthcare (transmitting patient data).
+
+41. Social Media Publisher
+Category: Output
+Input: Content (text, image, or video) + target social media platform(s)
+Output: A published post on the selected platform(s)
+Job to be done: "I have my content ready, and I need to post it to my company's LinkedIn, 
+Twitter, and Facebook pages."
+Why this is high-impact: This skill is the final step in the content marketing lifecycle. After 
+content is generated (#27) and repurposed (#28), it needs to be published. A social media 
+publisher skill that can connect to major platforms and post content directly from the 
+workflow saves marketers from having to manually upload content to each platform.
+Cross-industry examples: Marketing (publishing campaigns), PR (distributing 
+announcements), HR (posting job openings), Sales (sharing industry articles).
+42. Database Row Inserter / Updater
+Category: Output
+Input: A structured data record + database connection details and table name
+Output: Confirmation of the database write/update operation
+Job to be done: "I need to log the results of my workflow by adding a new row to my SQL 
+database or updating an existing one."
+Why this is high-impact: While the API Push skill (#19) is for connecting to external 
+systems, this skill is for direct interaction with a company's own databases. It's a 
+fundamental building block for any workflow that needs to interact with a system of record 
+that is a traditional database. It allows workflows to act as data sources for internal 
+analytics and operations.
+Cross-industry examples: All industries — logging workflow results, updating customer 
+records, recording transactions, tracking inventory.
+43. HTML Page Generator
+Category: Output
+Input: Content (text, images, charts) + layout instructions
+Output: A standalone HTML file or a public URL for a simple webpage
+Job to be done: "I need to create a simple, shareable webpage — a landing page, a project 
+status page, or a public report — from my data."
+
+Why this is high-impact: Sometimes a PDF is too static and an email is too informal. A 
+simple, clean webpage is the perfect medium for sharing dynamic information. This skill 
+allows users to create lightweight web-based deliverables without needing a full web 
+development environment. It's perfect for creating temporary landing pages, sharing 
+interactive reports, or publishing project updates.
+Cross-industry examples: Marketing (microsites/landing pages), Project Management 
+(status pages), Sales (personalized demo pages), Research (publishing findings).
+44. Archive Creator (Zip)
+Category: Output
+Input: A list of files
+Output: A single compressed Zip archive containing all the files
+Job to be done: "I need to package up a collection of documents, images, and 
+spreadsheets into a single file to make it easy to send or download."
+Why this is high-impact: Sending a large number of files individually is cumbersome. A Zip 
+archive is the standard way to bundle multiple files together. This skill automates the 
+process of collecting and compressing files, making it a crucial utility for any workflow that 
+generates multiple outputs.
+Cross-industry examples: All industries — packaging project deliverables, archiving 
+records, preparing files for download.
+45. Personalized Video Generator
+Category: Output
+Input: A video template + personalization data (e.g., customer name, company logo)
+Output: A personalized video file
+Job to be done: "I want to send a personalized video to each new customer, welcoming 
+them by name and showing them features relevant to their industry."
+Why this is high-impact: Personalized video is a powerful tool for engagement in sales and 
+marketing. This skill allows for the creation of customized videos at scale, which can 
+dramatically increase open rates, click-through rates, and customer satisfaction. It takes the 
+idea of mail-merge (#11) and applies it to video.
+Cross-industry examples: Marketing (personalized welcome videos), Sales (customized 
+outreach videos), E-commerce (personalized thank-you videos), HR (personalized 
+onboarding videos).
+
+46. Voice Call Placer (IVR)
+Category: Output
+Input: A phone number + a script (text-to-speech) or audio file
+Output: A placed phone call with interaction logging
+Job to be done: "I need to automatically call a customer to confirm an appointment, 
+remind them of a payment, or provide an update on their order."
+Why this is high-impact: For time-sensitive notifications like appointment reminders or 
+fraud alerts, a phone call is often more effective than an email. This skill allows workflows 
+to initiate automated voice calls, delivering information and even capturing simple 
+responses via an interactive voice response (IVR) system. It's a powerful tool for proactive 
+communication.
+Cross-industry examples: Healthcare (appointment reminders), Finance (payment 
+reminders, fraud alerts), Logistics (delivery notifications), Services (appointment 
+confirmations).
+47. Chat Message Sender (Slack/Teams)
+Category: Output
+Input: A message + a target channel or user
+Output: A posted message in the specified chat platform
+Job to be done: "I need to notify my team in our Slack channel whenever a new high-
+priority support ticket comes in, or when a major sale is closed."
+Why this is high-impact: Internal communication has largely moved from email to chat 
+platforms like Slack and Microsoft Teams. This skill allows workflows to integrate directly 
+into these conversational hubs, providing real-time notifications and updates where the 
+team is already working. It's the primary output skill for internal-facing workflows.
+Cross-industry examples: All industries — sales win notifications, high-priority support 
+ticket alerts, project status updates, new employee announcements.
+48. Contact Card Generator (vCard)
+Category: Output
+Input: Contact information (name, title, company, phone, email)
+Output: A vCard file (.vcf)
+
+Job to be done: "I want to make it easy for people to add my contact information to their 
+address book by providing a downloadable vCard file."
+Why this is high-impact: A vCard is the standard format for sharing contact information 
+digitally. This skill automates the creation of these files, which can then be attached to 
+emails, linked from websites, or embedded in QR codes. It's a small but important utility 
+that reduces friction in networking and sales.
+Cross-industry examples: Sales/Marketing (email signatures), Networking (digital 
+business cards), Events (attendee contact sharing).
+49. Word Document Generator
+Category: Output
+Input: Content + formatting instructions
+Output: A formatted DOCX file
+Job to be done: "I need to generate a Word document, not a PDF, because the recipient 
+needs to be able to edit it or track changes."
+Why this is high-impact: While PDF is for final, locked-down documents, Word is for 
+collaborative, living documents. This skill is the output for any workflow that produces a 
+document that is expected to be edited by the recipient, such as a first draft of a contract, a 
+collaborative report, or a proposal that requires input.
+Cross-industry examples: Legal (draft contracts), Consulting (collaborative reports), 
+Writing/Editing (manuscripts), HR (performance review templates).
+50. Task Creator (Asana, Jira, etc.)
+Category: Output
+Input: Task details (title, description, assignee, due date) + project management tool 
+connection
+Output: A new task created in the specified project management tool
+Job to be done: "When a new bug is reported in a support ticket, I need to automatically 
+create a new issue in Jira for the engineering team to investigate."
+Why this is high-impact: Workflows often identify work that needs to be done by a human. 
+This skill acts as the bridge between the automation and the human workflow, creating 
+tasks in the project management systems that teams already use. It ensures that actions 
+identified by a workflow are tracked and completed.
+
+Cross-industry examples: IT/Software (bug tracking in Jira), Marketing (creative requests 
+in Asana), Client Services (onboarding tasks in Trello), Operations (process tasks in 
+Monday.com).
+Expanded Composability Matrix
+The true power of this expanded skill set lies in the new combinations it enables. Here are 
+some examples that incorporate the new skills:
+WorkflowSkills UsedIndustry
+Automated Content Factory
+Web Scrape (#3) → Content 
+Generation (#27) → Image 
+Generation (#37) → Social 
+Media Publisher (#41)
+Marketing
+Contract Redline & Signature
+Email Ingest (#1) → 
+Document Comparison (#24) 
+→ Approval Chain Router 
+(#25) → Digital Signature 
+Requester (#39)
+Legal
+Video Meeting to Knowledge 
+Base
+Audio/Video Transcription 
+(#21) → Text Summariser (#7) 
+→ Knowledge Base Q&A (#29) 
+→ Database Row Inserter 
+(#42)
+All (Internal)
+Secure Document Delivery
+Template Filler (#11) → 
+Generate PDF (#15) → File 
+Encryption (#40) → Send 
+Email (#17)
+Finance / HR
+Proactive Appointment 
+Reminders
+Calendar Event Creator (#18) 
+→ Deadline & Reminder 
+Engine (#26) → Voice Call 
+Placer (#46)
+Healthcare / Services
+E-commerce Product 
+Onboarding
+CSV Normaliser (#4) → Image 
+Editor (#34) → Deduplication 
+Engine (#32) → Database Row 
+Inserter (#42)
+E-commerce
+Automated Proposal & 
+Follow-up
+Form Collector (#6) → Data 
+Enrichment (#9) → Proposal 
+Generator (#35) → Send Email 
+Sales / Agencies
+
+Updated Design Principles
+1.Input Diversity: The expanded input skills now cover audio, video, and physical codes 
+(QR/barcode), making the platform capable of ingesting almost any form of business 
+information.
+2.Processing Granularity: The new processing skills add more nuanced capabilities like 
+version comparison, approval routing, and data deduplication, allowing for more 
+sophisticated and robust business logic.
+3.Content & Media Generation: A significant addition is the focus on generative skills for 
+content (articles, social posts), audio (text-to-speech), and visuals (images, video), 
+moving beyond data processing to creative production.
+4.Workflow & Task Management: Skills like the Approval Router, Reminder Engine, and 
+Task Creator directly address the human side of automation, managing handoffs, 
+deadlines, and the creation of human-centric work.
+5.Security & Compliance: The addition of skills for digital signatures and file encryption 
+acknowledges the critical importance of security and legal validity in real-world 
+business workflows.
+6.Composability at Scale: With 50 primitives, the number of possible workflow 
+combinations is vast, allowing for the creation of highly specialized, industry-specific 
+solutions from a shared, generic, and maintainable skill library.
+(#17) → Deadline & Reminder 
+Engine (#26)
+IT Incident Response
+Email Ingest (#1) → Classifier 
+(#10) → Task Creator (#50) → 
+Chat Message Sender (#47)
+IT

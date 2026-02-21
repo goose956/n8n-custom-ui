@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box, Typography, Button, Paper, TextField, Chip, IconButton,
   Alert, CircularProgress, Tabs, Tab, Divider, Tooltip, List,
   ListItemButton, ListItemText, ListItemIcon, Select, MenuItem,
-  FormControl, InputLabel, Checkbox,
+  FormControl, InputLabel, Checkbox, InputAdornment, Collapse,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -15,11 +15,18 @@ import {
   SmartToy as ChatBotIcon,
   CheckCircle as SuccessIcon,
   Error as ErrorIcon,
-  Send as SendIcon,
+  Search as SearchIcon,
+  Input as InputsIcon,
+  Memory as ProcessingIcon,
+  Output as OutputsIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  Category as CategoryIcon,
 } from '@mui/icons-material';
 import { API } from '../config/api';
 import { SkillBuilderChat } from './SkillBuilderChat';
 import { SkillOutputRenderer } from './SkillOutputRenderer';
+import { AgentChatPanel } from './AgentChatPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -48,6 +55,8 @@ interface SkillParam {
   default?: any;
 }
 
+type SkillCategory = 'inputs' | 'processing' | 'outputs' | 'other';
+
 interface SkillDef {
   id: string;
   name: string;
@@ -57,6 +66,7 @@ interface SkillDef {
   inputs: SkillParam[];
   credentials: string[];
   enabled: boolean;
+  category: SkillCategory;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -80,7 +90,7 @@ export function SkillWorkshopPage() {
   // ── State ───────────────────────────────────────────────────────────
   const [skills, setSkills] = useState<SkillDef[]>([]);
   const [tools, setTools] = useState<ToolDef[]>([]);
-  const [mode, setMode] = useState<'skill' | 'tool' | 'none'>('none');
+  const [mode, setMode] = useState<'skill' | 'tool' | 'chat' | 'none'>('none');
   const [selectedId, setSelectedId] = useState('');
   const [isNew, setIsNew] = useState(false);
 
@@ -91,6 +101,11 @@ export function SkillWorkshopPage() {
   const [sTools, setSTools] = useState<string[]>([]);
   const [sInputs, setSInputs] = useState<SkillParam[]>([]);
   const [sCreds, setSCreds] = useState<string[]>([]);
+  const [sCategory, setSCategory] = useState<SkillCategory>('other');
+
+  // Sidebar search & collapsed groups
+  const [sidebarSearch, setSidebarSearch] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   // Tool editor fields
   const [tName, setTName] = useState('');
@@ -100,13 +115,11 @@ export function SkillWorkshopPage() {
 
   // Run state
   const [runInputs, setRunInputs] = useState<Record<string, string>>({});
+  const [runInstructions, setRunInstructions] = useState('');
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [outputTab, setOutputTab] = useState(0);
-
-  // Follow-up
-  const [followUpText, setFollowUpText] = useState('');
-  const [followUpRunning, setFollowUpRunning] = useState(false);
+  const [progressSteps, setProgressSteps] = useState<Array<{ type: string; message: string; elapsed?: number; phase?: string; tool?: string }>>([]);
 
   // UI
   const [saving, setSaving] = useState(false);
@@ -141,8 +154,10 @@ export function SkillWorkshopPage() {
     setSTools([...skill.tools]);
     setSInputs([...skill.inputs]);
     setSCreds([...skill.credentials]);
+    setSCategory(skill.category || 'other');
     setRunResult(null);
     setRunInputs({});
+    setProgressSteps([]);
     setError('');
   };
 
@@ -168,8 +183,10 @@ export function SkillWorkshopPage() {
     setSTools([]);
     setSInputs([]);
     setSCreds([]);
+    setSCategory('other');
     setRunResult(null);
     setRunInputs({});
+    setProgressSteps([]);
     setError('');
   };
 
@@ -192,7 +209,7 @@ export function SkillWorkshopPage() {
     setSaving(true);
     setError('');
     try {
-      const body = { name: sName, description: sDesc, prompt: sPrompt, tools: sTools, inputs: sInputs, credentials: sCreds };
+      const body = { name: sName, description: sDesc, prompt: sPrompt, tools: sTools, inputs: sInputs, credentials: sCreds, category: sCategory };
       const url = isNew ? API.skills : `${API.skills}/${selectedId}`;
       const method = isNew ? 'POST' : 'PUT';
       const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -260,61 +277,96 @@ export function SkillWorkshopPage() {
     }
   };
 
-  // ── Run skill ─────────────────────────────────────────────────────
+  // ── Run skill (streaming) ───────────────────────────────────────
   const runSkill = async () => {
     if (!selectedId || mode !== 'skill') return;
 
     setRunning(true);
     setRunResult(null);
+    setProgressSteps([]);
     setOutputTab(0);
     setError('');
     try {
-      const resp = await fetch(`${API.skills}/${selectedId}/run`, {
+      const resp = await fetch(`${API.skills}/${selectedId}/run-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputs: runInputs }),
+        body: JSON.stringify({ inputs: runInputs, instructions: runInstructions || undefined }),
       });
-      const data = await resp.json();
-      if (data.result) {
-        setRunResult(data.result);
-      } else {
-        setError('No result returned');
+
+      if (!resp.ok || !resp.body) {
+        const text = await resp.text();
+        setError(text || 'Stream failed');
+        setRunning(false);
+        return;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const processEvents = (text: string, isFinal: boolean) => {
+        buffer += text;
+        const lines = buffer.split('\n');
+        // If not final, keep the last (possibly incomplete) line in the buffer
+        buffer = isFinal ? '' : (lines.pop() || '');
+
+        let eventType = '';
+        let dataStr = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            dataStr = line.slice(6);
+          } else if (line.trim() === '') {
+            // Empty line = end of event
+            if (eventType && dataStr) {
+              try {
+                const payload = JSON.parse(dataStr);
+                if (eventType === 'progress') {
+                  setProgressSteps(prev => [...prev, payload]);
+                } else if (eventType === 'done') {
+                  if (payload.result) {
+                    setRunResult(payload.result);
+                  } else {
+                    setError('No result returned');
+                  }
+                } else if (eventType === 'error') {
+                  setError(payload.message || 'Run failed');
+                }
+              } catch { /* ignore parse errors */ }
+            }
+            eventType = '';
+            dataStr = '';
+          }
+        }
+
+        // On final flush, process any trailing event that didn't end with empty line
+        if (isFinal && eventType && dataStr) {
+          try {
+            const payload = JSON.parse(dataStr);
+            if (eventType === 'done') {
+              if (payload.result) setRunResult(payload.result);
+            } else if (eventType === 'error') {
+              setError(payload.message || 'Run failed');
+            }
+          } catch { /* ignore */ }
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Flush any remaining buffer
+          processEvents('', true);
+          break;
+        }
+        processEvents(decoder.decode(value, { stream: true }), false);
       }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setRunning(false);
-    }
-  };
-
-  // ── Follow-up: chain actions on previous output ───────────────────
-  const runFollowUp = async () => {
-    if (!followUpText.trim() || !runResult?.output) return;
-
-    setFollowUpRunning(true);
-    setError('');
-    try {
-      const resp = await fetch(`${API.skills}/follow-up`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          previousOutput: runResult.output,
-          message: followUpText.trim(),
-          previousSkillId: selectedId || undefined,
-        }),
-      });
-      const data = await resp.json();
-      if (data.result) {
-        setRunResult(data.result);
-        setOutputTab(0);
-        setFollowUpText('');
-      } else {
-        setError('Follow-up failed');
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setFollowUpRunning(false);
     }
   };
 
@@ -390,6 +442,49 @@ export function SkillWorkshopPage() {
   );
 
   // ══════════════════════════════════════════════════════════════════
+  //  CATEGORY CONFIG & GROUPED SKILLS
+  // ══════════════════════════════════════════════════════════════════
+  const CATEGORY_META: Record<SkillCategory, { label: string; icon: React.ReactNode; color: string }> = {
+    inputs:     { label: 'Inputs',     icon: <InputsIcon fontSize="small" />,     color: '#4caf50' },
+    processing: { label: 'Processing', icon: <ProcessingIcon fontSize="small" />, color: '#ff9800' },
+    outputs:    { label: 'Outputs',    icon: <OutputsIcon fontSize="small" />,    color: '#2196f3' },
+    other:      { label: 'Other',      icon: <CategoryIcon fontSize="small" />,   color: '#9e9e9e' },
+  };
+  const CATEGORY_ORDER: SkillCategory[] = ['inputs', 'processing', 'outputs', 'other'];
+
+  const filteredSkills = useMemo(() => {
+    const q = sidebarSearch.toLowerCase().trim();
+    if (!q) return skills;
+    return skills.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      (s.category || '').toLowerCase().includes(q) ||
+      s.tools.some(t => t.toLowerCase().includes(q))
+    );
+  }, [skills, sidebarSearch]);
+
+  const filteredTools = useMemo(() => {
+    const q = sidebarSearch.toLowerCase().trim();
+    if (!q) return tools;
+    return tools.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q)
+    );
+  }, [tools, sidebarSearch]);
+
+  const groupedSkills = useMemo(() => {
+    const groups: Record<SkillCategory, SkillDef[]> = { inputs: [], processing: [], outputs: [], other: [] };
+    for (const s of filteredSkills) {
+      const cat = (s.category && s.category in groups) ? s.category : 'other';
+      groups[cat].push(s);
+    }
+    return groups;
+  }, [filteredSkills]);
+
+  const toggleGroup = (cat: string) =>
+    setCollapsedGroups(prev => ({ ...prev, [cat]: !prev[cat] }));
+
+  // ══════════════════════════════════════════════════════════════════
   //  RENDER
   // ══════════════════════════════════════════════════════════════════
   return (
@@ -397,67 +492,134 @@ export function SkillWorkshopPage() {
 
       {/* ═══════════════════ SIDEBAR ═══════════════════ */}
       <Paper sx={{
-        width: 260, borderRight: 1, borderColor: 'divider',
-        display: 'flex', flexDirection: 'column', overflow: 'auto', flexShrink: 0,
+        width: 280, borderRight: 1, borderColor: 'divider',
+        display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
       }}>
         {/* Header */}
-        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <Typography variant="h6" sx={{ fontSize: 16, fontWeight: 700 }}>Skill Workshop</Typography>
-          <Tooltip title="AI Builder">
-            <IconButton size="small" color="primary" onClick={() => setBuilderOpen(true)}>
-              <ChatBotIcon />
-            </IconButton>
-          </Tooltip>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Agent Chat">
+              <IconButton size="small" color={mode === 'chat' ? 'primary' : 'default'} onClick={() => setMode('chat')}>
+                <ChatBotIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="AI Builder">
+              <IconButton size="small" color="primary" onClick={() => setBuilderOpen(true)}>
+                <ChatBotIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
         <Divider />
 
-        {/* Skills section */}
-        <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1 }}>Skills</Typography>
-          <Tooltip title="New Skill"><IconButton size="small" onClick={newSkill}><AddIcon fontSize="small" /></IconButton></Tooltip>
+        {/* Search */}
+        <Box sx={{ px: 1.5, pt: 1.5, pb: 1, flexShrink: 0 }}>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Search skills & tools..."
+            value={sidebarSearch}
+            onChange={e => setSidebarSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': { fontSize: 13, height: 34 },
+            }}
+          />
         </Box>
-        <List dense sx={{ px: 1 }}>
-          {skills.map(s => (
-            <ListItemButton key={s.id} selected={mode === 'skill' && selectedId === s.id}
-              onClick={() => selectSkill(s)} sx={{ borderRadius: 1, mb: 0.5 }}>
-              <ListItemIcon sx={{ minWidth: 30 }}><SkillIcon fontSize="small" color="primary" /></ListItemIcon>
-              <ListItemText
-                primary={s.name}
-                secondary={`${s.tools.length} tool${s.tools.length !== 1 ? 's' : ''}`}
-                primaryTypographyProps={{ fontSize: 13, fontWeight: 500, noWrap: true }}
-                secondaryTypographyProps={{ fontSize: 11 }}
-              />
-            </ListItemButton>
-          ))}
-          {skills.length === 0 && (
-            <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>No skills yet</Typography>
+
+        {/* Scrollable content */}
+        <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+
+          {/* ── Skills ── */}
+          <Box sx={{ px: 1.5, pt: 1, pb: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1 }}>Skills</Typography>
+            <Tooltip title="New Skill"><IconButton size="small" onClick={newSkill}><AddIcon fontSize="small" /></IconButton></Tooltip>
+          </Box>
+
+          {CATEGORY_ORDER.map(cat => {
+            const catSkills = groupedSkills[cat];
+            if (catSkills.length === 0) return null;
+            const meta = CATEGORY_META[cat];
+            const collapsed = !!collapsedGroups[cat];
+            return (
+              <Box key={cat} sx={{ mb: 0.5 }}>
+                {/* Category header */}
+                <Box
+                  onClick={() => toggleGroup(cat)}
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 0.5,
+                    px: 1.5, py: 0.5, cursor: 'pointer',
+                    '&:hover': { bgcolor: 'action.hover' }, borderRadius: 1, mx: 0.5,
+                  }}
+                >
+                  <Box sx={{ color: meta.color, display: 'flex', alignItems: 'center' }}>{meta.icon}</Box>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: meta.color, flex: 1, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {meta.label}
+                  </Typography>
+                  <Chip label={catSkills.length} size="small" sx={{ height: 18, fontSize: 10, minWidth: 20 }} />
+                  {collapsed ? <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.disabled' }} /> : <ExpandLessIcon sx={{ fontSize: 16, color: 'text.disabled' }} />}
+                </Box>
+
+                <Collapse in={!collapsed}>
+                  <List dense sx={{ px: 0.5, py: 0 }}>
+                    {catSkills.map(s => (
+                      <ListItemButton key={s.id} selected={mode === 'skill' && selectedId === s.id}
+                        onClick={() => selectSkill(s)} sx={{ borderRadius: 1, mb: 0.3, py: 0.4 }}>
+                        <ListItemIcon sx={{ minWidth: 26 }}><SkillIcon sx={{ fontSize: 16, color: meta.color }} /></ListItemIcon>
+                        <ListItemText
+                          primary={s.name}
+                          secondary={`${s.tools.length} tool${s.tools.length !== 1 ? 's' : ''}`}
+                          primaryTypographyProps={{ fontSize: 12.5, fontWeight: 500, noWrap: true }}
+                          secondaryTypographyProps={{ fontSize: 10.5 }}
+                        />
+                      </ListItemButton>
+                    ))}
+                  </List>
+                </Collapse>
+              </Box>
+            );
+          })}
+
+          {filteredSkills.length === 0 && (
+            <Typography variant="caption" sx={{ px: 2, color: 'text.disabled', display: 'block', py: 1 }}>
+              {sidebarSearch ? 'No matching skills' : 'No skills yet'}
+            </Typography>
           )}
-        </List>
 
-        <Divider sx={{ my: 1 }} />
+          <Divider sx={{ my: 1 }} />
 
-        {/* Tools section */}
-        <Box sx={{ px: 2, pt: 0.5, pb: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1 }}>Tools</Typography>
-          <Tooltip title="New Tool"><IconButton size="small" onClick={newTool}><AddIcon fontSize="small" /></IconButton></Tooltip>
+          {/* ── Tools ── */}
+          <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1 }}>Tools</Typography>
+            <Tooltip title="New Tool"><IconButton size="small" onClick={newTool}><AddIcon fontSize="small" /></IconButton></Tooltip>
+          </Box>
+          <List dense sx={{ px: 0.5 }}>
+            {filteredTools.map(t => (
+              <ListItemButton key={t.id} selected={mode === 'tool' && selectedId === t.id}
+                onClick={() => selectTool(t)} sx={{ borderRadius: 1, mb: 0.3, py: 0.4 }}>
+                <ListItemIcon sx={{ minWidth: 26 }}><ToolIcon sx={{ fontSize: 16 }} color="secondary" /></ListItemIcon>
+                <ListItemText
+                  primary={t.name}
+                  secondary={`${t.parameters.length} param${t.parameters.length !== 1 ? 's' : ''}`}
+                  primaryTypographyProps={{ fontSize: 12.5, fontWeight: 500, noWrap: true }}
+                  secondaryTypographyProps={{ fontSize: 10.5 }}
+                />
+              </ListItemButton>
+            ))}
+            {filteredTools.length === 0 && (
+              <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>
+                {sidebarSearch ? 'No matching tools' : 'No tools yet'}
+              </Typography>
+            )}
+          </List>
         </Box>
-        <List dense sx={{ px: 1 }}>
-          {tools.map(t => (
-            <ListItemButton key={t.id} selected={mode === 'tool' && selectedId === t.id}
-              onClick={() => selectTool(t)} sx={{ borderRadius: 1, mb: 0.5 }}>
-              <ListItemIcon sx={{ minWidth: 30 }}><ToolIcon fontSize="small" color="secondary" /></ListItemIcon>
-              <ListItemText
-                primary={t.name}
-                secondary={`${t.parameters.length} param${t.parameters.length !== 1 ? 's' : ''}`}
-                primaryTypographyProps={{ fontSize: 13, fontWeight: 500, noWrap: true }}
-                secondaryTypographyProps={{ fontSize: 11 }}
-              />
-            </ListItemButton>
-          ))}
-          {tools.length === 0 && (
-            <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>No tools yet</Typography>
-          )}
-        </List>
       </Paper>
 
       {/* ═══════════════════ MAIN AREA ═══════════════════ */}
@@ -467,7 +629,12 @@ export function SkillWorkshopPage() {
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ m: 1 }}>{error}</Alert>}
         {success && <Alert severity="success" onClose={() => setSuccess('')} sx={{ m: 1 }}>{success}</Alert>}
 
-        {mode === 'none' ? (
+        {mode === 'chat' ? (
+          /* ═══ Agent Chat (full area) ═══ */
+          <Box sx={{ flex: 1, overflow: 'hidden' }}>
+            <AgentChatPanel />
+          </Box>
+        ) : mode === 'none' ? (
           /* ═══ Empty state ═══ */
           <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Box sx={{ textAlign: 'center', maxWidth: 480 }}>
@@ -476,17 +643,20 @@ export function SkillWorkshopPage() {
                 Create <strong>Tools</strong> (executable code that does one thing) and <strong>Skills</strong> (AI prompts that use tools).
                 When you run a skill, the AI reasons and calls tools in an agentic loop until it has an answer.
               </Typography>
-              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Button variant="contained" startIcon={<ChatBotIcon />} onClick={() => setMode('chat')} color="primary">
+                  Agent Chat
+                </Button>
                 <Button variant="outlined" startIcon={<ToolIcon />} onClick={newTool}>New Tool</Button>
                 <Button variant="outlined" startIcon={<SkillIcon />} onClick={newSkill}>New Skill</Button>
-                <Button variant="contained" startIcon={<ChatBotIcon />} onClick={() => setBuilderOpen(true)}>AI Builder</Button>
+                <Button variant="outlined" startIcon={<ChatBotIcon />} onClick={() => setBuilderOpen(true)}>AI Builder</Button>
               </Box>
             </Box>
           </Box>
         ) : (
           <>
             {/* ═══ EDITOR AREA ═══ */}
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+            <Box sx={{ flex: '1 1 auto', overflow: 'auto', p: 2, minHeight: 200 }}>
 
               {/* Top bar: type badge + name + save/delete */}
               <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
@@ -515,9 +685,22 @@ export function SkillWorkshopPage() {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <Box sx={{ display: 'flex', gap: 2 }}>
                     <TextField label="Name" value={sName} onChange={e => setSName(e.target.value)}
-                      size="small" sx={{ width: 260 }} placeholder="web-research" />
+                      size="small" sx={{ width: 200 }} placeholder="web-research" />
                     <TextField label="Description" value={sDesc} onChange={e => setSDesc(e.target.value)}
                       size="small" sx={{ flex: 1 }} placeholder="Research a topic and write an article" />
+                    <FormControl size="small" sx={{ width: 140 }}>
+                      <InputLabel>Category</InputLabel>
+                      <Select label="Category" value={sCategory} onChange={e => setSCategory(e.target.value as SkillCategory)}>
+                        {CATEGORY_ORDER.map(cat => (
+                          <MenuItem key={cat} value={cat}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Box sx={{ color: CATEGORY_META[cat].color, display: 'flex' }}>{CATEGORY_META[cat].icon}</Box>
+                              {CATEGORY_META[cat].label}
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                   </Box>
 
                   {/* Tool selector */}
@@ -613,14 +796,10 @@ export function SkillWorkshopPage() {
               )}
             </Box>
 
-            {/* ═══ OUTPUT PANEL ═══ (only for saved skills) */}
+            {/* ═══ RUN BAR + TWO OUTPUT PANELS ═══ (only for saved skills) */}
             {mode === 'skill' && !isNew && (<>
-              <Paper sx={{
-                borderTop: 2, borderColor: 'divider',
-                minHeight: 220, maxHeight: 400,
-                display: 'flex', flexDirection: 'column', flexShrink: 0,
-              }}>
-                {/* Run bar */}
+              {/* ── Run bar ── */}
+              <Paper sx={{ borderTop: 2, borderColor: 'divider', flexShrink: 0 }}>
                 <Box sx={{
                   p: 1.5, display: 'flex', gap: 1, alignItems: 'center',
                   borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap',
@@ -650,6 +829,16 @@ export function SkillWorkshopPage() {
                     />
                   ))}
 
+                  {/* Instructions — free-form intent */}
+                  <TextField
+                    size="small"
+                    label="Instructions (optional)"
+                    value={runInstructions}
+                    onChange={e => setRunInstructions(e.target.value)}
+                    placeholder='e.g. "write 1000 words and save as PDF"'
+                    sx={{ flex: 1, minWidth: 260 }}
+                  />
+
                   {runResult && (
                     <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
                       {runResult.status === 'success'
@@ -662,153 +851,178 @@ export function SkillWorkshopPage() {
                     </Box>
                   )}
                 </Box>
-
-                {/* Output tabs */}
-                <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                  <Tabs
-                    value={outputTab}
-                    onChange={(_, v) => setOutputTab(v)}
-                    sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 12, textTransform: 'none' } }}
-                  >
-                    <Tab label="Output" />
-                    <Tab label="Logs" />
-                    <Tab label={`Tool Calls${runResult?.toolCalls?.length ? ` (${runResult.toolCalls.length})` : ''}`} />
-                  </Tabs>
-                </Box>
-
-                {/* Tab content */}
-                <Box sx={{
-                  flex: 1, overflow: 'auto', p: 1.5,
-                  fontFamily: 'monospace', fontSize: 12, bgcolor: '#1e1e1e', color: '#d4d4d4',
-                }}>
-                  {!runResult && !running && (
-                    <Typography color="grey.500" variant="body2" sx={{ textAlign: 'center', mt: 3, fontFamily: 'inherit' }}>
-                      Click "Run Skill" to execute the agentic loop
-                    </Typography>
-                  )}
-
-                  {running && (
-                    <Box sx={{ textAlign: 'center', mt: 3 }}>
-                      <CircularProgress size={24} sx={{ color: '#569cd6' }} />
-                      <Typography variant="body2" sx={{ mt: 1, color: '#9cdcfe', fontFamily: 'inherit' }}>
-                        Running agentic loop... The AI is reasoning and calling tools.
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#808080', fontFamily: 'inherit' }}>
-                        This may take 30-60 seconds depending on how many tool calls are needed.
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* OUTPUT tab */}
-                  {runResult && outputTab === 0 && (
-                    <Box>
-                      {runResult.error && (
-                        <Box sx={{ p: 1, mb: 1, bgcolor: '#3b1111', borderRadius: 1, color: '#f48771' }}>
-                          Error: {runResult.error}
-                        </Box>
-                      )}
-                      <SkillOutputRenderer content={runResult.output || ''} />
-                    </Box>
-                  )}
-
-                  {/* LOGS tab */}
-                  {runResult && outputTab === 1 && (
-                    <Box sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#b5cea8' }}>
-                      {(runResult.logs || []).join('\n') || '(no logs)'}
-                    </Box>
-                  )}
-
-                  {/* TOOL CALLS tab */}
-                  {runResult && outputTab === 2 && (
-                    <Box>
-                      {(runResult.toolCalls || []).length === 0 ? (
-                        <Typography sx={{ color: '#808080', fontFamily: 'inherit' }}>(no tool calls)</Typography>
-                      ) : (
-                        (runResult.toolCalls || []).map((tc, i) => (
-                          <Box key={i} sx={{ mb: 2, p: 1.5, bgcolor: '#252526', borderRadius: 1, border: '1px solid #333' }}>
-                            <Typography sx={{ fontWeight: 700, fontSize: 13, color: '#dcdcaa', mb: 0.5 }}>
-                              🔧 {tc.toolName}
-                              <Typography component="span" sx={{ color: '#808080', fontSize: 11, ml: 1 }}>
-                                {tc.duration}ms
-                              </Typography>
-                            </Typography>
-                            <Typography sx={{ color: '#569cd6', fontSize: 11, mt: 0.5 }}>Input:</Typography>
-                            <Box component="pre" sx={{ fontSize: 11, m: 0, mt: 0.5, color: '#ce9178', overflowX: 'auto' }}>
-                              {JSON.stringify(tc.input, null, 2)}
-                            </Box>
-                            <Typography sx={{ color: '#569cd6', fontSize: 11, mt: 1 }}>Output:</Typography>
-                            <Box component="pre" sx={{
-                              fontSize: 11, m: 0, mt: 0.5, color: '#b5cea8',
-                              overflowX: 'auto', maxHeight: 200, overflow: 'auto',
-                            }}>
-                              {JSON.stringify(tc.output, null, 2)?.slice(0, 3000)}
-                            </Box>
-                          </Box>
-                        ))
-                      )}
-                    </Box>
-                  )}
-                </Box>
               </Paper>
 
-              {/* ═══ Follow-up Chat Input ═══ */}
-              {runResult && runResult.output && !running && (
+              {/* ── Two side-by-side panels ── */}
+              <Box sx={{ display: 'flex', gap: 1.5, flex: '0 0 auto', height: 340, minHeight: 240 }}>
+
+                {/* ── LEFT: Activity feed (live progress) ── */}
                 <Paper sx={{
-                  mt: 2, p: 2, bgcolor: '#1e1e2e', border: '1px solid #333',
-                  borderRadius: 2,
+                  flex: '0 0 320px', display: 'flex', flexDirection: 'column',
+                  overflow: 'hidden', bgcolor: '#1a1a2e',
                 }}>
-                  <Typography variant="caption" sx={{ color: '#808080', mb: 1, display: 'block' }}>
-                    Chain another action on this output — e.g. "save as PDF", "generate a header image", "summarize for LinkedIn"
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                    <TextField
-                      fullWidth
-                      multiline
-                      maxRows={3}
-                      size="small"
-                      placeholder="What do you want to do with this output?"
-                      value={followUpText}
-                      onChange={(e) => setFollowUpText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          runFollowUp();
-                        }
-                      }}
-                      disabled={followUpRunning}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          bgcolor: '#252526',
-                          color: '#d4d4d4',
-                          fontSize: 13,
-                          '& fieldset': { borderColor: '#404040' },
-                          '&:hover fieldset': { borderColor: '#667eea' },
-                          '&.Mui-focused fieldset': { borderColor: '#667eea' },
-                        },
-                        '& .MuiInputBase-input::placeholder': { color: '#666', opacity: 1 },
-                      }}
-                    />
-                    <Button
-                      variant="contained"
-                      onClick={runFollowUp}
-                      disabled={followUpRunning || !followUpText.trim()}
-                      sx={{
-                        minWidth: 44,
-                        height: 40,
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        '&:hover': { background: 'linear-gradient(135deg, #5a6fd6 0%, #6a3f96 100%)' },
-                      }}
-                    >
-                      {followUpRunning ? <CircularProgress size={20} /> : <SendIcon sx={{ fontSize: 18 }} />}
-                    </Button>
-                  </Box>
-                  {followUpRunning && (
-                    <Typography variant="caption" sx={{ color: '#667eea', mt: 1, display: 'block' }}>
-                      Processing follow-up... this may take a moment.
+                  <Box sx={{
+                    px: 1.5, py: 1, borderBottom: '1px solid #333',
+                    display: 'flex', alignItems: 'center', gap: 1,
+                  }}>
+                    {running && <CircularProgress size={14} sx={{ color: '#569cd6' }} />}
+                    <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#9cdcfe', fontFamily: 'monospace' }}>
+                      Activity
                     </Typography>
-                  )}
+                    {progressSteps.length > 0 && (
+                      <Typography sx={{ fontSize: 10, color: '#666', ml: 'auto' }}>
+                        {progressSteps.length} events
+                      </Typography>
+                    )}
+                  </Box>
+                  <Box sx={{
+                    flex: 1, overflow: 'auto', px: 1.5, py: 1,
+                    display: 'flex', flexDirection: 'column', gap: 0.4,
+                    '&::-webkit-scrollbar': { width: 4 },
+                    '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: 2 },
+                  }}>
+                    {progressSteps.length === 0 && !running && (
+                      <Typography sx={{ color: '#555', fontSize: 11, fontFamily: 'monospace', textAlign: 'center', mt: 3 }}>
+                        Run a skill to see activity
+                      </Typography>
+                    )}
+                    {progressSteps.length === 0 && running && (
+                      <Typography sx={{ color: '#808080', fontSize: 11, fontFamily: 'monospace' }}>
+                        Connecting...
+                      </Typography>
+                    )}
+                    {progressSteps.map((step, i) => {
+                      const isLatest = i === progressSteps.length - 1;
+                      const icon = step.type === 'phase' ? '📋'
+                        : step.type === 'tool-start' ? '🔧'
+                        : step.type === 'tool-done' ? '✅'
+                        : step.type === 'step' ? '▸'
+                        : step.type === 'error' ? '❌'
+                        : step.type === 'done' ? '🏁'
+                        : 'ℹ️';
+                      return (
+                        <Box key={i} sx={{
+                          display: 'flex', alignItems: 'flex-start', gap: 0.75,
+                          opacity: isLatest && running ? 1 : 0.75,
+                          py: 0.15,
+                        }}>
+                          <Typography sx={{ fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>{icon}</Typography>
+                          <Typography sx={{
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            lineHeight: 1.4,
+                            color: step.type === 'phase' ? '#dcdcaa'
+                              : step.type === 'tool-start' ? '#569cd6'
+                              : step.type === 'tool-done' ? '#b5cea8'
+                              : step.type === 'error' ? '#f48771'
+                              : step.type === 'done' ? '#4ec9b0'
+                              : '#d4d4d4',
+                            fontWeight: step.type === 'phase' ? 700 : 400,
+                            flex: 1,
+                          }}>
+                            {step.message}
+                          </Typography>
+                          {step.elapsed != null && (
+                            <Typography sx={{ fontSize: 9, color: '#555', flexShrink: 0, whiteSpace: 'nowrap', lineHeight: 1.6 }}>
+                              {(step.elapsed / 1000).toFixed(1)}s
+                            </Typography>
+                          )}
+                        </Box>
+                      );
+                    })}
+                  </Box>
                 </Paper>
-              )}
+
+                {/* ── RIGHT: Result output (tabs) ── */}
+                <Paper sx={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  overflow: 'hidden',
+                }}>
+                  {/* Output tabs */}
+                  <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                    <Tabs
+                      value={outputTab}
+                      onChange={(_, v) => setOutputTab(v)}
+                      sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 12, textTransform: 'none' } }}
+                    >
+                      <Tab label="Output" />
+                      <Tab label="Logs" />
+                      <Tab label={`Tool Calls${runResult?.toolCalls?.length ? ` (${runResult.toolCalls.length})` : ''}`} />
+                    </Tabs>
+                  </Box>
+
+                  {/* Tab content */}
+                  <Box sx={{
+                    flex: 1, overflow: 'auto', p: 1.5,
+                    fontFamily: 'monospace', fontSize: 12, bgcolor: '#1e1e1e', color: '#d4d4d4',
+                  }}>
+                    {!runResult && !running && (
+                      <Typography color="grey.500" variant="body2" sx={{ textAlign: 'center', mt: 3, fontFamily: 'inherit' }}>
+                        Click "Run Skill" to execute
+                      </Typography>
+                    )}
+
+                    {running && !runResult && outputTab === 0 && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2, justifyContent: 'center' }}>
+                        <CircularProgress size={16} sx={{ color: '#569cd6' }} />
+                        <Typography sx={{ color: '#808080', fontSize: 12, fontFamily: 'monospace' }}>
+                          Waiting for result...
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {/* OUTPUT tab */}
+                    {runResult && outputTab === 0 && (
+                      <Box>
+                        {runResult.error && (
+                          <Box sx={{ p: 1, mb: 1, bgcolor: '#3b1111', borderRadius: 1, color: '#f48771' }}>
+                            Error: {runResult.error}
+                          </Box>
+                        )}
+                        <SkillOutputRenderer content={runResult.output || ''} />
+                      </Box>
+                    )}
+
+                    {/* LOGS tab */}
+                    {runResult && outputTab === 1 && (
+                      <Box sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#b5cea8' }}>
+                        {(runResult.logs || []).join('\n') || '(no logs)'}
+                      </Box>
+                    )}
+
+                    {/* TOOL CALLS tab */}
+                    {runResult && outputTab === 2 && (
+                      <Box>
+                        {(runResult.toolCalls || []).length === 0 ? (
+                          <Typography sx={{ color: '#808080', fontFamily: 'inherit' }}>(no tool calls)</Typography>
+                        ) : (
+                          (runResult.toolCalls || []).map((tc, i) => (
+                            <Box key={i} sx={{ mb: 2, p: 1.5, bgcolor: '#252526', borderRadius: 1, border: '1px solid #333' }}>
+                              <Typography sx={{ fontWeight: 700, fontSize: 13, color: '#dcdcaa', mb: 0.5 }}>
+                                🔧 {tc.toolName}
+                                <Typography component="span" sx={{ color: '#808080', fontSize: 11, ml: 1 }}>
+                                  {tc.duration}ms
+                                </Typography>
+                              </Typography>
+                              <Typography sx={{ color: '#569cd6', fontSize: 11, mt: 0.5 }}>Input:</Typography>
+                              <Box component="pre" sx={{ fontSize: 11, m: 0, mt: 0.5, color: '#ce9178', overflowX: 'auto' }}>
+                                {JSON.stringify(tc.input, null, 2)}
+                              </Box>
+                              <Typography sx={{ color: '#569cd6', fontSize: 11, mt: 1 }}>Output:</Typography>
+                              <Box component="pre" sx={{
+                                fontSize: 11, m: 0, mt: 0.5, color: '#b5cea8',
+                                overflowX: 'auto', maxHeight: 200, overflow: 'auto',
+                              }}>
+                                {JSON.stringify(tc.output, null, 2)?.slice(0, 3000)}
+                              </Box>
+                            </Box>
+                          ))
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              </Box>
             </>)}
           </>
         )}

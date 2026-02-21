@@ -7,3 +7,10 @@ db.json
 .DS_Store
 .idea
 .vscode
+
+# Runtime generated files
+backend/public/skill-images/
+backend/public/skill-pdfs/
+backend/public/skill-audio/
+backend/public/skill-pages/
+backend/public/skill-files/

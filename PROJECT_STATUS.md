@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 20, 2026 (Session 7)
+**Last Updated:** February 21, 2026 (Session 10)
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -43,7 +43,7 @@ The platform is a fully functional multi-app SaaS management system with 20 back
 | SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
 | StripeModule | `stripe/` | Stripe products, prices, checkout sessions, webhooks, payments |
 | PreviewModule | `preview/` | Vite-based live preview (single page + full site) with safeProxy + mock data |
-| SkillsModule | `skills/` | Two-layer agent system: Tools (executable code) + Skills (AI prompts), agentic loop, PDF generation |
+| SkillsModule | `skills/` | Two-layer agent system: 15 tools + 31 skills, 14 capability types, 4 ctx methods (Excel, Email, QR, ZIP), PDF/image generation, agentic loop |
 
 ### Shared Infrastructure
 
@@ -120,25 +120,20 @@ All app data scoped by app_id for clean per-app isolation:
 
 ---
 
-## Recent Changes (Feb 20, 2026 — Session 7)
+## Recent Changes (Feb 21, 2026 — Sessions 8–10)
 
-### Agent Skill Workshop v2 — Complete Rewrite
-- **Two-layer architecture** — Tools (executable code) + Skills (markdown AI prompts) + agentic loop (max 10 iterations)
-- **4 tools created:** brave-search, generate-image (DALL-E 3), apify-scraper (Website Content Crawler), generate-pdf (pdfkit)
-- **6 skills created:** web-research, image-creator, content-writer, llm-content-writer, deep-research, content-ideator
-- **ToolContext** — `getCredential()`, `fetch()`, `log()`, `saveImage()`, `savePdf()` available to all tool code
-- **AI Builder Chat** — Conversational creation of tools + skills via SkillBuilderChat component
-- **Follow-up chat** — Chain actions on skill output ("save as PDF", "generate a header image", "summarize for LinkedIn")
-- **Output renderer** — Auto-detects markdown/JSON/HTML, renders with react-markdown + remark-gfm, dark theme, image/PDF URL resolution
-- **Image persistence** — DALL-E URLs saved locally to `backend/public/skill-images/` (no more expiring URLs)
-- **PDF generation** — pdfkit renders styled A4 PDFs with headers, lists, tables, page numbers to `backend/public/skill-pdfs/`
-
-### Bug Fixes
-- **Apify API key not saving** — Settings page `'********'` vs `'--------'` mismatch
-- **Stripe API key not saving** — Same `'********'` vs `'--------'` mismatch
-- **JSX fragment nesting** — Follow-up chat block needed proper `<>...</>` wrapper
+### Skills Expansion — 15 Tools, 31 Skills, Clean Architecture
+- **Clean architecture refactor** — Single `buildPromptForTask()` entry point, 3-layer prompt pipeline (Planner → Assembler → Tool Filter), `artifact-registry.ts` for output tracking
+- **15 tools** — brave-search, generate-image, apify-scraper, generate-pdf, generate-csv, generate-html, generate-qrcode, send-email, generate-json, generate-excel, generate-qr, create-zip, text-to-speech, generate-html-page, generate-vcard
+- **31 skills** — from web-research to dashboard-generator, covering research, content, analysis, output generation
+- **4 new ToolContext methods** — `generateExcel()` (ExcelJS), `sendEmail()` (Nodemailer), `generateQR()` (qrcode), `createZip()` (archiver)
+- **14 capability types** — research, deep-research, write-article, content-ideation, summarise, translate, analyse, repurpose, generate-image, render-pdf, render-csv, render-html, render-qr, send-email, render-excel, render-tts, render-vcard, render-zip
+- **Prompt system** — 22 capability prompt `.md` files, orchestrator prompt, CAPABILITY_REGISTRY + TOOL_TO_CAPABILITY + SKILL_ARCHETYPE maps
+- **PDF fix** — URL demangling for any URI scheme, image embedding via PDFKit
+- **29/50 catalogue skills built** (Input: 1/8, Processing: 17/19, Output: 11/15)
 
 ### Previous Sessions
+- Session 7: Agent Skill Workshop v2, two-layer architecture, 4 tools, 6 skills
 - Session 6: Full site preview, admin template, contact form API
 - Session 5: Coder Agent rewrite, ProgrammerAgentPage overhaul
 - Session 4: StripeModule, DashboardPage, GlobalSearch, Workflow Builder intelligence

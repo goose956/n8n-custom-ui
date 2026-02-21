@@ -3,6 +3,7 @@ import { DatabaseService } from '../shared/database.service';
 import { CryptoService } from '../shared/crypto.service';
 import {
   ToolDefinition,
+  ToolParam,
   ToolContext,
   ToolCallLog,
   SkillDefinition,
@@ -12,13 +13,43 @@ import {
   CreateSkillDto,
   UpdateSkillDto,
   RunSkillDto,
+  ProgressCallback,
+  SkillProgressEvent,
 } from './skill.types';
+import { generateText, tool as defineTool, stepCountIs } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { z } from 'zod';
+import { ArtifactRegistry } from './artifact-registry';
+import { PromptBuilderService } from './prompt-builder.service';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
+import * as nodemailer from 'nodemailer';
+import * as QRCode from 'qrcode';
+import * as archiver from 'archiver';
 
-const MAX_LOOP_ITERATIONS = 10;
+const MAX_STEPS = 10;
+const MAX_STEPS_CHAT = 18;  // Chat needs more steps for multi-capability pipelines
+const MAX_CALLS_PER_TOOL: Record<string, number> = {
+  'generate-image': 2,
+  'generate-pdf': 1,
+  'generate-excel': 1,
+  'generate-qr': 2,
+  'generate-qrcode': 3,
+  'generate-html-page': 1,
+  'generate-html': 1,
+  'generate-csv': 2,
+  'generate-json': 2,
+  'generate-vcard': 2,
+  'send-email': 2,
+  'create-zip': 1,
+  'text-to-speech': 2,
+  'brave-search': 4,
+  'apify-scraper': 3,
+};
+const DEFAULT_MAX_CALLS_PER_TOOL = 5;
 
 /**
  * SkillRunnerService — Two-layer agent architecture
@@ -33,6 +64,7 @@ export class SkillRunnerService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly crypto: CryptoService,
+    private readonly promptBuilder: PromptBuilderService,
   ) {}
 
   // ── Seed default tool + skill on first run ────────────────────────
@@ -58,15 +90,21 @@ if (!key) throw new Error('Brave API key not configured. Add it in Settings → 
 ctx.log('Searching Brave for: ' + params.query);
 
 const count = params.count || 5;
-const resp = await ctx.fetch(
-  'https://api.search.brave.com/res/v1/web/search?q=' + encodeURIComponent(params.query) + '&count=' + count,
-  {
-    headers: {
-      'X-Subscription-Token': key,
-      'Accept': 'application/json'
-    }
+const url = 'https://api.search.brave.com/res/v1/web/search?q=' + encodeURIComponent(params.query) + '&count=' + count;
+const headers = { 'X-Subscription-Token': key, 'Accept': 'application/json' };
+
+let resp;
+const maxRetries = 3;
+for (let attempt = 0; attempt < maxRetries; attempt++) {
+  resp = await ctx.fetch(url, { headers });
+  if (resp.status === 429) {
+    const delay = Math.pow(2, attempt) * 2000;
+    ctx.log('Rate limited (429), waiting ' + (delay / 1000) + 's before retry ' + (attempt + 1) + '/' + maxRetries + '...');
+    await new Promise(r => setTimeout(r, delay));
+    continue;
   }
-);
+  break;
+}
 
 if (resp.status !== 200) {
   throw new Error('Brave API error: HTTP ' + resp.status);
@@ -213,6 +251,7 @@ Write a 500-1000 word article with:
       inputs: dto.inputs || [],
       credentials: dto.credentials || [],
       enabled: true,
+      category: dto.category || 'other',
       tags: dto.tags || [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -248,17 +287,123 @@ Write a 500-1000 word article with:
   }
 
   // ══════════════════════════════════════════════════════════════════
-  //  AGENTIC LOOP — The core execution engine
+  // ══════════════════════════════════════════════════════════════════
+  //  EXECUTION ENGINE — Vercel AI SDK + ArtifactRegistry
   // ══════════════════════════════════════════════════════════════════
 
-  async run(skillId: string, dto: RunSkillDto): Promise<SkillRunResult> {
+  /**
+   * Build a Zod schema from dynamic tool parameters.
+   * Bridges our DB-stored parameter definitions to the AI SDK's typed tool system.
+   */
+  private buildZodSchema(params: ToolParam[]): z.ZodObject<any> {
+    const shape: Record<string, z.ZodTypeAny> = {};
+    for (const p of params) {
+      let t: z.ZodTypeAny;
+      switch (p.type) {
+        case 'number':  t = z.number();  break;
+        case 'boolean': t = z.boolean(); break;
+        case 'array':   t = z.array(z.any()); break;
+        case 'object':  t = z.record(z.string(), z.any()); break;
+        default:        t = z.string();  break;
+      }
+      if (p.description) t = t.describe(p.description);
+      shape[p.name] = p.required ? t : t.optional();
+    }
+    return z.object(shape);
+  }
+
+  /**
+   * Build AI SDK tool definitions from our database tools.
+   * Each tool wraps executeTool() and auto-registers artifacts.
+   */
+  private buildSDKTools(
+    toolDefs: ToolDefinition[],
+    registry: ArtifactRegistry,
+    toolCallLogs: ToolCallLog[],
+    toolCallCounts: Record<string, number>,
+    logs: string[],
+    log: (msg: string) => void,
+    emit: (event: Omit<SkillProgressEvent, 'elapsed'>) => void,
+    phaseLabel: string,
+  ): Record<string, any> {
+    const tools: Record<string, any> = {};
+
+    for (const t of toolDefs) {
+      tools[t.name] = defineTool({
+        description: t.description,
+        inputSchema: this.buildZodSchema(t.parameters),
+        execute: async (params: any) => {
+          // Per-tool cap check
+          const count = toolCallCounts[t.name] || 0;
+          const max = MAX_CALLS_PER_TOOL[t.name] ?? DEFAULT_MAX_CALLS_PER_TOOL;
+          if (count >= max) {
+            log(`⛔ [${phaseLabel}] ${t.name} cap reached (${max})`);
+            emit({ type: 'tool-done', message: `${t.name} skipped — limit reached (${max})`, phase: phaseLabel, tool: t.name });
+            return { error: `Maximum ${max} calls to ${t.name} reached. Proceed without it.` };
+          }
+
+          log(`🔧 [${phaseLabel}] ${t.name}(${JSON.stringify(params).slice(0, 300)})`);
+          emit({ type: 'tool-start', message: `Calling ${t.name}...`, phase: phaseLabel, tool: t.name });
+
+          const toolT0 = Date.now();
+          let output: any;
+          try {
+            output = await this.executeTool(t.name, params, logs);
+            log(`✅ [${phaseLabel}] ${t.name} done (${Date.now() - toolT0}ms)`);
+            emit({ type: 'tool-done', message: `${t.name} done (${Date.now() - toolT0}ms)`, phase: phaseLabel, tool: t.name });
+          } catch (err: any) {
+            output = { error: err.message };
+            log(`❌ [${phaseLabel}] ${t.name} failed: ${err.message}`);
+            emit({ type: 'tool-done', message: `${t.name} failed: ${err.message}`, phase: phaseLabel, tool: t.name });
+          }
+
+          toolCallCounts[t.name] = count + 1;
+          toolCallLogs.push({ toolName: t.name, input: params, output, duration: Date.now() - toolT0 });
+
+          // Artifact registry: automatically track any files produced
+          registry.registerToolOutput(t.name, output);
+
+          return output;
+        },
+      });
+    }
+
+    return tools;
+  }
+
+  /**
+   * Get the AI provider (OpenRouter preferred, OpenAI fallback).
+   */
+  private getAIProvider() {
+    const openRouterKey = this.getKey('openrouter');
+    const openAIKey = this.getKey('openai');
+
+    if (openRouterKey) {
+      return createOpenAI({
+        apiKey: openRouterKey,
+        baseURL: 'https://openrouter.ai/api/v1',
+      });
+    }
+    if (openAIKey) {
+      return createOpenAI({ apiKey: openAIKey });
+    }
+    throw new Error('No AI API key configured. Add an OpenRouter or OpenAI key in Settings.');
+  }
+
+  async run(skillId: string, dto: RunSkillDto, onProgress?: ProgressCallback): Promise<SkillRunResult> {
     const skill = await this.getSkill(skillId);
     if (!skill) return this.errorResult(skillId, 'Skill not found');
 
     const logs: string[] = [];
     const toolCallLogs: ToolCallLog[] = [];
+    const toolCallCounts: Record<string, number> = {};
     const startedAt = new Date().toISOString();
     const t0 = Date.now();
+    const registry = new ArtifactRegistry();
+
+    const emit = (event: Omit<SkillProgressEvent, 'elapsed'>) => {
+      if (onProgress) onProgress({ ...event, elapsed: Date.now() - t0 });
+    };
 
     const log = (msg: string) => {
       const ts = new Date().toISOString().substr(11, 12);
@@ -267,154 +412,121 @@ Write a 500-1000 word article with:
     };
 
     try {
-      // 1. Load the tools this skill uses
+      // 1. Load tools + AI provider
       const allTools = await this.listTools();
-      const skillTools = allTools.filter(t => skill.tools.includes(t.name));
-
-      if (skill.tools.length > 0 && skillTools.length === 0) {
-        log(`⚠ Skill declares tools [${skill.tools.join(', ')}] but none were found`);
-      }
+      const provider = this.getAIProvider();
+      const inputValues = dto.inputs || {};
+      const instructions = dto.instructions?.trim() || '';
 
       log(`▶ Starting skill: ${skill.name}`);
-      log(`  Tools: [${skillTools.map(t => t.name).join(', ') || 'none'}]`);
-      log(`  Inputs: ${JSON.stringify(dto.inputs || {})}`);
+      log(`  Inputs: ${JSON.stringify(inputValues)}`);
 
-      // 2. Build the system prompt — inject skill markdown + user inputs
-      const inputValues = dto.inputs || {};
+      // ── build_prompt_for_task (the Python outline) ──────────────
+      // ONE call: plan → assemble prompt → collect tools
+      emit({ type: 'info', message: `Planning capabilities for: ${skill.name}` });
+      const { systemPrompt, tools: filteredTools, capabilities } =
+        await this.promptBuilder.buildPromptForTask(
+          `Skill: ${skill.name} — ${skill.description}`,
+          allTools,
+          skill,
+          inputValues,
+          instructions,
+        );
+
+      log(`🧠 Planner selected: [${capabilities.join(', ')}]`);
+      log(`  Tools: [${filteredTools.map(t => t.name).join(', ') || 'none'}]`);
+      emit({ type: 'step', message: `Capabilities: ${capabilities.length ? capabilities.join(' → ') : 'general assistant'}` });
+
+      // Build user message
       const inputSummary = Object.entries(inputValues)
         .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
         .join('\n');
 
-      const userInputDescription = skill.inputs
-        .map(i => `- ${i.name} (${i.type}): ${i.description}`)
-        .join('\n');
+      const userMessage = instructions
+        ? `${instructions}${inputSummary ? '\n\nInputs provided:\n' + inputSummary : ''}`
+        : inputSummary
+          ? `Please execute this task with the following inputs:\n${inputSummary}`
+          : 'Please execute this task.';
 
-      const systemPrompt = `${skill.prompt}
+      emit({ type: 'info', message: `Starting skill: ${skill.name}` });
 
----
-INPUTS PROVIDED BY THE USER:
-${inputSummary || '(none)'}
+      // Build SDK tool wrappers
+      const sdkTools = this.buildSDKTools(
+        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main',
+      );
 
-${userInputDescription ? `INPUT DEFINITIONS:\n${userInputDescription}` : ''}`;
-
-      // 3. Build OpenAI-format tool definitions
-      const openAITools = skillTools.map(t => ({
-        type: 'function' as const,
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: {
-            type: 'object' as const,
-            properties: Object.fromEntries(
-              t.parameters.map(p => [p.name, { type: p.type, description: p.description }]),
-            ),
-            required: t.parameters.filter(p => p.required).map(p => p.name),
+      // ── ONE generateText() call with ALL tools and ONE prompt ──
+      let result: any;
+      try {
+        result = await generateText({
+          model: provider('gpt-4o-mini'),
+          tools: sdkTools,
+          stopWhen: stepCountIs(MAX_STEPS),
+          system: systemPrompt,
+          messages: [{ role: 'user' as const, content: userMessage }],
+          maxRetries: 3,
+          onStepFinish: (event: any) => {
+            const { text, toolCalls } = event;
+            if (toolCalls && toolCalls.length > 0) {
+              emit({ type: 'step', message: `Tools: ${toolCalls.map((tc: any) => tc.toolName).join(', ')}`, phase: 'Main' });
+            } else if (text) {
+              emit({ type: 'step', message: `Composing (${text.length} chars)...`, phase: 'Main' });
+            }
           },
-        },
-      }));
-
-      // 4. Initial messages
-      const messages: any[] = [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: inputSummary
-            ? `Please execute this task with the following inputs:\n${inputSummary}`
-            : 'Please execute this task.',
-        },
-      ];
-
-      // 5. Agentic loop
-      let iteration = 0;
-      while (iteration < MAX_LOOP_ITERATIONS) {
-        iteration++;
-        log(`\n🔄 Loop iteration ${iteration}/${MAX_LOOP_ITERATIONS}`);
-
-        const choice = await this.callAIWithTools(messages, openAITools, log);
-
-        // Check if the AI wants to call tools
-        const toolCalls = choice.message?.tool_calls;
-
-        if (toolCalls && toolCalls.length > 0) {
-          // Add the assistant message (with tool_calls) to conversation
-          messages.push(choice.message);
-
-          // Execute each tool call
-          for (const tc of toolCalls) {
-            const toolName = tc.function.name;
-            let toolInput: any;
-            try {
-              toolInput = JSON.parse(tc.function.arguments);
-            } catch {
-              toolInput = tc.function.arguments;
-            }
-
-            log(`🔧 AI called: ${toolName}(${JSON.stringify(toolInput)})`);
-
-            const toolT0 = Date.now();
-            let toolOutput: any;
-            try {
-              toolOutput = await this.executeTool(toolName, toolInput, logs);
-              log(`✅ ${toolName} returned (${Date.now() - toolT0}ms)`);
-            } catch (err: any) {
-              toolOutput = { error: err.message };
-              log(`❌ ${toolName} failed: ${err.message}`);
-            }
-
-            toolCallLogs.push({
-              toolName,
-              input: toolInput,
-              output: toolOutput,
-              duration: Date.now() - toolT0,
-            });
-
-            // Add tool result to conversation
-            messages.push({
-              role: 'tool',
-              tool_call_id: tc.id,
-              content: typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput),
-            });
-          }
+        } as any);
+      } catch (err: any) {
+        // Fallback: if OpenRouter failed and we have both keys, try OpenAI
+        const openRouterKey = this.getKey('openrouter');
+        const openAIKey = this.getKey('openai');
+        if (openRouterKey && openAIKey) {
+          log(`⚠ Primary provider failed: ${err.message}, trying fallback...`);
+          const fallback = createOpenAI({ apiKey: openAIKey });
+          result = await generateText({
+            model: fallback('gpt-4o-mini'),
+            tools: sdkTools,
+            stopWhen: stepCountIs(MAX_STEPS),
+            system: systemPrompt,
+            messages: [{ role: 'user' as const, content: userMessage }],
+            maxRetries: 3,
+          } as any);
         } else {
-          // No tool calls — AI is done, return the final answer
-          const finalText = choice.message?.content || '';
-          log(`\n✅ AI finished after ${iteration} iteration(s)`);
-          log(`📝 Output length: ${finalText.length} chars`);
-
-          const result: SkillRunResult = {
-            id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-            skillId,
-            status: 'success',
-            output: finalText,
-            logs,
-            toolCalls: toolCallLogs,
-            duration: Date.now() - t0,
-            startedAt,
-          };
-
-          await this.saveRun(result);
-          return result;
+          throw err;
         }
       }
 
-      // Max iterations reached
-      log(`⚠ Max iterations (${MAX_LOOP_ITERATIONS}) reached`);
-      const lastMsg = messages[messages.length - 1];
-      const partialOutput = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
+      // Extract content from result
+      const allStepTexts = (result.steps || [])
+        .map((s: any) => s.text?.trim())
+        .filter(Boolean);
 
-      const result: SkillRunResult = {
+      let contentOutput: string;
+      if (result.text && result.text.length > 100) {
+        contentOutput = result.text;
+      } else if (allStepTexts.length > 0) {
+        contentOutput = allStepTexts.join('\n\n');
+      } else {
+        contentOutput = '';
+        log(`⚠ Model produced no text output after ${(result.steps || []).length} steps`);
+      }
+
+      // Deterministic output assembly via ArtifactRegistry
+      const output = registry.assembleOutput(contentOutput);
+
+      log(`📝 Final: ${output.length} chars (${registry.count} artifacts)`);
+      emit({ type: 'done', message: `Complete — ${output.length} chars, ${toolCallLogs.length} tool calls` });
+
+      const runResult: SkillRunResult = {
         id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         skillId,
         status: 'success',
-        output: partialOutput || 'Max tool-call iterations reached. The AI may not have finished.',
+        output,
         logs,
         toolCalls: toolCallLogs,
         duration: Date.now() - t0,
         startedAt,
       };
-
-      await this.saveRun(result);
-      return result;
+      await this.saveRun(runResult);
+      return runResult;
     } catch (err: any) {
       log(`❌ Error: ${err.message}`);
 
@@ -444,9 +556,11 @@ ${userInputDescription ? `INPUT DEFINITIONS:\n${userInputDescription}` : ''}`;
   }): Promise<SkillRunResult> {
     const logs: string[] = [];
     const toolCallLogs: ToolCallLog[] = [];
+    const toolCallCounts: Record<string, number> = {};
     const startedAt = new Date().toISOString();
     const t0 = Date.now();
     const skillId = body.previousSkillId || 'follow-up';
+    const registry = new ArtifactRegistry();
 
     const log = (msg: string) => {
       const ts = new Date().toISOString().substr(11, 12);
@@ -454,120 +568,46 @@ ${userInputDescription ? `INPUT DEFINITIONS:\n${userInputDescription}` : ''}`;
       this.logger.log(msg);
     };
 
+    const noopEmit = (_event: Omit<SkillProgressEvent, 'elapsed'>) => {};
+
     try {
-      // Load ALL tools — follow-ups can use any tool
       const allTools = await this.listTools();
+      const provider = this.getAIProvider();
       log(`▶ Follow-up request with ${allTools.length} tools available`);
       log(`  Message: ${body.message}`);
 
-      const openAITools = allTools.map(t => ({
-        type: 'function' as const,
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: {
-            type: 'object' as const,
-            properties: Object.fromEntries(
-              t.parameters.map(p => [p.name, { type: p.type, description: p.description }]),
-            ),
-            required: t.parameters.filter(p => p.required).map(p => p.name),
-          },
-        },
-      }));
+      const sdkTools = this.buildSDKTools(
+        allTools, registry, toolCallLogs, toolCallCounts, logs, log, noopEmit, 'Follow-up',
+      );
 
       const systemPrompt = `You are a helpful assistant that can use tools to process content.
 You have been given the output from a previous skill run. The user wants you to do something with it.
 
-Available tools: ${allTools.map(t => `${t.name} — ${t.description}`).join('\n')}
-
 IMPORTANT:
 - Use the provided tools to fulfil the user's request
-- The previous output is provided below for context
-- Be concise and direct in your final response
-- If the user asks to save as PDF, use the generate-pdf tool with the previous output as content
-- If the user asks for an image, use the generate-image tool
-- If the user asks to research further, use brave-search and/or apify-scraper`;
+- If the user asks you to export/save content, pass the FULL content to the appropriate tool
+- Your final answer must include the full content plus any download links`;
 
-      const messages: any[] = [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
+      const followUpResult = await generateText({
+        model: provider('gpt-4o-mini'),
+        tools: sdkTools,
+        stopWhen: stepCountIs(MAX_STEPS),
+        system: systemPrompt,
+        messages: [{
+          role: 'user' as const,
           content: `PREVIOUS OUTPUT:\n---\n${body.previousOutput.slice(0, 12000)}\n---\n\nUSER REQUEST: ${body.message}`,
-        },
-      ];
+        }],
+        maxRetries: 3,
+      } as any);
 
-      // Agentic loop (same as run())
-      let iteration = 0;
-      while (iteration < MAX_LOOP_ITERATIONS) {
-        iteration++;
-        log(`\n🔄 Follow-up loop iteration ${iteration}/${MAX_LOOP_ITERATIONS}`);
+      const output = registry.assembleOutput(followUpResult.text);
+      log(`✅ Follow-up finished — ${output.length} chars`);
 
-        const choice = await this.callAIWithTools(messages, openAITools, log);
-        const toolCalls = choice.message?.tool_calls;
-
-        if (toolCalls && toolCalls.length > 0) {
-          messages.push(choice.message);
-
-          for (const tc of toolCalls) {
-            const toolName = tc.function.name;
-            let toolInput: any;
-            try {
-              toolInput = JSON.parse(tc.function.arguments);
-            } catch {
-              toolInput = tc.function.arguments;
-            }
-
-            log(`🔧 AI called: ${toolName}(${JSON.stringify(toolInput).slice(0, 200)})`);
-
-            const toolT0 = Date.now();
-            let toolOutput: any;
-            try {
-              toolOutput = await this.executeTool(toolName, toolInput, logs);
-              log(`✅ ${toolName} returned (${Date.now() - toolT0}ms)`);
-            } catch (err: any) {
-              toolOutput = { error: err.message };
-              log(`❌ ${toolName} failed: ${err.message}`);
-            }
-
-            toolCallLogs.push({
-              toolName,
-              input: toolInput,
-              output: toolOutput,
-              duration: Date.now() - toolT0,
-            });
-
-            messages.push({
-              role: 'tool',
-              tool_call_id: tc.id,
-              content: typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput),
-            });
-          }
-        } else {
-          const finalText = choice.message?.content || '';
-          log(`\n✅ Follow-up finished after ${iteration} iteration(s)`);
-
-          const result: SkillRunResult = {
-            id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-            skillId,
-            status: 'success',
-            output: finalText,
-            logs,
-            toolCalls: toolCallLogs,
-            duration: Date.now() - t0,
-            startedAt,
-          };
-
-          await this.saveRun(result);
-          return result;
-        }
-      }
-
-      // Max iterations
       const result: SkillRunResult = {
         id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         skillId,
         status: 'success',
-        output: 'Max iterations reached during follow-up.',
+        output,
         logs,
         toolCalls: toolCallLogs,
         duration: Date.now() - t0,
@@ -593,7 +633,143 @@ IMPORTANT:
     }
   }
 
+  // ── Chat: freeform input → planner determines capabilities ───────
+
+  async runChat(
+    message: string,
+    onProgress?: ProgressCallback,
+  ): Promise<SkillRunResult> {
+    const logs: string[] = [];
+    const toolCallLogs: ToolCallLog[] = [];
+    const toolCallCounts: Record<string, number> = {};
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+    const registry = new ArtifactRegistry();
+
+    const emit = (event: Omit<SkillProgressEvent, 'elapsed'>) => {
+      if (onProgress) onProgress({ ...event, elapsed: Date.now() - t0 });
+    };
+
+    const log = (msg: string) => {
+      const ts = new Date().toISOString().substr(11, 12);
+      logs.push(`[${ts}] ${msg}`);
+      this.logger.log(msg);
+    };
+
+    try {
+      const allTools = await this.listTools();
+      const provider = this.getAIProvider();
+
+      log(`▶ Chat request: "${message.slice(0, 200)}"`);
+      emit({ type: 'info', message: 'Analysing your request...' });
+
+      // ── build_prompt_for_task (the Python outline) ──────────────
+      // ONE call: plan → assemble prompt → collect tools
+      const { systemPrompt, tools: filteredTools, capabilities } =
+        await this.promptBuilder.buildPromptForTask(message, allTools);
+
+      log(`🧠 Planner selected: [${capabilities.join(', ')}]`);
+      log(`  Tools: [${filteredTools.map(t => t.name).join(', ') || 'none'}]`);
+      emit({ type: 'step', message: `Plan: ${capabilities.length ? capabilities.join(' → ') : 'general assistant'}` });
+      emit({ type: 'info', message: capabilities.length ? `Running: ${capabilities.join(' → ')}` : 'Working...' });
+
+      // Build SDK tool wrappers
+      const sdkTools = this.buildSDKTools(
+        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main',
+      );
+
+      // ── ONE generateText() call with ALL tools and ONE prompt ──
+      let result: any;
+      try {
+        result = await generateText({
+          model: provider('gpt-4o-mini'),
+          tools: sdkTools,
+          stopWhen: stepCountIs(MAX_STEPS_CHAT),
+          system: systemPrompt,
+          messages: [{ role: 'user' as const, content: message }],
+          maxRetries: 3,
+          onStepFinish: (event: any) => {
+            const { text, toolCalls } = event;
+            if (toolCalls?.length > 0) {
+              emit({ type: 'step', message: `Tools: ${toolCalls.map((tc: any) => tc.toolName).join(', ')}`, phase: 'Main' });
+            } else if (text) {
+              emit({ type: 'step', message: `Composing (${text.length} chars)...`, phase: 'Main' });
+            }
+          },
+        } as any);
+      } catch (err: any) {
+        // Fallback: if OpenRouter failed and we have both keys, try OpenAI
+        const openRouterKey = this.getKey('openrouter');
+        const openAIKey = this.getKey('openai');
+        if (openRouterKey && openAIKey) {
+          log(`⚠ Fallback to OpenAI: ${err.message}`);
+          const fallback = createOpenAI({ apiKey: openAIKey });
+          result = await generateText({
+            model: fallback('gpt-4o-mini'),
+            tools: sdkTools,
+            stopWhen: stepCountIs(MAX_STEPS_CHAT),
+            system: systemPrompt,
+            messages: [{ role: 'user' as const, content: message }],
+            maxRetries: 3,
+          } as any);
+        } else {
+          throw err;
+        }
+      }
+
+      // Extract content from result
+      const allStepTexts = (result.steps || [])
+        .map((s: any) => s.text?.trim())
+        .filter(Boolean);
+
+      let contentOutput: string;
+      if (result.text && result.text.length > 100) {
+        contentOutput = result.text;
+      } else if (allStepTexts.length > 0) {
+        contentOutput = allStepTexts.join('\n\n');
+      } else {
+        contentOutput = '';
+        log(`⚠ Model produced no text output after ${(result.steps || []).length} steps`);
+      }
+
+      const output = registry.assembleOutput(contentOutput);
+      log(`📝 Final: ${output.length} chars (${registry.count} artifacts)`);
+      emit({ type: 'done', message: `Complete — ${output.length} chars, ${toolCallLogs.length} tool calls` });
+
+      const runResult: SkillRunResult = {
+        id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        skillId: 'chat',
+        status: 'success',
+        output,
+        logs,
+        toolCalls: toolCallLogs,
+        duration: Date.now() - t0,
+        startedAt,
+      };
+      await this.saveRun(runResult);
+      return runResult;
+    } catch (err: any) {
+      log(`❌ Chat error: ${err.message}`);
+      const runResult: SkillRunResult = {
+        id: `run_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        skillId: 'chat',
+        status: 'error',
+        output: '',
+        logs,
+        toolCalls: toolCallLogs,
+        duration: Date.now() - t0,
+        startedAt,
+        error: err.message || String(err),
+      };
+      await this.saveRun(runResult);
+      return runResult;
+    }
+  }
+
   // ── Execute a single tool by name ─────────────────────────────────
+
+  private lastToolCallAt = 0;
+  private static readonly TOOL_CALL_MIN_GAP_MS = 1500; // min gap between external API calls
 
   private async executeTool(
     toolName: string,
@@ -602,6 +778,15 @@ IMPORTANT:
   ): Promise<any> {
     const tool = await this.getToolByName(toolName);
     if (!tool) throw new Error(`Tool "${toolName}" not found`);
+
+    // Rate-limit: ensure minimum gap between consecutive tool calls
+    const now = Date.now();
+    const elapsed = now - this.lastToolCallAt;
+    if (elapsed < SkillRunnerService.TOOL_CALL_MIN_GAP_MS) {
+      const wait = SkillRunnerService.TOOL_CALL_MIN_GAP_MS - elapsed;
+      await new Promise(r => setTimeout(r, wait));
+    }
+    this.lastToolCallAt = Date.now();
 
     const ctx: ToolContext = this.buildToolContext(logs);
 
@@ -662,8 +847,28 @@ IMPORTANT:
           const pdfDir = path.join(__dirname, '..', '..', 'public', 'skill-pdfs');
           if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
 
-          const safeName = filename || `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.pdf`;
+          // Always append a timestamp so repeated runs never overwrite previous PDFs
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          let safeName: string;
+          if (filename) {
+            const base = filename.replace(/\.pdf$/i, '');
+            safeName = `${base}_${ts}_${rand}.pdf`;
+          } else {
+            safeName = `pdf_${ts}_${rand}.pdf`;
+          }
           const filePath = path.join(pdfDir, safeName);
+
+          // ── Pre-process: fix mangled image URLs in content ──
+          // The AI often rewrites /skill-images/file.png as https://skill-images.file.png
+          const publicDir = path.join(__dirname, '..', '..', 'public');
+          const fixedContent = content
+            // Fix ![alt](https://skill-images.filename) → ![alt](/skill-images/filename)
+            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-images[./]([^)]+)\)/g, '$1(/skill-images/$2)')
+            // Fix ![alt](https://skill-pdfs.filename) → ![alt](/skill-pdfs/filename)
+            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-pdfs[./]([^)]+)\)/g, '$1(/skill-pdfs/$2)')
+            // Strip trailing slashes from image URLs inside markdown
+            .replace(/(!\[[^\]]*\]\([^)]+?)\/\)/g, '$1)');
 
           return new Promise<string>((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -679,13 +884,51 @@ IMPORTANT:
             }
 
             // Parse and render markdown lines
-            const lines = content.split('\n');
+            const lines = fixedContent.split('\n');
             for (const line of lines) {
               const trimmed = line.trim();
 
               // Skip empty lines — just add spacing
               if (!trimmed) {
                 doc.moveDown(0.4);
+                continue;
+              }
+
+              // Inline images: ![alt](/skill-images/file.png)
+              const imgMatch = trimmed.match(/^!\[([^\]]*)\]\((\/skill-images\/[^)]+)\)$/);
+              if (imgMatch) {
+                const imgPath = path.join(publicDir, imgMatch[2]);
+                if (fs.existsSync(imgPath)) {
+                  try {
+                    // Check remaining page space — need at least 250pt for an image
+                    if (doc.y > 500) doc.addPage();
+                    doc.moveDown(0.5);
+                    doc.image(imgPath, {
+                      fit: [495, 300],
+                      align: 'center',
+                      valign: 'center',
+                    });
+                    doc.moveDown(0.5);
+                    // Render alt text as caption if present
+                    if (imgMatch[1]) {
+                      doc.fontSize(8).font('Helvetica-Oblique').fillColor('#666666')
+                        .text(imgMatch[1], { align: 'center' });
+                      doc.fillColor('#000000');
+                      doc.moveDown(0.3);
+                    }
+                    logs.push(`[PDF] Embedded image: ${imgMatch[2]}`);
+                  } catch (imgErr: any) {
+                    logs.push(`[PDF] Failed to embed image ${imgMatch[2]}: ${imgErr.message}`);
+                    doc.fontSize(9).font('Helvetica-Oblique').fillColor('#999999')
+                      .text(`[Image: ${imgMatch[1] || imgMatch[2]}]`, { align: 'center' });
+                    doc.fillColor('#000000');
+                  }
+                } else {
+                  logs.push(`[PDF] Image not found on disk: ${imgPath}`);
+                  doc.fontSize(9).font('Helvetica-Oblique').fillColor('#999999')
+                    .text(`[Image: ${imgMatch[1] || imgMatch[2]}]`, { align: 'center' });
+                  doc.fillColor('#000000');
+                }
                 continue;
               }
 
@@ -763,9 +1006,19 @@ IMPORTANT:
             }
             doc.fillColor('#000000');
 
-            doc.end();
-            stream.on('finish', () => resolve(`/skill-pdfs/${safeName}`));
+            // Listen for events BEFORE calling end() to avoid race conditions
             stream.on('error', reject);
+            stream.on('finish', async () => {
+              // Small delay to let the OS flush the file to disk
+              await new Promise(r => setTimeout(r, 500));
+              // Verify the file was actually written
+              try {
+                const stat = fs.statSync(filePath);
+                logs.push(`[PDF] Written ${stat.size} bytes to ${safeName}`);
+              } catch { /* ignore stat errors */ }
+              resolve(`/skill-pdfs/${safeName}`);
+            });
+            doc.end();
           });
         } catch (err: any) {
           throw new Error(`Failed to generate PDF: ${err.message}`);
@@ -790,72 +1043,190 @@ IMPORTANT:
           throw new Error(`Failed to save image: ${err.message}`);
         }
       },
+
+      saveFile: async (content: string, filename: string, subDir?: string): Promise<string> => {
+        try {
+          const dir = subDir || 'skill-files';
+          const targetDir = path.join(__dirname, '..', '..', 'public', dir);
+          if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const ext = path.extname(filename) || '';
+          const base = path.basename(filename, ext);
+          const safeName = `${base.replace(/[^a-zA-Z0-9_-]/g, '_')}_${ts}_${rand}${ext}`;
+          const filePath = path.join(targetDir, safeName);
+
+          // Detect if content is base64 encoded (starts with data: or is pure base64)
+          if (content.startsWith('data:')) {
+            const b64 = content.split(',')[1] || '';
+            fs.writeFileSync(filePath, Buffer.from(b64, 'base64'));
+          } else {
+            fs.writeFileSync(filePath, content, 'utf-8');
+          }
+
+          const stat = fs.statSync(filePath);
+          logs.push(`[FILE] Written ${stat.size} bytes to ${dir}/${safeName}`);
+          return `/${dir}/${safeName}`;
+        } catch (err: any) {
+          throw new Error(`Failed to save file: ${err.message}`);
+        }
+      },
+
+      generateExcel: async (data: any, filename?: string): Promise<string> => {
+        try {
+          const excelDir = path.join(__dirname, '..', '..', 'public', 'skill-files');
+          if (!fs.existsSync(excelDir)) fs.mkdirSync(excelDir, { recursive: true });
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const baseName = filename ? filename.replace(/\.xlsx$/i, '') : 'spreadsheet';
+          const safeName = `${baseName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${ts}_${rand}.xlsx`;
+          const filePath = path.join(excelDir, safeName);
+
+          const workbook = new ExcelJS.Workbook();
+          workbook.creator = 'Skill Agent';
+          workbook.created = new Date();
+
+          // Support single array or multi-sheet format
+          const sheets = Array.isArray(data)
+            ? [{ name: 'Sheet1', rows: data }]
+            : (data.sheets || [{ name: 'Sheet1', rows: data.rows || data }]);
+
+          for (const sheetDef of sheets) {
+            const ws = workbook.addWorksheet(sheetDef.name || 'Sheet');
+            const rows = sheetDef.rows || [];
+            if (rows.length === 0) continue;
+
+            // If rows are objects, extract headers from first row
+            if (typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+              const headers = Object.keys(rows[0]);
+              ws.addRow(headers);
+              // Style header row
+              ws.getRow(1).font = { bold: true };
+              ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
+              ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              for (const row of rows) {
+                ws.addRow(headers.map(h => row[h] ?? ''));
+              }
+              // Auto-fit column widths
+              headers.forEach((h, i) => {
+                const col = ws.getColumn(i + 1);
+                col.width = Math.max(h.length + 2, 12);
+              });
+            } else {
+              // rows are arrays
+              for (const row of rows) {
+                ws.addRow(Array.isArray(row) ? row : [row]);
+              }
+            }
+          }
+
+          await workbook.xlsx.writeFile(filePath);
+          const stat = fs.statSync(filePath);
+          logs.push(`[EXCEL] Written ${stat.size} bytes to skill-files/${safeName}`);
+          return `/skill-files/${safeName}`;
+        } catch (err: any) {
+          throw new Error(`Failed to generate Excel: ${err.message}`);
+        }
+      },
+
+      sendEmail: async (to: string, subject: string, body: string, opts?: { html?: boolean; from?: string }): Promise<{ success: boolean; messageId?: string }> => {
+        try {
+          const smtpHost = (() => { try { const d = this.db.readSync(); const k = (d.apiKeys||[]).find((k:any)=>k.name==='smtp_host'); return k ? this.crypto.decrypt(k.value) : null; } catch { return null; } })();
+          const smtpPort = (() => { try { const d = this.db.readSync(); const k = (d.apiKeys||[]).find((k:any)=>k.name==='smtp_port'); return k ? this.crypto.decrypt(k.value) : null; } catch { return null; } })();
+          const smtpUser = (() => { try { const d = this.db.readSync(); const k = (d.apiKeys||[]).find((k:any)=>k.name==='smtp_user'); return k ? this.crypto.decrypt(k.value) : null; } catch { return null; } })();
+          const smtpPass = (() => { try { const d = this.db.readSync(); const k = (d.apiKeys||[]).find((k:any)=>k.name==='smtp_pass'); return k ? this.crypto.decrypt(k.value) : null; } catch { return null; } })();
+
+          if (!smtpHost || !smtpUser || !smtpPass) {
+            throw new Error('SMTP credentials not configured. Add smtp_host, smtp_user, smtp_pass in Settings -> API Keys.');
+          }
+
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: parseInt(smtpPort || '587', 10),
+            secure: parseInt(smtpPort || '587', 10) === 465,
+            auth: { user: smtpUser, pass: smtpPass },
+          });
+
+          const mailOptions: any = {
+            from: opts?.from || smtpUser,
+            to,
+            subject,
+          };
+          if (opts?.html) {
+            mailOptions.html = body;
+          } else {
+            mailOptions.text = body;
+          }
+
+          const info = await transporter.sendMail(mailOptions);
+          logs.push(`[EMAIL] Sent to ${to}: ${info.messageId}`);
+          return { success: true, messageId: info.messageId };
+        } catch (err: any) {
+          throw new Error(`Failed to send email: ${err.message}`);
+        }
+      },
+
+      generateQR: async (text: string, opts?: { size?: number; filename?: string }): Promise<string> => {
+        try {
+          const qrDir = path.join(__dirname, '..', '..', 'public', 'skill-images');
+          if (!fs.existsSync(qrDir)) fs.mkdirSync(qrDir, { recursive: true });
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const safeName = opts?.filename || `qr_${ts}_${rand}.png`;
+          const filePath = path.join(qrDir, safeName);
+
+          await QRCode.toFile(filePath, text, {
+            width: opts?.size || 400,
+            margin: 2,
+            color: { dark: '#000000', light: '#ffffff' },
+          });
+
+          const stat = fs.statSync(filePath);
+          logs.push(`[QR] Generated ${stat.size} bytes: skill-images/${safeName}`);
+          return `/skill-images/${safeName}`;
+        } catch (err: any) {
+          throw new Error(`Failed to generate QR code: ${err.message}`);
+        }
+      },
+
+      createZip: async (files: Array<{ name: string; content: string }>, filename?: string): Promise<string> => {
+        try {
+          const zipDir = path.join(__dirname, '..', '..', 'public', 'skill-files');
+          if (!fs.existsSync(zipDir)) fs.mkdirSync(zipDir, { recursive: true });
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const baseName = filename ? filename.replace(/\.zip$/i, '') : 'archive';
+          const safeName = `${baseName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${ts}_${rand}.zip`;
+          const filePath = path.join(zipDir, safeName);
+
+          return new Promise<string>((resolve, reject) => {
+            const output = fs.createWriteStream(filePath);
+            const archive = archiver.default('zip', { zlib: { level: 9 } });
+
+            output.on('close', () => {
+              logs.push(`[ZIP] Created ${archive.pointer()} bytes: skill-files/${safeName}`);
+              resolve(`/skill-files/${safeName}`);
+            });
+            archive.on('error', reject);
+            archive.pipe(output);
+
+            for (const file of files) {
+              archive.append(file.content, { name: file.name });
+            }
+            archive.finalize();
+          });
+        } catch (err: any) {
+          throw new Error(`Failed to create zip: ${err.message}`);
+        }
+      },
     };
   }
 
-  // ── AI call with tool support (OpenAI function calling format) ────
 
-  private async callAIWithTools(
-    messages: any[],
-    tools: any[],
-    log: (msg: string) => void,
-  ): Promise<any> {
-    const model = 'gpt-4o-mini';
-    const openRouterKey = this.getKey('openrouter');
-    const openAIKey = this.getKey('openai');
-
-    const body: any = {
-      model,
-      messages,
-      max_tokens: 4000,
-      temperature: 0.7,
-    };
-
-    if (tools.length > 0) {
-      body.tools = tools;
-    }
-
-    log(`  Calling AI (${model}) with ${tools.length} tools available...`);
-
-    if (openRouterKey) {
-      try {
-        const resp = await axios.post(
-          'https://openrouter.ai/api/v1/chat/completions',
-          body,
-          {
-            headers: {
-              Authorization: `Bearer ${openRouterKey}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 120000,
-          },
-        );
-        return resp.data.choices?.[0] || {};
-      } catch (err: any) {
-        log(`  ⚠ OpenRouter failed: ${err.message}, trying OpenAI...`);
-      }
-    }
-
-    if (openAIKey) {
-      body.model = model.includes('/') ? 'gpt-4o-mini' : model;
-      const resp = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        body,
-        {
-          headers: {
-            Authorization: `Bearer ${openAIKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 120000,
-        },
-      );
-      return resp.data.choices?.[0] || {};
-    }
-
-    throw new Error('No AI API key configured. Add an OpenRouter or OpenAI key in Settings.');
-  }
-
-  // ══════════════════════════════════════════════════════════════════
   //  RUN HISTORY
   // ══════════════════════════════════════════════════════════════════
 

@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { SkillRunnerService } from './skill-runner.service';
-import { CreateToolDto, UpdateToolDto, CreateSkillDto, UpdateSkillDto, RunSkillDto } from './skill.types';
+import { CreateToolDto, UpdateToolDto, CreateSkillDto, UpdateSkillDto, RunSkillDto, SkillProgressEvent } from './skill.types';
 
 /**
  * Skills Controller — Two-layer agent architecture
@@ -79,6 +80,37 @@ export class SkillsController {
     }
   }
 
+  // ── Freeform Chat (SSE) ─────────────────────────────────────────
+
+  @Post('chat-stream')
+  async chatStream(
+    @Body() body: { message: string },
+    @Res() res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const onProgress = (evt: SkillProgressEvent) => {
+        sendEvent('progress', evt);
+      };
+
+      const result = await this.runner.runChat(body.message, onProgress);
+      sendEvent('done', { success: result.status === 'success', result });
+    } catch (err: any) {
+      sendEvent('error', { message: err.message || 'Chat failed' });
+    } finally {
+      res.end();
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════
   //  SKILLS (parameterized routes last)
   // ══════════════════════════════════════════════════════════════════
@@ -113,6 +145,39 @@ export class SkillsController {
   async deleteSkill(@Param('id') id: string) {
     const deleted = await this.runner.deleteSkill(id);
     return { success: deleted, message: deleted ? 'Deleted' : 'Skill not found' };
+  }
+
+  // ── Execution (streaming) ───────────────────────────────────────
+
+  @Post(':id/run-stream')
+  async runStream(
+    @Param('id') id: string,
+    @Body() dto: RunSkillDto,
+    @Res() res: Response,
+  ) {
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const onProgress = (evt: SkillProgressEvent) => {
+        sendEvent('progress', evt);
+      };
+
+      const result = await this.runner.run(id, dto, onProgress);
+      sendEvent('done', { success: result.status === 'success', result });
+    } catch (err: any) {
+      sendEvent('error', { message: err.message || 'Run failed' });
+    } finally {
+      res.end();
+    }
   }
 
   // ── Execution ─────────────────────────────────────────────────────
