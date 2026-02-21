@@ -826,6 +826,7 @@ IMPORTANT:
             data: opts?.body,
             timeout: 30000,
             validateStatus: () => true,
+            responseType: (opts as any)?.responseType || 'json',
           });
           return {
             status: resp.status,
