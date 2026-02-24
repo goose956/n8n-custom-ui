@@ -1,4 +1,4 @@
-﻿import { Controller, Post, Get, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query } from '@nestjs/common';
 import { LinkedinPowerhouseScraperService } from './linkedin-powerhouse-scraper.service';
 
 interface ScrapeRequest {

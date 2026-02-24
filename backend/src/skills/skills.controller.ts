@@ -1,5 +1,8 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SkillRunnerService } from './skill-runner.service';
 import { CreateToolDto, UpdateToolDto, CreateSkillDto, UpdateSkillDto, RunSkillDto, SkillProgressEvent } from './skill.types';
 
@@ -19,8 +22,8 @@ export class SkillsController {
   // ══════════════════════════════════════════════════════════════════
 
   @Get('tools')
-  async listTools() {
-    const tools = await this.runner.listTools();
+  async listTools(@Query('app_id') appId?: string) {
+    const tools = await this.runner.listTools(appId ? parseInt(appId) : undefined);
     return { success: true, tools };
   }
 
@@ -55,8 +58,8 @@ export class SkillsController {
   // ══════════════════════════════════════════════════════════════════
 
   @Get('runs/all')
-  async allRuns(@Query('limit') limit?: string) {
-    const runs = await this.runner.getRunHistory(undefined, limit ? parseInt(limit) : 50);
+  async allRuns(@Query('limit') limit?: string, @Query('app_id') appId?: string) {
+    const runs = await this.runner.getRunHistory(undefined, limit ? parseInt(limit) : 50, appId ? parseInt(appId) : undefined);
     return { success: true, runs };
   }
 
@@ -80,11 +83,114 @@ export class SkillsController {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  //  FILES (list / upload member files)
+  // ══════════════════════════════════════════════════════════════════
+
+  private readonly FILE_DIRECTORIES: Record<string, string> = {
+    images: 'skill-images',
+    pdfs: 'skill-pdfs',
+    html: 'skill-html',
+    files: 'skill-files',
+  };
+
+  /** Build the base directory for a given app_id (or flat if none). */
+  private fileBaseDir(appId?: string): string {
+    const publicDir = path.join(process.cwd(), 'public');
+    return appId ? path.join(publicDir, 'apps', appId) : publicDir;
+  }
+
+  @Get('files')
+  async listFiles(@Query('category') category?: string, @Query('app_id') appId?: string) {
+    const baseDir = this.fileBaseDir(appId);
+    const allFiles: Array<{ name: string; category: string; path: string; size: number; modified: string; url: string }> = [];
+
+    const dirs = category && this.FILE_DIRECTORIES[category]
+      ? { [category]: this.FILE_DIRECTORIES[category] }
+      : this.FILE_DIRECTORIES;
+
+    const urlPrefix = appId ? `/apps/${appId}` : '';
+
+    for (const [cat, dirName] of Object.entries(dirs)) {
+      const dirPath = path.join(baseDir, dirName);
+      if (!fs.existsSync(dirPath)) continue;
+      const entries = fs.readdirSync(dirPath);
+      for (const entry of entries) {
+        try {
+          const filePath = path.join(dirPath, entry);
+          const stat = fs.statSync(filePath);
+          if (!stat.isFile()) continue;
+          allFiles.push({
+            name: entry,
+            category: cat,
+            path: `${dirName}/${entry}`,
+            size: stat.size,
+            modified: stat.mtime.toISOString(),
+            url: `${urlPrefix}/${dirName}/${entry}`,
+          });
+        } catch { /* skip unreadable files */ }
+      }
+    }
+
+    // Sort newest first
+    allFiles.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+    return { success: true, files: allFiles, total: allFiles.length };
+  }
+
+  @Post('files/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFile(@UploadedFile() file: any, @Body() body: { category?: string; app_id?: string }) {
+    if (!file) return { success: false, message: 'No file uploaded' };
+
+    const ext = (file.originalname || '').split('.').pop()?.toLowerCase() || '';
+    let category = body.category || 'files';
+
+    // Auto-detect category from extension
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) category = 'images';
+    else if (ext === 'pdf') category = 'pdfs';
+    else if (['html', 'htm'].includes(ext)) category = 'html';
+
+    const dirName = this.FILE_DIRECTORIES[category] || 'skill-files';
+    const baseDir = this.fileBaseDir(body.app_id);
+    const targetDir = path.join(baseDir, dirName);
+
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    const targetPath = path.join(targetDir, file.originalname);
+    fs.writeFileSync(targetPath, file.buffer);
+
+    const urlPrefix = body.app_id ? `/apps/${body.app_id}` : '';
+
+    return {
+      success: true,
+      file: {
+        name: file.originalname,
+        category,
+        path: `${dirName}/${file.originalname}`,
+        size: file.size,
+        url: `${urlPrefix}/${dirName}/${file.originalname}`,
+      },
+    };
+  }
+
+  @Delete('files/:category/:filename')
+  async deleteFile(@Param('category') category: string, @Param('filename') filename: string, @Query('app_id') appId?: string) {
+    const dirName = this.FILE_DIRECTORIES[category];
+    if (!dirName) return { success: false, message: 'Invalid category' };
+
+    const baseDir = this.fileBaseDir(appId);
+    const filePath = path.join(baseDir, dirName, filename);
+    if (!fs.existsSync(filePath)) return { success: false, message: 'File not found' };
+
+    fs.unlinkSync(filePath);
+    return { success: true, message: 'Deleted' };
+  }
+
   // ── Freeform Chat (SSE) ─────────────────────────────────────────
 
   @Post('chat-stream')
   async chatStream(
-    @Body() body: { message: string },
+    @Body() body: { message: string; app_id?: number; attachments?: Array<{ name: string; content: string; type: string }> },
     @Res() res: Response,
   ) {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -102,7 +208,17 @@ export class SkillsController {
         sendEvent('progress', evt);
       };
 
-      const result = await this.runner.runChat(body.message, onProgress);
+      // Build the full message with attached document contents prepended
+      let fullMessage = body.message;
+      if (body.attachments && body.attachments.length > 0) {
+        const attachmentSections = body.attachments.map(a => {
+          const content = a.type === 'base64' ? `[Binary file: ${a.name} — base64 encoded]\n${a.content.slice(0, 5000)}` : a.content;
+          return `--- FILE: ${a.name} ---\n${content}\n--- END FILE ---`;
+        }).join('\n\n');
+        fullMessage = `[ATTACHED DOCUMENTS]\n${attachmentSections}\n\n[USER REQUEST]\n${body.message}`;
+      }
+
+      const result = await this.runner.runChat(fullMessage, onProgress, body.app_id);
       sendEvent('done', { success: result.status === 'success', result });
     } catch (err: any) {
       sendEvent('error', { message: err.message || 'Chat failed' });
@@ -116,8 +232,8 @@ export class SkillsController {
   // ══════════════════════════════════════════════════════════════════
 
   @Get()
-  async listSkills() {
-    const skills = await this.runner.listSkills();
+  async listSkills(@Query('app_id') appId?: string) {
+    const skills = await this.runner.listSkills(appId ? parseInt(appId) : undefined);
     return { success: true, skills };
   }
 

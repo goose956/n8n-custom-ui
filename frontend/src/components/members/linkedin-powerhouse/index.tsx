@@ -1,26 +1,22 @@
 import { Routes, Route, Navigate } from'react-router-dom';
 import { MembersDashboardPage } from'./dashboard';
-import { MembersProfilePage } from'./profile';
-import { MembersSettingsPage } from'./settings';
+import { MembersSkillsPage } from'./skills';
+import { MembersWorkflowsPage } from'./workflows';
+import { MembersDocumentsPage } from'./documents';
+import { MembersApiKeysPage } from'./api-keys';
 import { MembersAdminPage } from'./admin';
 import { MembersContactPage } from'./contact';
-import { MembersAnalyticsPage } from'./analytics';
-import { MembersLibraryPage } from'./library';
-import { MembersHistoryPage } from'./history';
-import { MembersScraperPage } from'./scraper';
 
 export function MembersArea() {
  return (
  <Routes>
  <Route path="/dashboard" element={<MembersDashboardPage />} />
- <Route path="/profile" element={<MembersProfilePage />} />
- <Route path="/settings" element={<MembersSettingsPage />} />
+ <Route path="/skills" element={<MembersSkillsPage />} />
+ <Route path="/workflows" element={<MembersWorkflowsPage />} />
+ <Route path="/documents" element={<MembersDocumentsPage />} />
+ <Route path="/api-keys" element={<MembersApiKeysPage />} />
  <Route path="/admin" element={<MembersAdminPage />} />
  <Route path="/contact" element={<MembersContactPage />} />
- <Route path="/analytics" element={<MembersAnalyticsPage />} />
- <Route path="/library" element={<MembersLibraryPage />} />
- <Route path="/history" element={<MembersHistoryPage />} />
- <Route path="/scraper" element={<MembersScraperPage />} />
  <Route path="*" element={<Navigate to="/dashboard" />} />
  </Routes>
  );

@@ -33,4 +33,8 @@ export const API = {
   youtubeAutomationsScraper: `${API_BASE_URL}/api/youtube-automations-scraper`,
   youtubeContentAppScraper: `${API_BASE_URL}/api/youtube-content-app-scraper`,
   skills: `${API_BASE_URL}/api/skills`,
+  knowledgeBase: `${API_BASE_URL}/api/knowledge-base`,
+  chatAgents: `${API_BASE_URL}/api/chat-agents`,
+  youtubeScriptCreatorScraper: `${API_BASE_URL}/api/youtube-script-creator-scraper`,
+  linkedinPowerhouseScraper: `${API_BASE_URL}/api/linkedin-powerhouse-scraper`,
 } as const;

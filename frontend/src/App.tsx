@@ -20,6 +20,7 @@ import { FunnelBuilderPage } from'./components/FunnelBuilderPage';
 import { UpsellEditorPage } from'./components/UpsellEditorPage';
 import { TikTokScraperPage } from'./components/TikTokScraperPage';
 import { SkillWorkshopPage } from'./components/SkillWorkshopPage';
+import { MembersAreaLayout } from'./components/MembersAreaLayout';
 import { GlobalSearch } from'./components/shared/GlobalSearch';
 import {
  Dashboard as DashboardIcon,
@@ -300,6 +301,7 @@ const appBuilderItems: NavItem[] = [
  { label:'Templates', path:'/templates', icon: <TemplateIcon sx={{ fontSize: 18 }} /> },
  { label:'Blog', path:'/blog', icon: <BlogIcon sx={{ fontSize: 18 }} /> },
  { label:'Membership Creator', path:'/programmer', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
+ { label:'Members Area', path:'/members', icon: <ProgrammerIcon sx={{ fontSize: 18 }} /> },
  { label:'Funnels', path:'/funnels', icon: <FunnelIcon sx={{ fontSize: 18 }} /> },
  { label:'Upsell Editor', path:'/upsell-editor', icon: <UpsellIcon sx={{ fontSize: 18 }} /> },
  { label:'Preview', path:'/preview', icon: <PreviewIcon sx={{ fontSize: 18 }} /> },
@@ -1077,6 +1079,7 @@ function App() {
  <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/tiktok-scraper" element={<TikTokScraperPage />} />
           <Route path="/skills" element={<SkillWorkshopPage />} />
+          <Route path="/members" element={<MembersAreaLayout />} />
  </Routes>
  </Box>
  </ThemeProvider>

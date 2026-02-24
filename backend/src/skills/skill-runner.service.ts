@@ -29,6 +29,9 @@ import ExcelJS from 'exceljs';
 import * as nodemailer from 'nodemailer';
 import * as QRCode from 'qrcode';
 import * as archiver from 'archiver';
+import * as sharp from 'sharp';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { PDFDocument as PDFLibDoc } from 'pdf-lib';
 
 const MAX_STEPS = 10;
 const MAX_STEPS_CHAT = 18;  // Chat needs more steps for multi-capability pipelines
@@ -43,9 +46,16 @@ const MAX_CALLS_PER_TOOL: Record<string, number> = {
   'generate-csv': 2,
   'generate-json': 2,
   'generate-vcard': 2,
+  'generate-docx': 1,
+  'generate-ics': 2,
   'send-email': 2,
+  'send-webhook': 3,
+  'send-chat-message': 3,
   'create-zip': 1,
   'text-to-speech': 2,
+  'transcribe-audio': 2,
+  'edit-image': 3,
+  'merge-pdfs': 1,
   'brave-search': 4,
   'apify-scraper': 3,
 };
@@ -166,9 +176,11 @@ Write a 500-1000 word article with:
   //  TOOL CRUD
   // ══════════════════════════════════════════════════════════════════
 
-  async listTools(): Promise<ToolDefinition[]> {
+  async listTools(appId?: number): Promise<ToolDefinition[]> {
     const data = await this.db.read();
-    return data.agentTools || [];
+    const all = data.agentTools || [];
+    if (appId !== undefined) return all.filter((t: ToolDefinition) => t.app_id === undefined || t.app_id === appId);
+    return all;
   }
 
   async getTool(id: string): Promise<ToolDefinition | null> {
@@ -191,6 +203,7 @@ Write a 500-1000 word article with:
       description: dto.description,
       parameters: dto.parameters || [],
       code: dto.code,
+      ...(dto.app_id !== undefined ? { app_id: dto.app_id } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -228,9 +241,11 @@ Write a 500-1000 word article with:
   //  SKILL CRUD
   // ══════════════════════════════════════════════════════════════════
 
-  async listSkills(): Promise<SkillDefinition[]> {
+  async listSkills(appId?: number): Promise<SkillDefinition[]> {
     const data = await this.db.read();
-    return data.agentSkills || [];
+    const all = data.agentSkills || [];
+    if (appId !== undefined) return all.filter((s: SkillDefinition) => s.app_id === undefined || s.app_id === appId);
+    return all;
   }
 
   async getSkill(id: string): Promise<SkillDefinition | null> {
@@ -253,6 +268,7 @@ Write a 500-1000 word article with:
       enabled: true,
       category: dto.category || 'other',
       tags: dto.tags || [],
+      ...(dto.app_id !== undefined ? { app_id: dto.app_id } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -325,6 +341,7 @@ Write a 500-1000 word article with:
     log: (msg: string) => void,
     emit: (event: Omit<SkillProgressEvent, 'elapsed'>) => void,
     phaseLabel: string,
+    appId?: number,
   ): Record<string, any> {
     const tools: Record<string, any> = {};
 
@@ -348,7 +365,7 @@ Write a 500-1000 word article with:
           const toolT0 = Date.now();
           let output: any;
           try {
-            output = await this.executeTool(t.name, params, logs);
+            output = await this.executeTool(t.name, params, logs, appId);
             log(`✅ [${phaseLabel}] ${t.name} done (${Date.now() - toolT0}ms)`);
             emit({ type: 'tool-done', message: `${t.name} done (${Date.now() - toolT0}ms)`, phase: phaseLabel, tool: t.name });
           } catch (err: any) {
@@ -452,7 +469,7 @@ Write a 500-1000 word article with:
 
       // Build SDK tool wrappers
       const sdkTools = this.buildSDKTools(
-        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main',
+        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main', skill.app_id,
       );
 
       // ── ONE generateText() call with ALL tools and ONE prompt ──
@@ -524,6 +541,7 @@ Write a 500-1000 word article with:
         toolCalls: toolCallLogs,
         duration: Date.now() - t0,
         startedAt,
+        ...(skill.app_id !== undefined ? { app_id: skill.app_id } : {}),
       };
       await this.saveRun(runResult);
       return runResult;
@@ -540,6 +558,7 @@ Write a 500-1000 word article with:
         duration: Date.now() - t0,
         startedAt,
         error: err.message || String(err),
+        ...(skill.app_id !== undefined ? { app_id: skill.app_id } : {}),
       };
 
       await this.saveRun(result);
@@ -638,6 +657,7 @@ IMPORTANT:
   async runChat(
     message: string,
     onProgress?: ProgressCallback,
+    appId?: number,
   ): Promise<SkillRunResult> {
     const logs: string[] = [];
     const toolCallLogs: ToolCallLog[] = [];
@@ -657,7 +677,7 @@ IMPORTANT:
     };
 
     try {
-      const allTools = await this.listTools();
+      const allTools = await this.listTools(appId);
       const provider = this.getAIProvider();
 
       log(`▶ Chat request: "${message.slice(0, 200)}"`);
@@ -675,7 +695,7 @@ IMPORTANT:
 
       // Build SDK tool wrappers
       const sdkTools = this.buildSDKTools(
-        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main',
+        filteredTools, registry, toolCallLogs, toolCallCounts, logs, log, emit, 'Main', appId,
       );
 
       // ── ONE generateText() call with ALL tools and ONE prompt ──
@@ -745,6 +765,7 @@ IMPORTANT:
         toolCalls: toolCallLogs,
         duration: Date.now() - t0,
         startedAt,
+        ...(appId !== undefined ? { app_id: appId } : {}),
       };
       await this.saveRun(runResult);
       return runResult;
@@ -760,6 +781,7 @@ IMPORTANT:
         duration: Date.now() - t0,
         startedAt,
         error: err.message || String(err),
+        ...(appId !== undefined ? { app_id: appId } : {}),
       };
       await this.saveRun(runResult);
       return runResult;
@@ -775,6 +797,7 @@ IMPORTANT:
     toolName: string,
     params: any,
     logs: string[],
+    appId?: number,
   ): Promise<any> {
     const tool = await this.getToolByName(toolName);
     if (!tool) throw new Error(`Tool "${toolName}" not found`);
@@ -788,7 +811,7 @@ IMPORTANT:
     }
     this.lastToolCallAt = Date.now();
 
-    const ctx: ToolContext = this.buildToolContext(logs);
+    const ctx: ToolContext = this.buildToolContext(logs, appId);
 
     // Execute the tool code in a sandbox
     const wrappedCode = `
@@ -803,7 +826,7 @@ IMPORTANT:
 
   // ── Build context for tool execution ──────────────────────────────
 
-  private buildToolContext(logs: string[]): ToolContext {
+  private buildToolContext(logs: string[], appId?: number): ToolContext {
     return {
       getCredential: (name) => {
         try {
@@ -845,7 +868,8 @@ IMPORTANT:
 
       savePdf: async (content: string, title?: string, filename?: string): Promise<string> => {
         try {
-          const pdfDir = path.join(__dirname, '..', '..', 'public', 'skill-pdfs');
+          const pdfDirSegments = appId ? ['public', 'apps', String(appId), 'skill-pdfs'] : ['public', 'skill-pdfs'];
+          const pdfDir = path.join(__dirname, '..', '..', ...pdfDirSegments);
           if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
 
           // Always append a timestamp so repeated runs never overwrite previous PDFs
@@ -863,11 +887,13 @@ IMPORTANT:
           // ── Pre-process: fix mangled image URLs in content ──
           // The AI often rewrites /skill-images/file.png as https://skill-images.file.png
           const publicDir = path.join(__dirname, '..', '..', 'public');
+          const imgPrefix = appId ? `/apps/${appId}/skill-images` : '/skill-images';
+          const pdfPrefix = appId ? `/apps/${appId}/skill-pdfs` : '/skill-pdfs';
           const fixedContent = content
-            // Fix ![alt](https://skill-images.filename) → ![alt](/skill-images/filename)
-            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-images[./]([^)]+)\)/g, '$1(/skill-images/$2)')
-            // Fix ![alt](https://skill-pdfs.filename) → ![alt](/skill-pdfs/filename)
-            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-pdfs[./]([^)]+)\)/g, '$1(/skill-pdfs/$2)')
+            // Fix ![alt](https://skill-images.filename) → ![alt](/[prefix]/filename)
+            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-images[./]([^)]+)\)/g, `$1(${imgPrefix}/$2)`)
+            // Fix ![alt](https://skill-pdfs.filename) → ![alt](/[prefix]/filename)
+            .replace(/(!\[[^\]]*\])\([a-zA-Z][a-zA-Z0-9+.-]*:\/?\/?\/?skill-pdfs[./]([^)]+)\)/g, `$1(${pdfPrefix}/$2)`)
             // Strip trailing slashes from image URLs inside markdown
             .replace(/(!\[[^\]]*\]\([^)]+?)\/\)/g, '$1)');
 
@@ -895,8 +921,8 @@ IMPORTANT:
                 continue;
               }
 
-              // Inline images: ![alt](/skill-images/file.png)
-              const imgMatch = trimmed.match(/^!\[([^\]]*)\]\((\/skill-images\/[^)]+)\)$/);
+              // Inline images: ![alt](/skill-images/file.png) or ![alt](/apps/1/skill-images/file.png)
+              const imgMatch = trimmed.match(/^!\[([^\]]*)\]\((\/(?:apps\/\d+\/)?skill-images\/[^)]+)\)$/);
               if (imgMatch) {
                 const imgPath = path.join(publicDir, imgMatch[2]);
                 if (fs.existsSync(imgPath)) {
@@ -1017,7 +1043,7 @@ IMPORTANT:
                 const stat = fs.statSync(filePath);
                 logs.push(`[PDF] Written ${stat.size} bytes to ${safeName}`);
               } catch { /* ignore stat errors */ }
-              resolve(`/skill-pdfs/${safeName}`);
+              resolve(appId ? `/apps/${appId}/skill-pdfs/${safeName}` : `/skill-pdfs/${safeName}`);
             });
             doc.end();
           });
@@ -1028,7 +1054,8 @@ IMPORTANT:
 
       saveImage: async (remoteUrl: string, filename?: string): Promise<string> => {
         try {
-          const imgDir = path.join(__dirname, '..', '..', 'public', 'skill-images');
+          const imgDirSegments = appId ? ['public', 'apps', String(appId), 'skill-images'] : ['public', 'skill-images'];
+          const imgDir = path.join(__dirname, '..', '..', ...imgDirSegments);
           if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
 
           const ext = '.png';
@@ -1039,7 +1066,7 @@ IMPORTANT:
           fs.writeFileSync(filePath, Buffer.from(resp.data));
 
           // Return the URL accessible via the static file server
-          return `/skill-images/${name}`;
+          return appId ? `/apps/${appId}/skill-images/${name}` : `/skill-images/${name}`;
         } catch (err: any) {
           throw new Error(`Failed to save image: ${err.message}`);
         }
@@ -1048,7 +1075,8 @@ IMPORTANT:
       saveFile: async (content: string, filename: string, subDir?: string): Promise<string> => {
         try {
           const dir = subDir || 'skill-files';
-          const targetDir = path.join(__dirname, '..', '..', 'public', dir);
+          const targetDirSegments = appId ? ['public', 'apps', String(appId), dir] : ['public', dir];
+          const targetDir = path.join(__dirname, '..', '..', ...targetDirSegments);
           if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
           const ts = Date.now();
@@ -1068,7 +1096,7 @@ IMPORTANT:
 
           const stat = fs.statSync(filePath);
           logs.push(`[FILE] Written ${stat.size} bytes to ${dir}/${safeName}`);
-          return `/${dir}/${safeName}`;
+          return appId ? `/apps/${appId}/${dir}/${safeName}` : `/${dir}/${safeName}`;
         } catch (err: any) {
           throw new Error(`Failed to save file: ${err.message}`);
         }
@@ -1076,7 +1104,8 @@ IMPORTANT:
 
       generateExcel: async (data: any, filename?: string): Promise<string> => {
         try {
-          const excelDir = path.join(__dirname, '..', '..', 'public', 'skill-files');
+          const excelDirSegments = appId ? ['public', 'apps', String(appId), 'skill-files'] : ['public', 'skill-files'];
+          const excelDir = path.join(__dirname, '..', '..', ...excelDirSegments);
           if (!fs.existsSync(excelDir)) fs.mkdirSync(excelDir, { recursive: true });
 
           const ts = Date.now();
@@ -1126,7 +1155,7 @@ IMPORTANT:
           await workbook.xlsx.writeFile(filePath);
           const stat = fs.statSync(filePath);
           logs.push(`[EXCEL] Written ${stat.size} bytes to skill-files/${safeName}`);
-          return `/skill-files/${safeName}`;
+          return appId ? `/apps/${appId}/skill-files/${safeName}` : `/skill-files/${safeName}`;
         } catch (err: any) {
           throw new Error(`Failed to generate Excel: ${err.message}`);
         }
@@ -1224,6 +1253,180 @@ IMPORTANT:
           throw new Error(`Failed to create zip: ${err.message}`);
         }
       },
+
+      transcribeAudio: async (audioUrl: string, opts?: { language?: string; prompt?: string }): Promise<{ text: string; language?: string; duration?: number }> => {
+        try {
+          const openaiKey = (() => { try { const d = this.db.readSync(); const k = (d.apiKeys||[]).find((k:any)=>k.name==='openai'); return k ? this.crypto.decrypt(k.value) : null; } catch { return null; } })();
+          if (!openaiKey) throw new Error('OpenAI API key not configured. Add it in Settings -> API Keys.');
+
+          logs.push(`[TRANSCRIBE] Downloading audio from ${audioUrl.substring(0, 80)}...`);
+
+          // Download audio
+          const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
+          const audioBuffer = Buffer.from(audioResp.data);
+          logs.push(`[TRANSCRIBE] Downloaded ${audioBuffer.length} bytes`);
+
+          // Create form data manually for axios
+          const FormData = (await import('form-data')).default;
+          const form = new FormData();
+          form.append('file', audioBuffer, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
+          form.append('model', 'whisper-1');
+          if (opts?.language) form.append('language', opts.language);
+          if (opts?.prompt) form.append('prompt', opts.prompt);
+          form.append('response_format', 'verbose_json');
+
+          const resp = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+            headers: { ...form.getHeaders(), 'Authorization': `Bearer ${openaiKey}` },
+            timeout: 120000,
+          });
+
+          const result = resp.data;
+          logs.push(`[TRANSCRIBE] Transcribed ${(result.text || '').length} characters, language: ${result.language || 'unknown'}`);
+          return {
+            text: result.text || '',
+            language: result.language,
+            duration: result.duration,
+          };
+        } catch (err: any) {
+          throw new Error(`Failed to transcribe audio: ${err.message}`);
+        }
+      },
+
+      generateDocx: async (content: { title?: string; sections: Array<{ heading?: string; body: string }> }, filename?: string): Promise<string> => {
+        try {
+          const docDir = path.join(__dirname, '..', '..', 'public', 'skill-files');
+          if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true });
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const baseName = filename ? filename.replace(/\.docx$/i, '') : 'document';
+          const safeName = `${baseName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${ts}_${rand}.docx`;
+          const filePath = path.join(docDir, safeName);
+
+          const children: Paragraph[] = [];
+
+          // Title
+          if (content.title) {
+            children.push(new Paragraph({
+              children: [new TextRun({ text: content.title, bold: true, size: 48 })],
+              heading: HeadingLevel.TITLE,
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 400 },
+            }));
+          }
+
+          // Sections
+          for (const section of (content.sections || [])) {
+            if (section.heading) {
+              children.push(new Paragraph({
+                children: [new TextRun({ text: section.heading, bold: true, size: 28 })],
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 300, after: 200 },
+              }));
+            }
+            // Split body into paragraphs
+            const lines = (section.body || '').split('\n');
+            for (const line of lines) {
+              if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
+                children.push(new Paragraph({
+                  children: [new TextRun({ text: line.trim().substring(2) })],
+                  bullet: { level: 0 },
+                }));
+              } else if (line.trim().length > 0) {
+                children.push(new Paragraph({
+                  children: [new TextRun({ text: line.trim() })],
+                  spacing: { after: 120 },
+                }));
+              }
+            }
+          }
+
+          const doc = new Document({
+            sections: [{ children }],
+          });
+
+          const buffer = await Packer.toBuffer(doc);
+          fs.writeFileSync(filePath, buffer);
+
+          logs.push(`[DOCX] Written ${buffer.length} bytes to skill-files/${safeName}`);
+          return `/skill-files/${safeName}`;
+        } catch (err: any) {
+          throw new Error(`Failed to generate DOCX: ${err.message}`);
+        }
+      },
+
+      editImage: async (imageUrl: string, operations: any): Promise<string> => {
+        try {
+          const imgDir = path.join(__dirname, '..', '..', 'public', 'skill-images');
+          if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+
+          logs.push(`[IMAGE] Loading image from ${imageUrl.substring(0, 80)}...`);
+
+          let imageBuffer: Buffer;
+          if (imageUrl.startsWith('/') || imageUrl.startsWith('.')) {
+            // Local file
+            const localPath = imageUrl.startsWith('/')
+              ? path.join(__dirname, '..', '..', 'public', imageUrl)
+              : imageUrl;
+            imageBuffer = fs.readFileSync(localPath);
+          } else {
+            // Remote URL
+            const resp = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 30000 });
+            imageBuffer = Buffer.from(resp.data);
+          }
+
+          let pipeline = (sharp as any).default ? (sharp as any).default(imageBuffer) : (sharp as any)(imageBuffer);
+
+          // Apply operations
+          if (operations.resize) {
+            pipeline = pipeline.resize(operations.resize.width, operations.resize.height, { fit: 'inside' });
+          }
+          if (operations.rotate) {
+            pipeline = pipeline.rotate(operations.rotate);
+          }
+          if (operations.flip) {
+            pipeline = pipeline.flip();
+          }
+          if (operations.flop) {
+            pipeline = pipeline.flop();
+          }
+          if (operations.grayscale) {
+            pipeline = pipeline.grayscale();
+          }
+          if (operations.blur && operations.blur > 0) {
+            pipeline = pipeline.blur(operations.blur);
+          }
+
+          // Watermark (overlay text as SVG)
+          if (operations.watermark) {
+            const meta = await pipeline.metadata();
+            const w = meta.width || 800;
+            const h = meta.height || 600;
+            const svgText = `<svg width="${w}" height="${h}">
+              <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+                    font-size="${Math.floor(w / 15)}" fill="rgba(255,255,255,0.4)"
+                    font-family="Arial" transform="rotate(-30, ${w/2}, ${h/2})">${operations.watermark}</text>
+            </svg>`;
+            pipeline = pipeline.composite([{ input: Buffer.from(svgText), gravity: 'center' }]);
+          }
+
+          // Output format
+          const fmt = operations.format || 'png';
+          pipeline = pipeline.toFormat(fmt);
+
+          const ts = Date.now();
+          const rand = Math.random().toString(36).substr(2, 6);
+          const safeName = `edited_${ts}_${rand}.${fmt}`;
+          const filePath = path.join(imgDir, safeName);
+
+          await pipeline.toFile(filePath);
+          const stat = fs.statSync(filePath);
+          logs.push(`[IMAGE] Processed ${stat.size} bytes → skill-images/${safeName}`);
+          return `/skill-images/${safeName}`;
+        } catch (err: any) {
+          throw new Error(`Failed to edit image: ${err.message}`);
+        }
+      },
     };
   }
 
@@ -1231,9 +1434,10 @@ IMPORTANT:
   //  RUN HISTORY
   // ══════════════════════════════════════════════════════════════════
 
-  async getRunHistory(skillId?: string, limit = 50): Promise<SkillRunResult[]> {
+  async getRunHistory(skillId?: string, limit = 50, appId?: number): Promise<SkillRunResult[]> {
     const data = await this.db.read();
     let runs: SkillRunResult[] = data.skillRuns || [];
+    if (appId !== undefined) runs = runs.filter(r => (r as any).app_id === undefined || (r as any).app_id === appId);
     if (skillId) runs = runs.filter(r => r.skillId === skillId);
     return runs.slice(-limit);
   }

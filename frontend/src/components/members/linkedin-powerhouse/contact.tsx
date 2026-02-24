@@ -14,9 +14,9 @@ const API = window.location.origin.includes('localhost') ? 'http://localhost:300
 
 
 const COLORS = {
- primary: '#1976d2',
- secondary: '#0050ac',
- tint: '#1976d215',
+ primary: '#3498db',
+ secondary: '#0e72b5',
+ tint: '#3498db15',
  bg: '#fafbfc',
  border: 'rgba(0,0,0,0.06)',
  shadow: '0 2px 12px rgba(0,0,0,0.04)',
@@ -30,7 +30,7 @@ const COLORS = {
 
 const heroSx = {
  p: { xs: 3, md: 4 }, mb: 4, borderRadius: 4, position: 'relative' as const, overflow: 'hidden',
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff',
 };
 
@@ -42,7 +42,7 @@ const floatingCircle = (size: number, top: number, right: number, opacity = 0.08
 const cardSx = {
  borderRadius: 4, border: '1px solid ' + COLORS.border, boxShadow: COLORS.shadow,
  transition: 'all 0.25s ease',
- '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#1976d240' },
+ '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#3498db40' },
 };
 
 const sectionSx = {
@@ -50,10 +50,10 @@ const sectionSx = {
 };
 
 const gradientBtnSx = {
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff', fontWeight: 600, textTransform: 'none' as const,
- boxShadow: '0 4px 15px #1976d240',
- '&:hover': { boxShadow: '0 6px 20px #1976d260', transform: 'translateY(-1px)' },
+ boxShadow: '0 4px 15px #3498db40',
+ '&:hover': { boxShadow: '0 6px 20px #3498db60', transform: 'translateY(-1px)' },
  transition: 'all 0.2s ease',
 };
 
@@ -90,9 +90,9 @@ export function MembersContactPage() {
  };
 
  const infoCards = [
-  { icon: <Chat />, title: 'Email Support', desc: 'Available 24/7 for your queries.', color: COLORS.primary },
-  { icon: <AccessTime />, title: 'Live Chat', desc: 'Monday to Friday, 9 AM - 5 PM.', color: COLORS.blue },
-  { icon: <SupportAgent />, title: 'Knowledge Base', desc: 'Access articles and guides anytime.', color: COLORS.success },
+  { icon: <Chat />, title: 'Email Support', desc: 'Available 24/7 for your inquiries.', color: COLORS.primary },
+  { icon: <AccessTime />, title: 'Live Chat', desc: 'Chat with us from 9 AM to 5 PM EST.', color: COLORS.blue },
+  { icon: <SupportAgent />, title: 'Help Center', desc: 'Resource hub available at all times.', color: COLORS.success },
  ];
 
  return (
@@ -104,7 +104,7 @@ export function MembersContactPage() {
      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
       <Email /> Contact Us
      </Typography>
-     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>We're here to help you boost your LinkedIn outreach!</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>We're here to help you achieve LinkedIn success! Reach out to us anytime.</Typography>
     </Box>
    </Paper>
 

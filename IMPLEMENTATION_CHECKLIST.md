@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Implementation Checklist
 
-**Last Updated:** February 16, 2026 (Session 6)
+**Last Updated:** February 24, 2026 (Session 11)
 
 ---
 
@@ -96,7 +96,22 @@
 - [x] Designer agent: add/delete elements, clarifying questions
 - [x] Save button: single-file save with confirmation
 
-## Phase 7: Export & Deployment - PLANNED
+## Phase 7: Skills & Members Area - COMPLETE
+
+- [x] Two-layer agent architecture (Tools + Skills) with agentic loop
+- [x] 15 tools, 31 skills, 14 capability types
+- [x] 3-layer prompt system (Planner → Assembler → Tool Filter)
+- [x] Skill shortcode static template (`[skill-shortcode]` → hero + chat + results)
+- [x] AI model auto-fallback (Anthropic↔OpenAI) in callAI()
+- [x] Per-app document separation (`public/apps/{appId}/`)
+- [x] File attachment support in skills chat
+- [x] Workflow time/day picker for scheduled workflows
+- [x] Planner shortcode awareness (auto-adds `[skill-shortcode]` for AI pages)
+- [x] 8 static page templates (0 AI tokens each)
+- [x] Activity section removed from SkillWidget (simplified to chat + results)
+- [x] Removed unreliable AI prompt injection for widget code generation
+
+## Phase 8: Export & Deployment - PLANNED
 
 - [ ] Export Module (standalone Next.js project generation)
 - [ ] Supabase migration (PostgreSQL + auth + RLS)
@@ -105,7 +120,7 @@
 - [ ] RBAC (role-based access control)
 - [ ] Audit logging
 
-## Phase 8: Platform Conversion - PLANNED
+## Phase 9: Platform Conversion - PLANNED
 
 - [ ] Convert/Export page UI (select app → pick target platform → generate)
 - [ ] Shopify App export (App Bridge scaffold, OAuth, embedded iframe wrapper)

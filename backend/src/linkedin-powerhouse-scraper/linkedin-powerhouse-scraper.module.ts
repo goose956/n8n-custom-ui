@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { LinkedinPowerhouseScraperController } from './linkedin-powerhouse-scraper.controller';
 import { LinkedinPowerhouseScraperService } from './linkedin-powerhouse-scraper.service';
 import { SharedModule } from '../shared/shared.module';

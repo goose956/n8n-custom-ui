@@ -200,7 +200,7 @@ export class PromptBuilderService {
       parts.push(this.inlineOrchestrator());
     }
 
-    // 2. Capability instructions (the phases)
+    // 2. Capability instructions
     if (capabilities.length === 0) {
       // General-purpose fallback — no specific capabilities matched
       parts.push('\n---\n# General Assistant Mode\n');
@@ -211,10 +211,11 @@ export class PromptBuilderService {
         `Think step by step and provide a thorough, well-formatted answer.\n`,
       );
     } else {
-      parts.push('\n---\n# Your Phases For This Task\n');
+      parts.push('\n---\n# Task Instructions\n');
       parts.push(
-        `Execute these phases **in the order listed**. ` +
-        `Complete each phase fully before starting the next.\n`,
+        `Follow the steps below in order. ` +
+        `Complete each step fully before starting the next. ` +
+        `Do NOT include step/phase headings or numbering in your output — just deliver the content directly.\n`,
       );
     }
 
@@ -224,13 +225,14 @@ export class PromptBuilderService {
       if (!cap) continue;
 
       const mdPath = path.join(PROMPTS_DIR, cap.file);
+      const heading = capName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       if (fs.existsSync(mdPath)) {
         const content = fs.readFileSync(mdPath, 'utf-8');
-        parts.push(`\n---\n## Phase ${i + 1}: ${capName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}\n`);
+        parts.push(`\n---\n## ${heading}\n`);
         parts.push(content);
       } else {
         parts.push(
-          `\n---\n## Phase ${i + 1}: ${capName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}\n` +
+          `\n---\n## ${heading}\n` +
           `${cap.description}. ${cap.tools.length ? `Use the ${cap.tools.join(', ')} tool(s).` : 'No tools needed — pure text generation.'}\n`
         );
       }
@@ -270,13 +272,13 @@ export class PromptBuilderService {
   private inlineOrchestrator(): string {
     return `# Orchestrator Rules
 
-You are a task execution agent. Execute each phase in order. Do not skip ahead.
+You are a task execution agent. Follow the instructions in order.
 
 Rules:
 - Never invent facts — only use information from tool results
 - Retry failed tools once before giving up
 - Your final response must contain ALL deliverables in full
-- Complete each phase before starting the next`;
+- Do NOT include step/phase headings or numbering — just deliver the final content directly`;
   }
 
   // ═══════════════════════════════════════════════════════════════════

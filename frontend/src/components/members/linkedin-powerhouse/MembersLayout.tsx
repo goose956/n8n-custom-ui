@@ -1,22 +1,20 @@
 import { useState } from 'react';
 import { Box, Typography, List, ListItemButton, ListItemIcon, ListItemText, Divider, Avatar, useMediaQuery, IconButton, Drawer } from '@mui/material';
-import { AdminPanelSettings, Article, ContactSupport, Dashboard, Person, Settings, Storage } from '@mui/icons-material';
+import { AdminPanelSettings, Article, ContactSupport, Dashboard, Schedule } from '@mui/icons-material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 
 const SIDEBAR_WIDTH = 260;
-const PRIMARY = '#1976d2';
+const PRIMARY = '#3498db';
 
 const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <Dashboard /> },
-    { path: '/profile', label: 'Profile', icon: <Person /> },
-    { path: '/settings', label: 'Settings', icon: <Settings /> },
+    { path: '/skills', label: 'AI Skills', icon: <Article /> },
+    { path: '/workflows', label: 'Workflows', icon: <Schedule /> },
+    { path: '/documents', label: 'Documents', icon: <Article /> },
+    { path: '/api-keys', label: 'API Keys', icon: <Article /> },
     { path: '/admin', label: 'Admin', icon: <AdminPanelSettings /> },
     { path: '/contact', label: 'Contact', icon: <ContactSupport /> },
-    { path: '/analytics', label: 'Analytics', icon: <Article /> },
-    { path: '/library', label: 'Template Library', icon: <Article /> },
-    { path: '/history', label: 'Message History', icon: <Article /> },
-    { path: '/scraper', label: 'Data Scraper', icon: <Storage /> },
 ];
 
 function SidebarContent({ currentPath }: { currentPath: string }) {
@@ -24,10 +22,10 @@ function SidebarContent({ currentPath }: { currentPath: string }) {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#111827', color: '#e5e7eb' }}>
       <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Avatar sx={{ bgcolor: PRIMARY, width: 36, height: 36, fontSize: 14, fontWeight: 700 }}>
-          {' '}
+          {'L'}
         </Avatar>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
-           linkedin powerhouse
+          LinkedIn Powerhouse
         </Typography>
       </Box>
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />

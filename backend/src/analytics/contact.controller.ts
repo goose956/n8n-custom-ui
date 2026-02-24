@@ -57,7 +57,7 @@ export class ContactController {
     let submissions: ContactSubmission[] = data.contact_submissions || [];
 
     if (status) submissions = submissions.filter(s => s.status === status);
-    if (appId) submissions = submissions.filter(s => s.app_id === parseInt(appId));
+    if (appId) submissions = submissions.filter(s => String(s.app_id) === String(appId));
 
     // Most recent first
     submissions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

@@ -1,6 +1,6 @@
 ﻿# SaaS Factory - Project Status
 
-**Last Updated:** February 21, 2026 (Session 10)
+**Last Updated:** February 24, 2026 (Session 11)
 **Status:** Active Development
 **Repository:** github.com/goose956/n8n-custom-ui
 
@@ -43,7 +43,10 @@ The platform is a fully functional multi-app SaaS management system with 20 back
 | SocialMonitorModule | `social-monitor/` | Reddit monitoring via Apify, keyword tracking, AI draft replies |
 | StripeModule | `stripe/` | Stripe products, prices, checkout sessions, webhooks, payments |
 | PreviewModule | `preview/` | Vite-based live preview (single page + full site) with safeProxy + mock data |
-| SkillsModule | `skills/` | Two-layer agent system: 15 tools + 31 skills, 14 capability types, 4 ctx methods (Excel, Email, QR, ZIP), PDF/image generation, agentic loop |
+| SkillsModule | `skills/` | Two-layer agent system: 15 tools + 31 skills, 14 capability types, 4 ctx methods (Excel, Email, QR, ZIP), PDF/image generation, agentic loop, file attachments, per-app document separation |
+| ScheduledWorkflowsModule | `scheduled-workflows/` | Scheduled workflow automation with time/day picker |
+| ChatAgentsModule | `chat-agents/` | Chat agent management |
+| KnowledgeBaseModule | `knowledge-base/` | Knowledge base document management |
 
 ### Shared Infrastructure
 
@@ -120,19 +123,20 @@ All app data scoped by app_id for clean per-app isolation:
 
 ---
 
-## Recent Changes (Feb 21, 2026 — Sessions 8–10)
+## Recent Changes (Feb 24, 2026 — Session 11)
 
-### Skills Expansion — 15 Tools, 31 Skills, Clean Architecture
-- **Clean architecture refactor** — Single `buildPromptForTask()` entry point, 3-layer prompt pipeline (Planner → Assembler → Tool Filter), `artifact-registry.ts` for output tracking
-- **15 tools** — brave-search, generate-image, apify-scraper, generate-pdf, generate-csv, generate-html, generate-qrcode, send-email, generate-json, generate-excel, generate-qr, create-zip, text-to-speech, generate-html-page, generate-vcard
-- **31 skills** — from web-research to dashboard-generator, covering research, content, analysis, output generation
-- **4 new ToolContext methods** — `generateExcel()` (ExcelJS), `sendEmail()` (Nodemailer), `generateQR()` (qrcode), `createZip()` (archiver)
-- **14 capability types** — research, deep-research, write-article, content-ideation, summarise, translate, analyse, repurpose, generate-image, render-pdf, render-csv, render-html, render-qr, send-email, render-excel, render-tts, render-vcard, render-zip
-- **Prompt system** — 22 capability prompt `.md` files, orchestrator prompt, CAPABILITY_REGISTRY + TOOL_TO_CAPABILITY + SKILL_ARCHETYPE maps
-- **PDF fix** — URL demangling for any URI scheme, image embedding via PDFKit
-- **29/50 catalogue skills built** (Input: 1/8, Processing: 17/19, Output: 11/15)
+### Skill Shortcodes & Members Area Enhancements
+- **Skill shortcode static template** — `[skill-shortcode]` in custom page descriptions generates a static template page (hero + chat input + results) instead of unreliable AI generation. Zero tokens, 100% reliable.
+- **AI model auto-fallback** — `callAI()` automatically switches Anthropic↔OpenAI when one provider's key is missing
+- **Per-app document separation** — file paths use `public/apps/{appId}/` for per-app isolation
+- **File attachment support** — skills chat accepts file attachments
+- **Workflow time/day picker** — scheduled workflows support specific day and time selection
+- **Planner shortcode awareness** — AI planner auto-adds `[skill-shortcode]` for AI-powered custom pages
+- **Removed AI prompt injection** for skill widget (replaced by static template)
+- **8 static page templates** — dashboard, skills, workflows, documents, api-keys, admin, contact + skill-shortcode (0 AI tokens each)
 
 ### Previous Sessions
+- Sessions 8-10: Clean architecture refactor, 15 tools, 31 skills, 4 ctx methods
 - Session 7: Agent Skill Workshop v2, two-layer architecture, 4 tools, 6 skills
 - Session 6: Full site preview, admin template, contact form API
 - Session 5: Coder Agent rewrite, ProgrammerAgentPage overhaul

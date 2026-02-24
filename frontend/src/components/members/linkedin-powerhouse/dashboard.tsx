@@ -17,9 +17,9 @@ import FiberManualRecord from '@mui/icons-material/FiberManualRecord';
 
 
 const COLORS = {
- primary: '#1976d2',
- secondary: '#0050ac',
- tint: '#1976d215',
+ primary: '#3498db',
+ secondary: '#0e72b5',
+ tint: '#3498db15',
  bg: '#fafbfc',
  border: 'rgba(0,0,0,0.06)',
  shadow: '0 2px 12px rgba(0,0,0,0.04)',
@@ -33,7 +33,7 @@ const COLORS = {
 
 const heroSx = {
  p: { xs: 3, md: 4 }, mb: 4, borderRadius: 4, position: 'relative' as const, overflow: 'hidden',
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff',
 };
 
@@ -45,7 +45,7 @@ const floatingCircle = (size: number, top: number, right: number, opacity = 0.08
 const cardSx = {
  borderRadius: 4, border: '1px solid ' + COLORS.border, boxShadow: COLORS.shadow,
  transition: 'all 0.25s ease',
- '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#1976d240' },
+ '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#3498db40' },
 };
 
 const sectionSx = {
@@ -53,10 +53,10 @@ const sectionSx = {
 };
 
 const gradientBtnSx = {
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff', fontWeight: 600, textTransform: 'none' as const,
- boxShadow: '0 4px 15px #1976d240',
- '&:hover': { boxShadow: '0 6px 20px #1976d260', transform: 'translateY(-1px)' },
+ boxShadow: '0 4px 15px #3498db40',
+ '&:hover': { boxShadow: '0 6px 20px #3498db60', transform: 'translateY(-1px)' },
  transition: 'all 0.2s ease',
 };
 
@@ -67,17 +67,17 @@ const statLabelSx = {
 
 export function MembersDashboardPage() {
  const stats = [
-  { label: 'Messages Sent', value: '250', change: '+15%', icon: <Visibility />, color: COLORS.primary },
-  { label: 'Replies Received', value: '75', change: '+20%', icon: <People />, color: COLORS.blue },
-  { label: 'Connections Gained', value: '50', change: '+10%', icon: <TrendingUp />, color: COLORS.success },
-  { label: 'Engagement Rate', value: '30%', change: 'Top 5%', icon: <Star />, color: COLORS.warning },
+  { label: 'Profile Views', value: '1,250', change: '+15%', icon: <Visibility />, color: COLORS.primary },
+  { label: 'Connection Requests Sent', value: '300', change: '+10%', icon: <People />, color: COLORS.blue },
+  { label: 'Messages Sent', value: '500', change: '+5%', icon: <TrendingUp />, color: COLORS.success },
+  { label: 'Engagement Rate', value: '7.5%', change: 'Top 20%', icon: <Star />, color: COLORS.warning },
  ];
 
  const recentActivity = [
-  { title: 'New Message Sent', desc: 'You sent a personalized message to John Doe.', time: '2 min ago', color: COLORS.success, icon: <People /> },
-  { title: 'Reply Received', desc: 'You got a response from Jane Smith.', time: '1 hour ago', color: COLORS.warning, icon: <EmojiEvents /> },
-  { title: 'Connection Made', desc: 'You connected with Mark Johnson.', time: '3 hours ago', color: COLORS.primary, icon: <Bolt /> },
-  { title: 'AI Response Drafted', desc: 'AI drafted a response for you to send.', time: '5 hours ago', color: COLORS.blue, icon: <Star /> },
+  { title: 'Recent Profile Updates', desc: 'View the latest changes made to your profile.', time: '2 min ago', color: COLORS.success, icon: <People /> },
+  { title: 'Connection Activity', desc: 'Review your recent connection requests.', time: '1 hour ago', color: COLORS.warning, icon: <EmojiEvents /> },
+  { title: 'Message History', desc: 'Access your past messages and conversations.', time: '3 hours ago', color: COLORS.primary, icon: <Bolt /> },
+  { title: 'Scraper Insights', desc: 'Analyze scraped data from LinkedIn profiles.', time: '5 hours ago', color: COLORS.blue, icon: <Star /> },
  ];
 
  const quickLinks = [
@@ -94,7 +94,7 @@ export function MembersDashboardPage() {
     <Box sx={floatingCircle(80, -20, 300, 0.06)} />
     <Box sx={{ position: 'relative', zIndex: 1 }}>
      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', mb: 0.5 }}>Welcome back</Typography>
-     <Typography variant="body1" sx={{ opacity: 0.85, maxWidth: 500 }}>Track your LinkedIn outreach success and engagement in real-time.</Typography>
+     <Typography variant="body1" sx={{ opacity: 0.85, maxWidth: 500 }}>Easily track your LinkedIn engagement and insights in one place.</Typography>
     </Box>
    </Paper>
 
@@ -156,14 +156,14 @@ export function MembersDashboardPage() {
       </Box>
      </Paper>
 
-     <Paper sx={{ ...sectionSx, mt: 3, background: 'linear-gradient(135deg, #1976d208 0%, #0050ac08 100%)' }}>
+     <Paper sx={{ ...sectionSx, mt: 3, background: 'linear-gradient(135deg, #3498db08 0%, #0e72b508 100%)' }}>
       <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', mb: 1 }}>Getting Started</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Complete your setup</Typography>
       <LinearProgress variant="determinate" value={75} sx={{ height: 8, borderRadius: 4, mb: 1.5, bgcolor: COLORS.border,
-       '& .MuiLinearProgress-bar': { borderRadius: 4, background: 'linear-gradient(90deg, #1976d2, #0050ac)' } }} />
+       '& .MuiLinearProgress-bar': { borderRadius: 4, background: 'linear-gradient(90deg, #3498db, #0e72b5)' } }} />
       <Typography variant="caption" color="text.secondary">3 of 4 steps completed</Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
-       {[{ done: true, label: 'Create your profile' }, { done: true, label: 'Set your outreach goals' }, { done: true, label: 'Scan profiles for leads' }, { done: false, label: 'Start sending messages' }].map((s, i) => (
+       {[{ done: true, label: 'Connect your LinkedIn account' }, { done: true, label: 'Explore your dashboard' }, { done: true, label: 'Utilize templates' }, { done: false, label: 'Analyze your performance' }].map((s, i) => (
         <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
          <CheckCircle sx={{ fontSize: 18, color: s.done ? COLORS.success : 'text.disabled' }} />
          <Typography variant="body2" sx={{ color: s.done ? 'text.secondary' : 'text.primary', textDecoration: s.done ? 'line-through' : 'none' }}>{s.label}</Typography>

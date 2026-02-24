@@ -66,7 +66,7 @@ export class ProgrammerAgentController {
  orchestratorModel?: string;
  subAgentModel?: string;
  conversationHistory?: { role: string; content: string }[];
- pages?: { id: string; name: string; description: string; type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'custom'; required: boolean }[];
+ pages?: { id: string; name: string; description: string; type:'dashboard' |'skills' |'workflows' |'documents' |'api-keys' |'admin' |'contact' |'custom'; required: boolean }[];
  },
  ) {
  if (!rateLimiter.check('generate', RATE_LIMITS.generate.max, RATE_LIMITS.generate.windowMs)) {

@@ -84,7 +84,7 @@ interface MembersPage {
  id: string;
  name: string;
  description: string;
- type:'dashboard' |'profile' |'settings' |'admin' |'custom';
+ type:'dashboard' |'skills' |'results' |'documents' |'api-keys' |'admin' |'contact' |'custom';
  required: boolean;
  enabled?: boolean;
 }
@@ -317,9 +317,10 @@ function getStepIndex(phase: Phase): number {
 function PageTypeIcon({ type }: { type: string }) {
  switch (type) {
  case'dashboard': return <DashboardIcon sx={{ fontSize: 18 }} />;
- case'profile': return <ProfileIcon sx={{ fontSize: 18 }} />;
- case'settings': return <SettingsIcon sx={{ fontSize: 18 }} />;
- case'scraper': return <ApifyIcon sx={{ fontSize: 18 }} />;
+ case'skills': return <AgentIcon sx={{ fontSize: 18 }} />;
+ case'results': return <DataIcon sx={{ fontSize: 18 }} />;
+ case'documents': return <FileIcon sx={{ fontSize: 18 }} />;
+ case'api-keys': return <KeyIcon sx={{ fontSize: 18 }} />;
  case'admin': return <BuildIcon sx={{ fontSize: 18 }} />;
  case'contact': return <SendIcon sx={{ fontSize: 18 }} />;
  default: return <PagesIcon sx={{ fontSize: 18 }} />;

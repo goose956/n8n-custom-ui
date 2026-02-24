@@ -23,6 +23,8 @@ export interface ToolDefinition {
   parameters: ToolParam[];
   /** JS function body: receives (params, ctx), must return a value */
   code: string;
+  /** Optional: scopes this tool to a specific generated app */
+  app_id?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +56,8 @@ export interface SkillDefinition {
   /** Sidebar grouping: inputs | processing | outputs | other */
   category: SkillCategory;
   tags: string[];
+  /** Optional: scopes this skill to a specific generated app */
+  app_id?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +95,12 @@ export interface ToolContext {
   generateQR: (text: string, opts?: { size?: number; filename?: string }) => Promise<string>;
   /** Create a zip archive from files. files = [{ name, content }]. Returns download URL. */
   createZip: (files: Array<{ name: string; content: string }>, filename?: string) => Promise<string>;
+  /** Transcribe audio from a URL using OpenAI Whisper. Returns { text, language, duration }. */
+  transcribeAudio: (audioUrl: string, opts?: { language?: string; prompt?: string }) => Promise<{ text: string; language?: string; duration?: number }>;
+  /** Generate a Word (.docx) document from structured content. Returns download URL. */
+  generateDocx: (content: { title?: string; sections: Array<{ heading?: string; body: string }> }, filename?: string) => Promise<string>;
+  /** Edit/process an image (resize, crop, watermark, convert). Returns the output image URL. */
+  editImage: (imageUrl: string, operations: { resize?: { width?: number; height?: number }; rotate?: number; flip?: boolean; flop?: boolean; grayscale?: boolean; blur?: number; watermark?: string; format?: 'png' | 'jpeg' | 'webp' }) => Promise<string>;
 }
 
 // ── Run results ───────────────────────────────────────────────────────
@@ -108,6 +118,8 @@ export interface SkillRunResult {
   duration: number;
   startedAt: string;
   error?: string;
+  /** Optional: scopes this run to a specific generated app */
+  app_id?: number;
 }
 
 export interface ToolCallLog {
@@ -124,6 +136,7 @@ export interface CreateToolDto {
   description: string;
   parameters?: ToolParam[];
   code: string;
+  app_id?: number;
 }
 
 export interface UpdateToolDto extends Partial<CreateToolDto> {}
@@ -137,6 +150,7 @@ export interface CreateSkillDto {
   credentials?: string[];
   category?: SkillCategory;
   tags?: string[];
+  app_id?: number;
 }
 
 export interface UpdateSkillDto extends Partial<CreateSkillDto> {
@@ -148,6 +162,8 @@ export interface RunSkillDto {
   inputs?: Record<string, any>;
   /** Free-form instructions typed by the user before running */
   instructions?: string;
+  /** Optional: scopes this run to a specific app */
+  app_id?: number;
 }
 
 /** Progress event streamed to the frontend during a skill run */
@@ -348,6 +364,42 @@ export const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
     description: 'Bundle multiple files into a downloadable ZIP archive',
     phase: 'output',
   },
+  'generate-ics': {
+    file: 'generate-ics.md',
+    tools: ['generate-ics'],
+    description: 'Create downloadable iCalendar (.ics) event files',
+    phase: 'output',
+  },
+  'send-webhook': {
+    file: 'send-webhook.md',
+    tools: ['send-webhook'],
+    description: 'Send data to external APIs and webhooks via HTTP',
+    phase: 'output',
+  },
+  'transcribe-audio': {
+    file: 'transcribe-audio.md',
+    tools: ['transcribe-audio'],
+    description: 'Transcribe audio/video files to text using Whisper',
+    phase: 'input',
+  },
+  'render-docx': {
+    file: 'generate-docx.md',
+    tools: ['generate-docx'],
+    description: 'Generate a Word document (.docx) with formatted content',
+    phase: 'output',
+  },
+  'send-chat-message': {
+    file: 'send-chat-message.md',
+    tools: ['send-chat-message'],
+    description: 'Send messages to Slack, Teams, or Discord',
+    phase: 'output',
+  },
+  'edit-image': {
+    file: 'edit-image.md',
+    tools: ['edit-image'],
+    description: 'Edit/process images: resize, rotate, watermark, convert, effects',
+    phase: 'process',
+  },
 };
 
 // ── Mapping from tool names to capability names ───────────────────────────
@@ -368,6 +420,13 @@ export const TOOL_TO_CAPABILITY: Record<string, string> = {
   'text-to-speech': 'render-tts',
   'generate-vcard': 'render-vcard',
   'create-zip': 'render-zip',
+  'generate-ics': 'generate-ics',
+  'send-webhook': 'send-webhook',
+  'transcribe-audio': 'transcribe-audio',
+  'generate-docx': 'render-docx',
+  'send-chat-message': 'send-chat-message',
+  'edit-image': 'edit-image',
+  'merge-pdfs': 'render-pdf',
 };
 
 // ── Known skill archetypes → default capability pipelines ─────────────────
@@ -411,4 +470,19 @@ export const SKILL_ARCHETYPE: Record<string, string[]> = {
   'dashboard-generator': ['research', 'deep-research', 'render-html', 'render-excel', 'render-pdf'],
   'social-media-pack':  ['research', 'generate-image', 'render-pdf', 'render-csv'],
   'content-calendar':   ['content-ideation', 'render-csv'],
+  'calendar-event-creator': ['generate-ics'],
+  'webhook-pusher':     ['send-webhook'],
+  'file-format-converter': ['render-pdf', 'render-csv', 'render-excel', 'render-html', 'render-docx'],
+  'audio-transcriber':  ['transcribe-audio', 'render-pdf', 'render-docx'],
+  'word-doc-generator': ['research', 'write-article', 'render-docx'],
+  'chat-message-sender': ['send-chat-message'],
+  'task-creator':       ['send-webhook'],
+  'email-parser':       ['analyse', 'render-csv', 'render-excel'],
+  'document-merger':    ['render-pdf', 'render-docx', 'render-zip'],
+  'image-editor':       ['edit-image'],
+  'invoice-generator':  ['calculate', 'render-pdf', 'render-excel'],
+  'meeting-notes':      ['transcribe-audio', 'summarise', 'render-pdf', 'send-email'],
+  'seo-auditor':        ['deep-research', 'analyse', 'render-pdf', 'render-html'],
+  'lead-scorer':        ['enrich', 'analyse', 'render-csv', 'render-excel'],
+  'competitor-analyzer': ['deep-research', 'analyse', 'render-pdf', 'render-excel'],
 };

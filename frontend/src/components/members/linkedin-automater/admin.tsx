@@ -99,7 +99,7 @@ export function MembersAdminPage() {
    const [sRes, aRes, cRes, mRes] = await Promise.all([
     fetch(`${API_BASE}/api/apps/10/stats`).then(r => r.json()).catch(() => null),
     fetch(`${API_BASE}/api/analytics/app/10`).then(r => r.json()).catch(() => null),
-    fetch(`${API_BASE}/api/contact_submissions?app_id=10`).then(r => r.json()).catch(() => []),
+    fetch(`${API_BASE}/api/contact?app_id=members-area`).then(r => r.json()).catch(() => []),
     fetch(`${API_BASE}/api/apps/10/members`).then(r => r.json()).catch(() => ({ data: [] })),
    ]);
    if (sRes) setStats(sRes);
@@ -116,7 +116,7 @@ export function MembersAdminPage() {
  /* ── Contact actions ── */
  const updateStatus = async (id: number, status: string) => {
   try {
-   await fetch(`${API_BASE}/api/contact_submissions/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+   await fetch(`${API_BASE}/api/contact/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
    setContacts(prev => prev.map(c => c.id === id ? { ...c, status: status as any } : c));
    setSnackbar({ open: true, message: 'Marked as ' + status, severity: 'success' });
   } catch { setSnackbar({ open: true, message: 'Failed to update status', severity: 'error' }); }
@@ -125,7 +125,7 @@ export function MembersAdminPage() {
 
  const deleteContact = async (id: number) => {
   try {
-   await fetch(`${API_BASE}/api/contact_submissions/${id}`, { method: 'DELETE' });
+   await fetch(`${API_BASE}/api/contact/${id}`, { method: 'DELETE' });
    setContacts(prev => prev.filter(c => c.id !== id));
    setSnackbar({ open: true, message: 'Submission deleted', severity: 'success' });
   } catch { setSnackbar({ open: true, message: 'Failed to delete', severity: 'error' }); }

@@ -23,10 +23,16 @@ import {
   ExpandLess as ExpandLessIcon,
   Category as CategoryIcon,
 } from '@mui/icons-material';
+import {
+  Storage as KbIcon,
+  Forum as AgentsIcon,
+} from '@mui/icons-material';
 import { API } from '../config/api';
 import { SkillBuilderChat } from './SkillBuilderChat';
 import { SkillOutputRenderer } from './SkillOutputRenderer';
 import { AgentChatPanel } from './AgentChatPanel';
+import { KnowledgeBasePage } from './KnowledgeBasePage';
+import { ChatAgentsPage } from './ChatAgentsPage';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -90,7 +96,7 @@ export function SkillWorkshopPage() {
   // ── State ───────────────────────────────────────────────────────────
   const [skills, setSkills] = useState<SkillDef[]>([]);
   const [tools, setTools] = useState<ToolDef[]>([]);
-  const [mode, setMode] = useState<'skill' | 'tool' | 'chat' | 'none'>('none');
+  const [mode, setMode] = useState<'skill' | 'tool' | 'chat' | 'kb' | 'agents' | 'none'>('none');
   const [selectedId, setSelectedId] = useState('');
   const [isNew, setIsNew] = useState(false);
 
@@ -619,6 +625,23 @@ export function SkillWorkshopPage() {
               </Typography>
             )}
           </List>
+
+          <Divider sx={{ my: 1 }} />
+
+          {/* ── Knowledge & Agents ── */}
+          <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1 }}>Deploy</Typography>
+          </Box>
+          <List dense sx={{ px: 0.5 }}>
+            <ListItemButton selected={mode === 'kb'} onClick={() => setMode('kb')} sx={{ borderRadius: 1, mb: 0.3, py: 0.4 }}>
+              <ListItemIcon sx={{ minWidth: 26 }}><KbIcon sx={{ fontSize: 16 }} color="info" /></ListItemIcon>
+              <ListItemText primary="Knowledge Base" primaryTypographyProps={{ fontSize: 12.5, fontWeight: 500 }} />
+            </ListItemButton>
+            <ListItemButton selected={mode === 'agents'} onClick={() => setMode('agents')} sx={{ borderRadius: 1, mb: 0.3, py: 0.4 }}>
+              <ListItemIcon sx={{ minWidth: 26 }}><AgentsIcon sx={{ fontSize: 16 }} color="success" /></ListItemIcon>
+              <ListItemText primary="Chat Agents" primaryTypographyProps={{ fontSize: 12.5, fontWeight: 500 }} />
+            </ListItemButton>
+          </List>
         </Box>
       </Paper>
 
@@ -633,6 +656,16 @@ export function SkillWorkshopPage() {
           /* ═══ Agent Chat (full area) ═══ */
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
             <AgentChatPanel />
+          </Box>
+        ) : mode === 'kb' ? (
+          /* ═══ Knowledge Base (full area) ═══ */
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            <KnowledgeBasePage />
+          </Box>
+        ) : mode === 'agents' ? (
+          /* ═══ Chat Agents (full area) ═══ */
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            <ChatAgentsPage />
           </Box>
         ) : mode === 'none' ? (
           /* ═══ Empty state ═══ */

@@ -22,10 +22,17 @@ import { PreviewModule } from'./preview/preview.module';
 import { FunnelsModule } from'./funnels/funnels.module';
 import { MembersModule } from'./members/members.module';
 import { SkillsModule } from'./skills/skills.module';
+import { ScheduledWorkflowsModule } from'./scheduled-workflows/scheduled-workflows.module';
+import { KnowledgeBaseModule } from'./knowledge-base/knowledge-base.module';
+import { ChatAgentsModule } from'./chat-agents/chat-agents.module';
+import { YoutubeScriptCreatorScraperModule } from './youtube-script-creator-scraper/youtube-script-creator-scraper.module';
+import { LinkedinPowerhouseScraperModule } from './linkedin-powerhouse-scraper/linkedin-powerhouse-scraper.module';
 
 @Module({
  imports: [
- LinkedInModule,
+    LinkedinPowerhouseScraperModule,
+    YoutubeScriptCreatorScraperModule,
+    LinkedInModule,
  LinkedinScraperModule,
  SharedModule,
  HealthModule,
@@ -48,6 +55,9 @@ import { SkillsModule } from'./skills/skills.module';
  FunnelsModule,
  MembersModule,
  SkillsModule,
+ ScheduledWorkflowsModule,
+ KnowledgeBaseModule,
+ ChatAgentsModule,
  ],
  controllers: [],
  providers: [],

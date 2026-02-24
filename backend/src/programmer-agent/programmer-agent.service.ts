@@ -6,7 +6,7 @@ import axios from'axios';
 import { CryptoService } from'../shared/crypto.service';
 import { DatabaseService } from'../shared/database.service';
 import { AnalyticsService } from'../analytics/analytics.service';
-import { getPageTemplate, TEMPLATE_PAGE_TYPES } from'./members-templates';
+import { getPageTemplate, TEMPLATE_PAGE_TYPES, skillShortcodeTemplate } from'./members-templates';
 import { generateScraperFiles, ScraperTemplateParams, scraperResultsPageTemplate } from'./apify-scraper-templates';
 import { GitOps } from './git-ops';
 import { RetryEngine, RetryEngineContext } from './retry-engine';
@@ -37,7 +37,7 @@ export interface MembersAreaPage {
  id: string;
  name: string;
  description: string;
- type:'dashboard' |'profile' |'settings' |'admin' |'contact' |'scraper' |'custom';
+ type:'dashboard' |'skills' |'workflows' |'documents' |'api-keys' |'admin' |'contact' |'custom';
  required: boolean;
 }
 
@@ -140,21 +140,23 @@ const EST_TOKENS_PER_PAGE: Record<string, number> = {
  dashboard: 120, // template + shared AI copy
  custom: 3000,
  admin: 120, // template + shared AI copy
- profile: 120, // template + shared AI copy
- settings: 120, // template + shared AI copy
+ skills: 120, // template + shared AI copy
+ workflows: 120, // template + shared AI copy
+ documents: 120, // template + shared AI copy
+ 'api-keys': 120, // template + shared AI copy
  contact: 120, // template + shared AI copy
- scraper: 0,   // static template, zero AI tokens
 };
 
 // --- Default members area pages ---------------------------------------------
 
 const DEFAULT_MEMBERS_PAGES: MembersAreaPage[] = [
- { id:'dashboard', name:'Dashboard', description:'Main dashboard overview with stats, recent activity, and quick actions', type:'dashboard', required: true },
- { id:'profile', name:'Profile', description:'User profile management with avatar, bio, and account details', type:'profile', required: true },
- { id:'settings', name:'Settings', description:'Account settings, notifications, privacy, and preferences', type:'settings', required: true },
+ { id:'dashboard', name:'Dashboard', description:'Main dashboard overview with stats, recent skill runs, file counts, and quick actions', type:'dashboard', required: true },
+ { id:'skills', name:'AI Skills', description:'Browse and run AI skills — categorised list with search, streaming execution panel, output tabs, and activity feed', type:'skills', required: true },
+ { id:'workflows', name:'Workflows', description:'Scheduled workflow automation — Daily, Weekly, and Monitor columns for recurring skill tasks with drag-and-drop management', type:'workflows', required: true },
+ { id:'documents', name:'Documents', description:'File manager for uploads and skill outputs — grid/list view, category tabs (images, PDFs, docs, HTML), upload, download, delete', type:'documents', required: true },
+ { id:'api-keys', name:'API Keys', description:'API key management — add/delete keys with masked values, quick-add chips for common providers', type:'api-keys', required: true },
+ { id:'admin', name:'Admin Panel', description:'Admin dashboard with registered members table, analytics, and contact form submissions — wired to the live backend API', type:'admin', required: true },
  { id:'contact', name:'Contact', description:'Contact form that sends messages directly to admin inbox via /api/contact', type:'contact', required: true },
- { id:'admin', name:'Admin Panel', description:'Admin dashboard with analytics and contact form submissions -- wired to the live backend API', type:'admin', required: true },
- { id:'scraper', name:'Data Scraper', description:'Apify scraper integration \u2014 run data scrapers, view results in a searchable table, filter and export to CSV', type:'scraper', required: true },
 ];
 
 // --- Service -------------------------------------------------------------------
@@ -240,12 +242,25 @@ export class ProgrammerAgentService {
  const model = this.getModelConfig(modelId);
  if (!model) throw new Error(`Unknown model: ${modelId}`);
 
- if (model.provider ==='anthropic') {
- return this.callAnthropic(modelId, systemPrompt, userPrompt, history);
- } else if (model.provider ==='openai') {
- return this.callOpenAI(modelId, systemPrompt, userPrompt, history);
+ // Auto-fallback: if the requested provider's key isn't configured, try the other provider
+ let effectiveModelId = modelId;
+ let effectiveModel = model;
+ if (model.provider === 'anthropic' && !this.getApiKey('anthropic') && this.getApiKey('openai')) {
+ effectiveModelId = 'gpt-4o';
+ effectiveModel = this.getModelConfig(effectiveModelId)!;
+ this.logger.debug(`Anthropic key missing, falling back to ${effectiveModelId}`);
+ } else if (model.provider === 'openai' && !this.getApiKey('openai') && this.getApiKey('anthropic')) {
+ effectiveModelId = 'claude-sonnet-4-20250514';
+ effectiveModel = this.getModelConfig(effectiveModelId)!;
+ this.logger.debug(`OpenAI key missing, falling back to ${effectiveModelId}`);
  }
- throw new Error(`Unsupported provider: ${model.provider}`);
+
+ if (effectiveModel.provider ==='anthropic') {
+ return this.callAnthropic(effectiveModelId, systemPrompt, userPrompt, history);
+ } else if (effectiveModel.provider ==='openai') {
+ return this.callOpenAI(effectiveModelId, systemPrompt, userPrompt, history);
+ }
+ throw new Error(`Unsupported provider: ${effectiveModel.provider}`);
  }
 
  private async callAnthropic(
@@ -600,31 +615,53 @@ ${prompt}
 ${appContext}
 ${searchContext}
 
-The minimum required pages are:
-1. Dashboard - Main overview page with stats, activity, quick actions
-2. Profile - User profile management
-3. Settings - Account settings and preferences
+The 7 required pages are:
+1. Dashboard - Main overview page with stats, recent skill runs, file counts, quick actions
+2. AI Skills - Browse and run AI skills with streaming execution, output tabs
+3. Workflows - Scheduled automation with Daily, Weekly, and Monitor columns
+4. Documents - File manager for uploads and skill outputs (images, PDFs, docs)
+5. API Keys - Manage API keys for external services
+6. Admin - Admin panel with members table, analytics, and contact submissions
+7. Contact - Contact form for users to message the admin
 
-Based on the user's description, suggest additional pages that would be needed. Think about what content and features the members area should have.
+Based on the user's description, the pages should be tailored to their specific app domain.
+For example, a YouTube app should have YouTube-themed labels, stats, descriptions.
 
 IMPORTANT: Do NOT suggest a "Support" or "Support Ticket" page. Support functionality is handled within the Admin Panel.
+IMPORTANT: Do NOT suggest "Profile" or "Settings" pages -- they have been replaced by the Skills and API Keys pages.
+IMPORTANT: Do NOT suggest a "Scraper" page -- scraping is handled via AI Skills.
+IMPORTANT: Do NOT suggest a "Results" page -- results are shown inline within the AI Skills page.
+IMPORTANT: Do NOT create duplicate pages. Each of the 7 required pages should appear EXACTLY ONCE. Do NOT create an "ai-skills" page -- use id "skills" for the AI Skills page.
 
 Return ONLY a JSON array of pages. Each page:
 - id: lowercase slug (e.g., "courses", "billing")
 - name: Display name
 - description: What this page contains and does -- be VERY specific to this app's domain. Include what real data/metrics/content a user of this app would see on this page. Do NOT use generic descriptions.
-- type: "dashboard" | "profile" | "settings" | "admin" | "contact" | "custom"
-- required: true for the 5 core pages (dashboard, profile, settings, admin, contact), false for extras
+- type: "dashboard" | "skills" | "workflows" | "documents" | "api-keys" | "admin" | "contact" | "custom"
+- required: true for the 7 core pages, false for extras
 
-The 5 required pages are ALWAYS included:
+The 7 required pages are ALWAYS included:
 1. Dashboard (type: "dashboard") - Main overview with stats, activity, quick actions
-2. Profile (type: "profile") - User profile management
-3. Settings (type: "settings") - Account settings and preferences
-4. Admin (type: "admin") - Admin panel with analytics and contact form submissions
-5. Contact (type: "contact") - Contact form for users to reach out
+2. AI Skills (type: "skills") - Browse and run AI skills
+3. Workflows (type: "workflows") - Scheduled workflow automation with Daily, Weekly, and Monitor columns
+4. Documents (type: "documents") - File management for uploads and outputs
+5. API Keys (type: "api-keys") - API key management
+6. Admin (type: "admin") - Admin panel with analytics and contact form submissions
+7. Contact (type: "contact") - Contact form for users to reach out
 
-Include these 5 required pages plus any additional custom pages that make sense for this specific app.
-Use type "custom" ONLY for app-specific pages beyond the 5 core pages.
+Include these 7 required pages plus any additional custom pages that make sense for this specific app.
+Use type "custom" ONLY for app-specific pages beyond the 7 core pages.
+
+SKILL SHORTCODE SUPPORT:
+Custom pages can embed an AI skill runner widget by including [skill-shortcode] in the page description.
+When a custom page description contains [skill-shortcode], the page will be generated with:
+- A chat input box where users type prompts
+- AI skill processing via the backend (SSE streaming)
+- A rich results output area that can display text, images, links, and documents
+Example: a custom "Blog Poster" page with description "Create blog posts, research topics and generate SEO content using AI [skill-shortcode]"
+would get a page with a hero section, the AI chat input, and a results panel — all wired to the skills backend.
+IMPORTANT: If the user mentions content generation, AI processing, blog posting, research, writing, or similar AI-powered functionality for a custom page, ALWAYS include [skill-shortcode] in that page's description.
+The shortcode tag [skill-shortcode] MUST appear literally in the description string for the code generator to detect it.
 
 Return ONLY the JSON array. No explanation, no markdown fences.`;
 
@@ -639,14 +676,14 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  // IDs that are allowed to be marked "required"
  const REQUIRED_IDS = new Set(DEFAULT_MEMBERS_PAGES.filter(dp => dp.required).map(dp => dp.id));
  // IDs that must never appear (removed page types)
- const BLOCKED_IDS = new Set(['support','support-ticket']);
+const BLOCKED_IDS = new Set(['support','support-ticket','profile','settings','scraper','results','ai-skills']);
 
  const aiPages: MembersAreaPage[] = parsed
  .filter((p: any) => !BLOCKED_IDS.has((p.id ||'').toLowerCase()) && !BLOCKED_IDS.has((p.type ||'').toLowerCase()))
  .map((p: any) => {
  const id = (p.id ||'custom').toLowerCase();
  // Force correct type for core pages regardless of what AI returns
- const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', profile:'profile', settings:'settings', admin:'admin', contact:'contact' };
+ const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', skills:'skills', workflows:'workflows', documents:'documents', 'api-keys':'api-keys', admin:'admin', contact:'contact' };
  const type: MembersAreaPage['type'] = CORE_ID_TO_TYPE[id] || p.type ||'custom';
  return {
  id,
@@ -656,10 +693,17 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  required: REQUIRED_IDS.has(id) ? true : false,
  };
  });
+ // Deduplicate by id (keep first occurrence)
+ const seenIds = new Set<string>();
+ const dedupedPages = aiPages.filter(p => {
+ if (seenIds.has(p.id)) return false;
+ seenIds.add(p.id);
+ return true;
+ });
  // Ensure all required default pages are always present
- const existingIds = new Set(aiPages.map(p => p.id));
+ const existingIds = new Set(dedupedPages.map(p => p.id));
  const missingRequired = DEFAULT_MEMBERS_PAGES.filter(dp => dp.required && !existingIds.has(dp.id));
- pages = [...aiPages, ...missingRequired];
+ pages = [...dedupedPages, ...missingRequired];
  }
  } catch (err) { this.logger.debug("Caught (use defaults): " + err); }
 
@@ -677,33 +721,18 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const subAgentModel = request.subAgentModel || DEFAULT_SUB_AGENT;
  let pages = request.pages || DEFAULT_MEMBERS_PAGES;
 
- // Filter out blocked page types (support was removed)
- const BLOCKED_PAGE_IDS = new Set(['support','support-ticket']);
+ // Filter out blocked page types (old removed pages)
+ const BLOCKED_PAGE_IDS = new Set(['support','support-ticket','profile','settings','scraper','results','ai-skills']);
  pages = pages.filter(p => !BLOCKED_PAGE_IDS.has(p.id) && !BLOCKED_PAGE_IDS.has(p.type));
 
  // Force correct type for core pages regardless of what was passed in
- const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', profile:'profile', settings:'settings', admin:'admin', contact:'contact' };
+ const CORE_ID_TO_TYPE: Record<string, MembersAreaPage['type']> = { dashboard:'dashboard', skills:'skills', workflows:'workflows', documents:'documents', 'api-keys':'api-keys', admin:'admin', contact:'contact' };
  pages = pages.map(p => CORE_ID_TO_TYPE[p.id] ? { ...p, type: CORE_ID_TO_TYPE[p.id] } : p);
 
- // Ensure admin page is always included even if the plan didn't have it
- const hasAdmin = pages.some(p => p.id ==='admin' || p.type ==='admin');
- if (!hasAdmin) {
- const adminPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='admin');
- if (adminPage) pages = [...pages, adminPage];
- }
-
- // Ensure contact page is always included
- const hasContact = pages.some(p => p.id ==='contact' || p.type ==='contact');
- if (!hasContact) {
- const contactPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='contact');
- if (contactPage) pages = [...pages, contactPage];
- }
-
- // Ensure scraper page is always included
- const hasScraper = pages.some(p => p.id ==='scraper' || p.type ==='scraper');
- if (!hasScraper) {
- const scraperPage = DEFAULT_MEMBERS_PAGES.find(p => p.id ==='scraper');
- if (scraperPage) pages = [...pages, scraperPage];
+ // Ensure all 7 required pages are present
+ for (const requiredPage of DEFAULT_MEMBERS_PAGES.filter(dp => dp.required)) {
+ const has = pages.some(p => p.id === requiredPage.id || p.type === requiredPage.type);
+ if (!has) pages = [...pages, requiredPage];
  }
 
  // Resolve the app's name and description so we can inject them into prompts
@@ -821,7 +850,7 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  const copyResult = await this.callAI(
  subAgentModel,
  'You are a SaaS copywriter. Return ONLY valid JSON. No markdown fences, no explanation.',
- `Generate marketing copy for a SaaS members area.\nApp: "${templateAppName}"\nDescription: "${appDescription || request.prompt}"\n\nReturn JSON matching this EXACT structure:\n{\n  "dashboard": {\n    "heroSubtitle": "One sentence about what the user can track or do here",\n    "stats": [\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "Top X%" }\n    ],\n    "activity": [\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" }\n    ],\n    "gettingStarted": ["Step 1 label", "Step 2 label", "Step 3 label", "Step 4 label"]\n  },\n  "profile": { "bio": "Default bio text relevant to this app and its users" },\n  "settings": { "heroSubtitle": "Sentence about managing preferences for this app" },\n  "admin": { "heroSubtitle": "Sentence about admin capabilities for this app" },\n  "contact": {\n    "heroSubtitle": "Encouraging sentence about reaching out",\n    "infoCards": [\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" }\n    ]\n  }\n}\n\nAll copy must be specific to "${templateAppName}". Use realistic sample data for this industry.`,
+ `Generate marketing copy for a SaaS members area.\nApp: "${templateAppName}"\nDescription: "${appDescription || request.prompt}"\n\nReturn JSON matching this EXACT structure:\n{\n  "dashboard": {\n    "heroSubtitle": "One sentence about what the user can track or do here",\n    "stats": [\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "+X%" },\n      { "label": "Domain-specific metric", "value": "Realistic sample", "change": "Top X%" }\n    ],\n    "activity": [\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" },\n      { "title": "Short action title", "desc": "One-sentence detail" }\n    ],\n    "gettingStarted": ["Step 1 label", "Step 2 label", "Step 3 label", "Step 4 label"]\n  },\n  "skills": { "heroSubtitle": "Sentence about available AI skills for this app domain" },\n  "workflows": { "heroSubtitle": "Sentence about scheduled workflow automation for this app domain" },\n  "documents": { "heroSubtitle": "Sentence about managing files and outputs created by skills" },\n  "api-keys": { "heroSubtitle": "Sentence about managing API keys needed for this app's features" },\n  "admin": { "heroSubtitle": "Sentence about admin capabilities for this app" },\n  "contact": {\n    "heroSubtitle": "Encouraging sentence about reaching out",\n    "infoCards": [\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" },\n      { "title": "Support channel name", "desc": "Availability info" }\n    ]\n  }\n}\n\nAll copy must be specific to "${templateAppName}". Use realistic sample data for this industry.`,
  );
  totalSubAgentTokens += copyResult.tokensUsed;
  const cleaned = copyResult.content.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
@@ -847,25 +876,6 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  allPlanSteps.push(step);
 
  try {
- // Handle scraper page via dedicated Apify template (zero AI tokens)
- if (page.type === 'scraper') {
- const scraperCode = scraperResultsPageTemplate({
- slug: this.getAppSlug(request.appId) || this.toKebabCase(templateAppName),
- appName: templateAppName,
- primaryColor: templatePrimaryColor,
- appId: templateAppId,
- });
- this.logger.log('Using Apify scraper template for scraper page (0 AI tokens)');
- allFiles.push({
- path:`${membersPath}/${page.id}.tsx`,
- content: scraperCode,
- language:'typescript',
- description:`${page.name} page (template)`,
- });
- step.status ='complete';
- continue;
- }
-
  // Check for static template first -- saves ~2000-4000 tokens per page
  const templateCode = getPageTemplate(page.type, {
  appName: templateAppName,
@@ -880,6 +890,26 @@ Return ONLY the JSON array. No explanation, no markdown fences.`;
  content: templateCode,
  language:'typescript',
  description:`${page.name} page (template)`,
+ });
+ step.status ='complete';
+ continue;
+ }
+
+ // Check for [skill-shortcode] in page description — use static template instead of AI
+ const shortcodeRe = /\[skills?[\s-]*shortcode\]/i;
+ if (shortcodeRe.test(page.description || '') || shortcodeRe.test(request.prompt || '')) {
+ this.logger.log(`Using skill shortcode template for ${page.name} page`);
+ const shortcodeCode = skillShortcodeTemplate(
+ { appName: templateAppName, appId: templateAppId, primaryColor: templatePrimaryColor },
+ page.id,
+ page.name,
+ page.description || '',
+ );
+ allFiles.push({
+ path:`${membersPath}/${page.id}.tsx`,
+ content: shortcodeCode,
+ language:'typescript',
+ description:`${page.name} page (skill shortcode template)`,
  });
  step.status ='complete';
  continue;
@@ -939,6 +969,8 @@ IMPLEMENTATION RULES:
 - Do NOT import types from external files -- define any interfaces inline in this file
 - Only import from'react','@mui/material','@mui/icons-material/*', and'react-router-dom' -- these are the ONLY available packages
 ` :'';
+
+
 
  const pagePrompt =`Generate a complete React page component for the "${page.name}" page of a members area.
 
@@ -1750,19 +1782,24 @@ Fix every single error. Return ONLY the complete corrected file content. No mark
  // --- Deterministic MembersLayout builder ---------------------------------
 
  private buildMembersLayoutTemplate(pages: MembersAreaPage[], appName: string, primaryColor: string): string {
+   // Filter out legacy "results" pages — replaced by "workflows"
+   const LAYOUT_BLOCKED = new Set(['results', 'ai-skills']);
+   const filteredPages = pages.filter(p => !LAYOUT_BLOCKED.has(p.id) && !LAYOUT_BLOCKED.has(p.type as string));
+
    const iconMap: Record<string, string> = {
      dashboard: 'Dashboard', profile: 'Person', settings: 'Settings',
      admin: 'AdminPanelSettings', contact: 'ContactSupport', scraper: 'Storage',
+     workflows: 'Schedule',
    };
 
-   const navItems = pages.map(p => {
+   const navItems = filteredPages.map(p => {
      const icon = iconMap[p.type] || iconMap[p.id] || 'Article';
      const label = p.name || p.id.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
      return '    { path: \'/' + p.id + '\', label: \'' + label.replace(/'/g, "\\'") + '\', icon: <' + icon + ' /> }';
    });
 
    const usedIcons = new Set<string>(['Article']);
-   pages.forEach(p => usedIcons.add(iconMap[p.type] || iconMap[p.id] || 'Article'));
+   filteredPages.forEach(p => usedIcons.add(iconMap[p.type] || iconMap[p.id] || 'Article'));
    const iconImports = Array.from(usedIcons).sort().join(', ');
    const safeName = appName.replace(/'/g, "\\'");
 

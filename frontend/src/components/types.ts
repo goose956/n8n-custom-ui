@@ -1,105 +1,86 @@
-export interface UserProfile {
-  id: string; // Unique identifier for the user
-  name: string; // User's full name
-  email: string; // User's email address
-  linkedinProfileUrl: string; // URL to the user's LinkedIn profile
-  influenceScore: number; // Score representing user's influence on the platform
-  demographics: Demographics; // Demographic data of the user's contacts
-}
-
-export interface Demographics {
-  ageGroup: string; // Age group of user's contacts
-  industry: string; // Industry breakdown of user's contacts
-  location: string; // Geographic distribution
-}
-
 export interface DashboardStats {
-  totalSuccessfulDMs: number; // Total number of successful DMs sent
-  responseRate: number; // Percentage of DMs that received a response
-  recentActivities: RecentActivity[]; // List of recent activities
+  totalScriptsCreated: number; // Total number of scripts created
+  mostUsedAISkills: SkillUsage[]; // Most frequently used AI skills
+  recentScriptHistory: ScriptHistory[]; // Recent script generation history
 }
 
-export interface RecentActivity {
-  id: string; // Unique identifier for the activity
-  message: string; // Description of the activity
-  timestamp: string; // Time when the activity occurred
+export interface SkillUsage {
+  skillName: string; // Name of the AI skill
+  usageCount: number; // Number of times the skill has been used
 }
 
-export interface Settings {
-  notificationsEnabled: boolean; // Flag for enabling notifications
-  privacySettings: PrivacySettings; // User's privacy preferences
-  aiResponsePreferences: AIResponsePreferences; // User's preferences for AI responses
+export interface ScriptHistory {
+  scriptId: string; // ID of the generated script
+  title: string; // Title of the script
+  creationDate: string; // Date when the script was created
 }
 
-export interface PrivacySettings {
-  shareProfilePublicly: boolean; // Flag for sharing profile publicly
-  hideActivityStatus: boolean; // Flag to hide user activity status
+export interface AI_skill {
+  id: string; // Unique identifier for the AI skill
+  name: string; // Name of the AI skill
+  description: string; // Description of what the skill does
+  execute: (input: string) => Promise<string>; // Function to execute the skill with input
 }
 
-export interface AIResponsePreferences {
-  responseTone: 'formal' | 'casual'; // User preference for response tone
-  useTemplates: boolean; // Flag for using message templates in responses
+export interface Workflow {
+  id: string; // Unique identifier for the workflow
+  name: string; // Name of the workflow
+  schedule: Schedule; // Schedule settings for the automation
+  tasks: WorkflowTask[]; // List of tasks in the workflow
 }
 
-export interface AdminPanel {
-  userAnalytics: UserAnalytics; // Analytics data on user engagement
-  messageSuccessRates: MessageSuccessRate[]; // Message success rate data
-  contactFormInquiries: Inquiry[]; // List of inquiries from the contact form
+export interface Schedule {
+  daily: boolean; // Whether the workflow is scheduled daily
+  weekly: boolean; // Whether the workflow is scheduled weekly
+  time: string; // Time at which the workflow runs
 }
 
-export interface UserAnalytics {
-  activeUsers: number; // Number of active users on the platform
-  totalDMsSent: number; // Total number of DMs sent across the platform
+export interface WorkflowTask {
+  taskId: string; // Unique identifier for the task
+  taskType: 'scriptGeneration' | 'transcription' | 'thumbnailCreation'; // Type of AI task
+  parameters: object; // Parameters for the specific task
 }
 
-export interface MessageSuccessRate {
-  messageType: string; // Type of message (e.g., connection request)
-  successRate: number; // Success rate for that message type
+export interface Document {
+  documentId: string; // Unique identifier for the document
+  title: string; // Title of the document
+  uploadDate: string; // Date when document was uploaded
+  documentType: 'script' | 'transcription' | 'thumbnail'; // Type of the document
+  fileUrl: string; // URL to access the document file
 }
 
-export interface Inquiry {
-  id: string; // Unique identifier for the inquiry
-  category: string; // Category of the inquiry (e.g., feedback, support)
-  message: string; // Content of the user message
+export interface APIKey {
+  keyId: string; // Unique identifier for the API key
+  createdAt: string; // Creation date of the API key
+  isActive: boolean; // Status of the API key (active/inactive)
+  usageStats: UsageStatistics; // Statistics regarding the usage of the API key
 }
 
-export interface AnalyticsData {
-  effectivenessByMessageType: EffectivenessByMessageType[]; // Breakdown of effectiveness by message type
-  trendsOverTime: Trend[]; // Visualized trends for outreach effectiveness
+export interface UsageStatistics {
+  totalRequests: number; // Total requests made using this API key
+  lastUsed: string; // Date when the API key was last used
 }
 
-export interface EffectivenessByMessageType {
-  messageType: string; // Type of message
-  engagementRate: number; // Engagement rate for that message type
+export interface AdminAnalytics {
+  userTrends: UserTrend[]; // Trends in user script creations
+  contactSubmissions: ContactSubmission[]; // List of contact form submissions
 }
 
-export interface Trend {
-  date: string; // Date of the trend
-  engagement: number; // Engagement level on that date
+export interface UserTrend {
+  userId: string; // ID of the user
+  totalScriptsCreated: number; // Total scripts created by the user
+  lastActive: string; // Last active date of the user
 }
 
-export interface Template {
-  id: string; // Unique identifier for the template
-  content: string; // Text content of the message template
-  industry: string; // Industry tag for the template
+export interface ContactSubmission {
+  submissionId: string; // Unique identifier for the contact submission
+  userId: string; // ID of the user who submitted the form
+  message: string; // Content of the message
+  submissionDate: string; // Date of the submission
 }
 
-export interface MessageHistory {
-  id: string; // Unique identifier for the message
-  content: string; // Content of the sent message
-  status: 'sent' | 'delivered' | 'read'; // Status of the message
-  responseTime: string; // Time taken to receive a response
-  engagementLevel: number; // Level of engagement with the message
-}
-
-export interface DataScraper {
-  id: string; // Unique identifier for the scraper
-  name: string; // Name of the scraper
-  results: ScraperResult[]; // Results from the scraper
-}
-
-export interface ScraperResult {
-  contactName: string; // Name of the scraped contact
-  profileUrl: string; // LinkedIn profile URL of the scraped contact
-  industry: string; // Industry of the scraped contact
+export interface YouTubeBlogger {
+  articleSize: number; // Size of the blog article in characters
+  generateArticle: (skillShortcode: string) => Promise<string>; // Generate a blog article using a skill shortcode
+  downloadAsPDF: () => Promise<void>; // Function to download the article as a PDF
 }

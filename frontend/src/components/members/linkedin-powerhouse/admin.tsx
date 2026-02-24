@@ -29,9 +29,9 @@ const API = window.location.origin.includes('localhost') ? 'http://localhost:300
 
 
 const COLORS = {
- primary: '#1976d2',
- secondary: '#0050ac',
- tint: '#1976d215',
+ primary: '#3498db',
+ secondary: '#0e72b5',
+ tint: '#3498db15',
  bg: '#fafbfc',
  border: 'rgba(0,0,0,0.06)',
  shadow: '0 2px 12px rgba(0,0,0,0.04)',
@@ -45,7 +45,7 @@ const COLORS = {
 
 const heroSx = {
  p: { xs: 3, md: 4 }, mb: 4, borderRadius: 4, position: 'relative' as const, overflow: 'hidden',
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff',
 };
 
@@ -57,7 +57,7 @@ const floatingCircle = (size: number, top: number, right: number, opacity = 0.08
 const cardSx = {
  borderRadius: 4, border: '1px solid ' + COLORS.border, boxShadow: COLORS.shadow,
  transition: 'all 0.25s ease',
- '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#1976d240' },
+ '&:hover': { transform: 'translateY(-2px)', boxShadow: COLORS.shadowHover, borderColor: '#3498db40' },
 };
 
 const sectionSx = {
@@ -65,10 +65,10 @@ const sectionSx = {
 };
 
 const gradientBtnSx = {
- background: 'linear-gradient(135deg, #1976d2 0%, #0050ac 100%)',
+ background: 'linear-gradient(135deg, #3498db 0%, #0e72b5 100%)',
  color: '#fff', fontWeight: 600, textTransform: 'none' as const,
- boxShadow: '0 4px 15px #1976d240',
- '&:hover': { boxShadow: '0 6px 20px #1976d260', transform: 'translateY(-1px)' },
+ boxShadow: '0 4px 15px #3498db40',
+ '&:hover': { boxShadow: '0 6px 20px #3498db60', transform: 'translateY(-1px)' },
  transition: 'all 0.2s ease',
 };
 
@@ -192,9 +192,9 @@ export function MembersAdminPage() {
     <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
      <Box>
       <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 1 }}>
-       <Dashboard />  linkedin powerhouse Admin
+       <Dashboard /> LinkedIn Powerhouse Admin
       </Typography>
-      <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Manage users and track overall performance metrics across your team.</Typography>
+      <Typography variant="body1" sx={{ opacity: 0.85, mt: 0.5 }}>Utilize powerful admin tools to oversee team activities.</Typography>
      </Box>
      <Button variant="contained" startIcon={<Refresh />} onClick={fetchAll}
       sx={{ bgcolor: 'rgba(255,255,255,0.2)', fontWeight: 600, backdropFilter: 'blur(4px)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
@@ -335,7 +335,7 @@ export function MembersAdminPage() {
              <TableCell align="right">
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5 }}>
                <LinearProgress variant="determinate" value={pct} sx={{ width: 80, height: 6, borderRadius: 3, bgcolor: COLORS.border,
-                '& .MuiLinearProgress-bar': { borderRadius: 3, background: 'linear-gradient(90deg, #1976d2, #0050ac)' } }} />
+                '& .MuiLinearProgress-bar': { borderRadius: 3, background: 'linear-gradient(90deg, #3498db, #0e72b5)' } }} />
                <Typography variant="body2" fontWeight={600} sx={{ minWidth: 32 }}>{pct}%</Typography>
               </Box>
              </TableCell>
